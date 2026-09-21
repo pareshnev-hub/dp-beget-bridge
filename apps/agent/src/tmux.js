@@ -217,27 +217,35 @@ export class TmuxSessionManager {
     return status.toLowerCase();
   }
 
-  startOperationMonitor(operationId, sessionId, marker, startCursor) {
+  startOperationMonitor(operationId, sessionId) {
     if (this.config.monitorOperations === false || this.operationMonitors.has(operationId)) return;
     const monitor = (async () => {
       while (true) {
         const operation = this.store.getOperation(operationId, sessionId);
         if (!operation || operation.status !== "RUNNING") return;
+        let completion;
+        try {
+          completion = await this.store.readOperationCompletion(sessionId, operationId);
+        } catch (error) {
+          if (error.code !== "operation_completion_invalid") throw error;
+          this.store.updateOperation(operationId, "UNKNOWN", {
+            completedAt: new Date().toISOString(),
+            outcomeReason: "control_record_invalid",
+          });
+          return;
+        }
+        if (completion) {
+          this.store.updateOperation(operationId, completion.exitCode === 0 ? "SUCCEEDED" : "FAILED", {
+            completedAt: completion.completedAt,
+            exitCode: completion.exitCode,
+            outcomeReason: completion.exitCode === 0 ? "exit_zero" : "exit_nonzero",
+          });
+          return;
+        }
         if (!(await this.isAlive(sessionId))) {
           this.store.updateOperation(operationId, "UNKNOWN", {
             completedAt: new Date().toISOString(),
             outcomeReason: "session_lost_during_operation",
-          });
-          return;
-        }
-        const result = await this.readOutput(sessionId, startCursor, 256 * 1024);
-        const match = result.output.match(new RegExp(`${marker}:(\\d+)`));
-        if (match) {
-          const exitCode = Number(match[1]);
-          this.store.updateOperation(operationId, exitCode === 0 ? "SUCCEEDED" : "FAILED", {
-            completedAt: new Date().toISOString(),
-            exitCode,
-            outcomeReason: exitCode === 0 ? "exit_zero" : "exit_nonzero",
           });
           return;
         }
@@ -261,7 +269,7 @@ export class TmuxSessionManager {
     if (includeOutput) {
       try {
         const result = await this.readOutput(operation.sessionId, operation.startCursor, 256 * 1024);
-        output = result.output.replace(new RegExp(`\\n?__DPB_DONE_${operation.id}:\\d+\\r?\\n?`), "");
+        output = result.output;
         cursor = result.cursor;
       } catch (error) {
         if (!["session_not_found", "session_not_running"].includes(error.code)) throw error;
@@ -324,8 +332,18 @@ export class TmuxSessionManager {
       return this.operationResponse(admitted.operation);
     }
 
-    const marker = `__DPB_DONE_${operationId}`;
-    const wrapped = `${command}\n__dpb_exit=$?\nprintf '\\n${marker}:%s\\n' "$__dpb_exit"`;
+    try {
+      await this.store.prepareOperationCompletion(id, operationId);
+    } catch (error) {
+      this.store.updateOperation(operationId, "FAILED", {
+        completedAt: new Date().toISOString(),
+        outcomeReason: "control_channel_unavailable",
+      });
+      throw error;
+    }
+    const completionPath = this.store.operationCompletionPath(id, operationId);
+    const completionPartPath = this.store.operationCompletionPartPath(id, operationId);
+    const wrapped = `eval -- ${shellQuote(command)}\n__dpb_exit=$?\n( umask 077; printf '%s\\n' "$__dpb_exit" > ${shellQuote(completionPartPath)} && mv -f -- ${shellQuote(completionPartPath)} ${shellQuote(completionPath)} )`;
     const startedAt = new Date().toISOString();
     this.store.updateOperation(operationId, "RUNNING", { startedAt });
     try {
@@ -338,26 +356,15 @@ export class TmuxSessionManager {
       throw error;
     }
     this.logger.info("terminal.command_started", { sessionId: id, operationId });
-    this.startOperationMonitor(operationId, id, marker, startCursor);
+    this.startOperationMonitor(operationId, id);
 
     const deadline = Date.now() + Math.max(0, Math.min(Number(waitMs) || 0, 30000));
-    let result = await this.readOutput(id, startCursor, 256 * 1024);
-    while (!result.output.includes(marker) && Date.now() < deadline) {
+    let operation = this.store.getOperation(operationId, id);
+    while (operation.status === "RUNNING" && Date.now() < deadline) {
       await delay(100);
-      result = await this.readOutput(id, startCursor, 256 * 1024);
-    }
-    const match = result.output.match(new RegExp(`${marker}:(\\d+)`));
-    let operation;
-    if (match) {
-      const exitCode = Number(match[1]);
-      operation = this.store.updateOperation(operationId, exitCode === 0 ? "SUCCEEDED" : "FAILED", {
-        completedAt: new Date().toISOString(),
-        exitCode,
-        outcomeReason: exitCode === 0 ? "exit_zero" : "exit_nonzero",
-      });
-    } else {
       operation = this.store.getOperation(operationId, id);
     }
+    const result = await this.readOutput(id, startCursor, 256 * 1024);
     this.logger.info(`terminal.command_${this.operationState(operation.status)}`, {
       sessionId: id,
       operationId,
@@ -367,7 +374,7 @@ export class TmuxSessionManager {
     return {
       ...(await this.operationResponse(operation, { includeOutput: false })),
       cursor: result.cursor,
-      output: result.output.replace(new RegExp(`\\n?${marker}:\\d+\\r?\\n?`), ""),
+      output: result.output,
     };
   }
 

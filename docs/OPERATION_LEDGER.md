@@ -10,7 +10,7 @@ DP-006 introduces a local, versioned SQLite ledger for managed terminal commands
 - The same key and command returns the existing operation and does not start another process.
 - The same key with a different command returns `idempotency_conflict`.
 - A different command while a writer is active returns `session_busy`.
-- If Session Host restarts while an operation is `ACCEPTED` or `RUNNING`, it becomes `UNKNOWN` and is never replayed automatically.
+- If Session Host restarts while an operation is `ACCEPTED` or `RUNNING`, an atomic completion record may finalize it; without valid evidence it becomes `UNKNOWN` and is never replayed automatically.
 - `get_terminal_operation` returns identifiers, status, timestamps, exit code and a bounded outcome category. It never returns command text or the protected fingerprint.
 
 The request fingerprint is HMAC-SHA-256 under a local 32-byte key stored with mode `0600`. Raw command text is not stored in the ledger or operational logs.
@@ -33,6 +33,10 @@ An on-disk schema newer than the running code stops startup with `state_schema_i
 
 Do not roll back to code that can write an older or incompatible state schema. Stop services, retain the current database and transcript directory, and restore only a compatibility-proven release/backup. Never resolve `UNKNOWN` by automatically executing the original command again.
 
-## Current limitation
+## Completion evidence
 
-DP-006 still observes the existing PTY completion marker while Session Host remains alive. DP-007 replaces that with an authoritative completion channel. Until then, an uncertain operation can be released explicitly with interrupt/close after the owner has inspected the session; it is never silently retried.
+DP-007 removes terminal output from the completion decision. The shell wrapper atomically publishes a bounded exit record under `sessions/<session-id>/operations/`; Session Host monitors that record and persists the result in SQLite. Marker-like bytes in the transcript, transcript truncation and transcript deletion cannot complete or change an operation.
+
+If the shell is replaced or exits before it can publish the record, Session Host returns `UNKNOWN` after observing session loss. An interactive foreground program remains `RUNNING`. A background job is governed by normal shell semantics: completion means that the submitted shell expression returned, not that every descendant process exited.
+
+The detailed control-channel, compatibility and rollback contract is in `COMMAND_COMPLETION.md`.
