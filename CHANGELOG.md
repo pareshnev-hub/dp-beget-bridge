@@ -15,6 +15,8 @@ All notable changes are documented here.
 - Prevented move from pre-deleting an existing destination before a successful rename.
 - Defined same-path move as a non-destructive no-op and disabled unsafe cross-device fallback.
 - Added FILE-01, FILE-02, FILE-03 and FILE-09 data-loss regression coverage for DP-001.
+- Made installation wait for local endpoint readiness before reporting success.
+- Made `doctor` retry startup health sequentially and report failures without unhandled promise rejection stacks.
 
 ### Testing
 

@@ -378,6 +378,21 @@ try {
   await execFileAsync("systemd-analyze", ["verify", sessionHostUnitPath, agentUnitPath, mcpUnitPath]);
   await execFileAsync("systemctl", ["daemon-reload"]);
   await execFileAsync("systemctl", ["start", mcpUnit]);
+  const doctor = await execFileAsync(process.execPath, [path.join(installedCodeRoot, "scripts/doctor.mjs")], {
+    cwd: installedCodeRoot,
+    env: {
+      ...process.env,
+      DP_AGENT_URL: `http://127.0.0.1:${agentPort}`,
+      DP_MCP_URL: `http://127.0.0.1:${mcpPort}`,
+      DP_SESSION_HOST_SOCKET: sessionHostSocket,
+      DP_AGENT_SYSTEMD_UNIT: agentUnit,
+      DP_MCP_SYSTEMD_UNIT: mcpUnit,
+      DP_SESSION_HOST_SYSTEMD_UNIT: sessionHostUnit,
+    },
+    encoding: "utf8",
+  });
+  assert.match(doctor.stdout, /OK  Session Host health: ok/);
+  assert.match(doctor.stdout, /OK  Runtime identities:/);
   await waitForSessionHost();
   await waitForHealth(`http://127.0.0.1:${agentPort}/health`, agentUnit);
   await waitForHealth(`http://127.0.0.1:${mcpPort}/health`, mcpUnit);
