@@ -51,3 +51,4 @@ DP-007 does not change SQLite schema version 1. The new `operations/*.exit` file
 - TERM-09 emits more than the maximum single transcript response and proves the nonzero exit remains available.
 - Unit coverage also proves status after transcript removal, valid-record restart reconciliation and fail-closed invalid records.
 - The real-tmux CI smoke covers forged output, large output, interactive input and `exec` session loss; the focused operation test covers `exit` session loss.
+- `npm run test:integration:live-completion` reproduces TERM-08/09, transcript removal and `exec` ambiguity against an installed loopback Agent without printing its credential.
