@@ -2,14 +2,14 @@
 set -euo pipefail
 
 if [[ ${EUID} -ne 0 ]]; then
-  echo "Run with sudo: sudo ./deploy/install.sh --domain bridge.example.com" >&2
+  echo "Run with sudo: sudo ./deploy/install.sh --domain bridge.example.com --user <non-root-user>" >&2
   exit 1
 fi
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source_dir=$(cd -- "${script_dir}/.." && pwd)
 domain=""
-service_user=${SUDO_USER:-root}
+service_user=${SUDO_USER:-}
 allowed_root=""
 telemetry="false"
 
@@ -27,8 +27,16 @@ if [[ -z ${domain} ]]; then
   echo "--domain is required and must already point to this VPS" >&2
   exit 1
 fi
+if [[ -z ${service_user} ]]; then
+  echo "A non-root runtime user is required. Pass --user <existing-non-root-user>." >&2
+  exit 1
+fi
 if ! id "${service_user}" >/dev/null 2>&1; then
   echo "User does not exist: ${service_user}" >&2
+  exit 1
+fi
+if [[ $(id -u "${service_user}") -eq 0 ]]; then
+  echo "Refusing to run Agent, MCP, or terminal sessions as root. Pass --user <existing-non-root-user>." >&2
   exit 1
 fi
 service_group=$(id -gn "${service_user}")
