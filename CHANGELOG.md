@@ -10,6 +10,11 @@ All notable changes are documented here.
 - Defined same-path move as a non-destructive no-op and disabled unsafe cross-device fallback.
 - Added FILE-01, FILE-02, FILE-03 and FILE-09 data-loss regression coverage for DP-001.
 
+### Testing
+
+- Added a real-tmux Agent lifecycle smoke in GitHub Actions covering timeout persistence, Agent restart/reconnect, interactive input and explicit close.
+- Kept systemd/cgroup persistence explicitly outside this initial smoke; DP-002 remains open until disposable systemd evidence is linked.
+
 ### Documentation / planning
 
 - Replaced the preliminary roadmap with the audited R0002–R0007 release sequence.
