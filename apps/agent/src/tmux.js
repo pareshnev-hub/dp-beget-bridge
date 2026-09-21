@@ -160,11 +160,15 @@ export class TmuxSessionManager {
     this.telemetry.trackActivity?.();
     const file = path.join(this.store.sessionDir(id), `input-${crypto.randomUUID()}`);
     const bufferName = `dpb_${crypto.randomUUID().replaceAll("-", "")}`;
-    await fs.writeFile(file, text, { mode: 0o600 });
+    // Keep the submitted text and its terminating carriage return in one tmux
+    // buffer. A separate `send-keys Enter` comes from another tmux client and
+    // is not ordered with bytes which paste-buffer has queued for the pane.
+    // Under backpressure it can overtake the tail of the pasted line.
+    // paste-buffer converts LF to CR by default, so the final LF is the Enter.
+    await fs.writeFile(file, enter ? `${text}\n` : text, { mode: 0o600 });
     try {
       await this.tmux(["load-buffer", "-b", bufferName, file]);
       await this.tmux(["paste-buffer", "-d", "-b", bufferName, "-t", this.tmuxName(id)]);
-      if (enter) await this.tmux(["send-keys", "-t", this.tmuxName(id), "Enter"]);
     } finally {
       await fs.rm(file, { force: true });
     }
