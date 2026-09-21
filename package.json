@@ -12,6 +12,7 @@
     "start:mcp": "node apps/mcp/src/index.js",
     "start:telemetry": "node apps/telemetry/src/index.js",
     "test": "node --test",
+    "test:integration:tmux": "node scripts/integration/agent-tmux-smoke.mjs",
     "check": "node scripts/check.mjs"
   },
   "dependencies": {
