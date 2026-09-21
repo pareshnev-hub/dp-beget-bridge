@@ -89,6 +89,7 @@ async function assertInstallerBlocksLiveLegacyMigration() {
   await fs.mkdir(legacyConfigDir, { recursive: true, mode: 0o700 });
   await fs.mkdir(legacySocketDir, { recursive: true, mode: 0o700 });
   await fs.mkdir(workspace, { recursive: true, mode: 0o700 });
+  await fs.chmod(runtimeRoot, 0o755);
   await fs.chown(legacySocketDir, workUid, workGid);
   await fs.chown(workspace, workUid, workGid);
   await fs.writeFile(path.join(legacyConfigDir, "bridge.env"), [
