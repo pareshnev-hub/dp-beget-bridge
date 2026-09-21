@@ -78,7 +78,7 @@ export class TelemetryClient {
       body: JSON.stringify(payload),
       signal: controller.signal,
     }).catch((error) => {
-      this.logger.debug("telemetry.delivery_failed", { message: error.message });
+      this.logger.debug("telemetry.delivery_failed", { errorCategory: error.code || "delivery_failed" });
     }).finally(() => clearTimeout(timer));
   }
 }

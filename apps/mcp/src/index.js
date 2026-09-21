@@ -16,7 +16,7 @@ const downloads = new DownloadTokenStore({ ttlMs: config.downloadTokenTtlMs });
 const server = createMcpHttpServer({ config, agent, downloads, logger });
 
 server.listen(config.port, config.host, () => {
-  logger.info("mcp.started", { host: config.host, port: config.port, path: config.path });
+  logger.info("mcp.started", { port: config.port, route: "/mcp" });
 });
 
 function shutdown(signal) {

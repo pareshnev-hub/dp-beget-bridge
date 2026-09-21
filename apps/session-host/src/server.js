@@ -1,6 +1,7 @@
 import http from "node:http";
 import { BridgeError } from "../../../packages/core/src/errors.js";
 import { readJson, sendError, sendJson } from "../../../packages/core/src/http.js";
+import { requestRoute } from "../../../packages/core/src/logger.js";
 
 function routeSession(pathname) {
   const match = pathname.match(/^\/v1\/sessions\/([a-zA-Z0-9_-]+)(?:\/(commands|output|input|interrupt))?$/);
@@ -11,6 +12,7 @@ export function createSessionHostServer({ sessions, logger }) {
   return http.createServer(async (request, response) => {
     const started = Date.now();
     const url = new URL(request.url, "http://session-host.local");
+    const route = requestRoute(url.pathname);
     try {
       if (request.method === "GET" && url.pathname === "/health") {
         sendJson(response, 200, { status: "ok", product: "DP Beget Bridge Session Host" });
@@ -61,16 +63,15 @@ export function createSessionHostServer({ sessions, logger }) {
     } catch (error) {
       logger.error("session_host.request_failed", {
         method: request.method,
-        path: url.pathname,
+        route,
         code: error.code,
-        message: error.message,
       });
       if (!response.headersSent) sendError(response, error);
       else response.destroy(error);
     } finally {
       logger.debug("session_host.request_completed", {
         method: request.method,
-        path: url.pathname,
+        route,
         status: response.statusCode,
         durationMs: Date.now() - started,
       });

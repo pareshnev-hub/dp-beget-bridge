@@ -1,5 +1,10 @@
 # Replace bridge.example.com with the hostname pointed at this VPS.
 bridge.example.com {
+    # Download grants are carried in URL paths. Access logs stay disabled for
+    # this virtual host so neither grant paths nor query values reach disk.
+    log {
+        output discard
+    }
     encode zstd gzip
     reverse_proxy 127.0.0.1:8788
     header {

@@ -30,10 +30,8 @@ const server = createAgentServer({ config, sessions, files, logger });
 
 server.listen(config.port, config.host, () => {
   logger.info("agent.started", {
-    agentId: config.agentId,
-    host: config.host,
     port: config.port,
-    allowedRoots: config.allowedRoots,
+    allowedRootCount: config.allowedRoots.length,
   });
   telemetry.track("service_started", { version: "0.1.0", platform: process.platform, arch: process.arch });
 });

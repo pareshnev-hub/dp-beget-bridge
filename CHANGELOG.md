@@ -9,6 +9,7 @@ All notable changes are documented here.
 - Split MCP, Agent and restricted work execution into distinct UNIX identities and credential files.
 - Added a standalone Session Host over a filesystem-permissioned UNIX socket; its environment rejects Agent/MCP credentials.
 - Added a preserve-only live-session update policy and migration path for the existing tmux socket/state.
+- Added allowlisted structured logging, route templates, bounded error categories and a no-access-log proxy profile for secret-bearing paths.
 
 ### Fixed
 

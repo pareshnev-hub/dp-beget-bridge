@@ -31,7 +31,7 @@ const server = createSessionHostServer({ sessions, logger });
 
 server.listen(config.socketPath, async () => {
   await fs.chmod(config.socketPath, 0o660);
-  logger.info("session_host.started", { socketPath: config.socketPath, allowedRoots: config.allowedRoots });
+  logger.info("session_host.started", { allowedRootCount: config.allowedRoots.length });
 });
 
 function shutdown(signal) {

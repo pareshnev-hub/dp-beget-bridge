@@ -2,6 +2,7 @@ import http from "node:http";
 import path from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createBridgeMcpServer } from "./mcp-server.js";
+import { requestRoute } from "../../../packages/core/src/logger.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -16,6 +17,7 @@ function bearerMatches(request, expected) {
 export function createMcpHttpServer({ config, agent, downloads, logger }) {
   return http.createServer(async (request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+    const route = requestRoute(url.pathname, { mcpPath: config.path });
     const started = Date.now();
     try {
       if (request.method === "GET" && url.pathname === "/health") {
@@ -67,13 +69,13 @@ export function createMcpHttpServer({ config, agent, downloads, logger }) {
       });
       await transport.handleRequest(request, response);
     } catch (error) {
-      logger.error("mcp.request_failed", { method: request.method, path: url.pathname, message: error.message });
+      logger.error("mcp.request_failed", { method: request.method, route, code: error.code });
       if (!response.headersSent) sendJson(response, 500, { error: { code: "internal_error", message: "Internal server error" } });
       else response.destroy(error);
     } finally {
       logger.debug("mcp.request_completed", {
         method: request.method,
-        path: url.pathname,
+        route,
         status: response.statusCode,
         durationMs: Date.now() - started,
       });

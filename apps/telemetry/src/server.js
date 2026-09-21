@@ -34,7 +34,7 @@ export function createTelemetryServer({ store, logger }) {
       response.writeHead(204, { "cache-control": "no-store" });
       response.end();
     } catch (error) {
-      logger.warn("telemetry.event_rejected", { message: error.message });
+      logger.warn("telemetry.event_rejected", { errorCategory: error.code || "invalid_event" });
       send(response, 400, { error: "invalid_event" });
     }
   });
