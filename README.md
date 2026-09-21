@@ -72,6 +72,7 @@ Direct remains available independently of Catalog.
 
 The repository currently includes:
 - `apps/agent` — Linux terminal/file agent;
+- `apps/session-host` — credential-free UNIX-socket owner for tmux/session lifecycle;
 - `apps/mcp` — Streamable HTTP MCP server;
 - `apps/telemetry` — optional telemetry prototype;
 - `packages/core` — shared errors/logging/path/contracts;
@@ -111,6 +112,8 @@ npm run start:mcp
 ```
 
 Do not expose an unauthenticated MCP or Agent endpoint to the public internet.
+
+Production installs use three distinct non-root identities. The installer writes separate MCP and Agent credential files and a credential-free Session Host configuration. A first migration from the shared-identity preview refuses to proceed while legacy tmux sessions are alive, because those processes may still contain the former shared environment.
 
 ## Privacy
 

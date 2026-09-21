@@ -1,23 +1,23 @@
 [Unit]
 Description=DP Beget Bridge agent
-After=network.target
+After=network.target dp-beget-session-host.service
+Wants=dp-beget-session-host.service
 
 [Service]
 Type=simple
-User=__DP_USER__
-Group=__DP_GROUP__
+User=__DP_AGENT_USER__
+Group=__DP_AGENT_GROUP__
+SupplementaryGroups=__DP_IPC_GROUP__
 WorkingDirectory=/opt/dp-beget-bridge
-EnvironmentFile=/etc/dp-beget-bridge/bridge.env
+EnvironmentFile=/etc/dp-beget-bridge/agent.env
 ExecStart=/usr/bin/env node apps/agent/src/index.js
 Restart=on-failure
 RestartSec=3
-# tmux owns the terminals. Restarting this API must not terminate them.
-KillMode=process
 TimeoutStopSec=15
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/dp-beget-bridge __DP_ALLOWED_ROOT__
+ReadWritePaths=/var/lib/dp-beget-bridge-agent __DP_ALLOWED_ROOT__
 
 [Install]
 WantedBy=multi-user.target

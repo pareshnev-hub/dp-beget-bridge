@@ -1,0 +1,28 @@
+[Unit]
+Description=DP Beget Bridge session host
+After=network.target
+Before=dp-beget-agent.service
+
+[Service]
+Type=simple
+User=__DP_WORK_USER__
+Group=__DP_IPC_GROUP__
+SupplementaryGroups=__DP_WORK_GROUP__
+WorkingDirectory=/opt/dp-beget-bridge
+EnvironmentFile=/etc/dp-beget-bridge/session-host.env
+ExecStart=/usr/bin/env node apps/session-host/src/index.js
+Restart=on-failure
+RestartSec=3
+# tmux owns terminal processes. Restarting this API must not terminate them.
+KillMode=process
+TimeoutStopSec=15
+RuntimeDirectory=dp-beget-bridge
+RuntimeDirectoryMode=0750
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/dp-beget-bridge __DP_ALLOWED_ROOT__
+
+[Install]
+WantedBy=multi-user.target

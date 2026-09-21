@@ -4,6 +4,12 @@ All notable changes are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- Split MCP, Agent and restricted work execution into distinct UNIX identities and credential files.
+- Added a standalone Session Host over a filesystem-permissioned UNIX socket; its environment rejects Agent/MCP credentials.
+- Added a preserve-only live-session update policy and migration path for the existing tmux socket/state.
+
 ### Fixed
 
 - Prevented move from pre-deleting an existing destination before a successful rename.
@@ -13,6 +19,7 @@ All notable changes are documented here.
 ### Testing
 
 - Added a real-tmux Agent lifecycle smoke in GitHub Actions covering timeout persistence, Agent restart/reconnect, interactive input and explicit close.
+- Extended the systemd smoke with identity/ACL checks and Session Host restart persistence.
 - Kept systemd/cgroup persistence explicitly outside this initial smoke; DP-002 remains open until disposable systemd evidence is linked.
 
 ### Documentation / planning

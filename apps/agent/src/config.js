@@ -15,6 +15,7 @@ export function loadConfig() {
     port: integer("DP_AGENT_PORT", 8787),
     token: process.env.DP_AGENT_TOKEN || "",
     dataDir,
+    sessionHostSocket: path.resolve(process.env.DP_SESSION_HOST_SOCKET || "/run/dp-beget-bridge/session-host.sock"),
     allowedRoots: (process.env.DP_ALLOWED_ROOTS || process.cwd())
       .split(",")
       .map((value) => value.trim())
