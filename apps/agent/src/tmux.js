@@ -32,9 +32,20 @@ export class TmuxSessionManager {
     return `dpb_${id}`;
   }
 
+  tmuxArgs(args) {
+    return this.config.tmuxSocket ? ["-S", this.config.tmuxSocket, ...args] : args;
+  }
+
+  async ensureSocketDirectory() {
+    if (this.config.tmuxSocket) {
+      await fs.mkdir(path.dirname(this.config.tmuxSocket), { recursive: true, mode: 0o700 });
+    }
+  }
+
   async tmux(args, options = {}) {
     try {
-      return await execFileAsync(this.config.tmuxBin, args, {
+      await this.ensureSocketDirectory();
+      return await execFileAsync(this.config.tmuxBin, this.tmuxArgs(args), {
         maxBuffer: 4 * 1024 * 1024,
         ...options,
       });
@@ -49,7 +60,8 @@ export class TmuxSessionManager {
 
   async isAlive(id) {
     try {
-      await execFileAsync(this.config.tmuxBin, ["has-session", "-t", this.tmuxName(id)]);
+      await this.ensureSocketDirectory();
+      await execFileAsync(this.config.tmuxBin, this.tmuxArgs(["has-session", "-t", this.tmuxName(id)]));
       return true;
     } catch {
       return false;

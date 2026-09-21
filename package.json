@@ -13,6 +13,7 @@
     "start:telemetry": "node apps/telemetry/src/index.js",
     "test": "node --test",
     "test:integration:tmux": "node scripts/integration/agent-tmux-smoke.mjs",
+    "test:integration:systemd": "node scripts/integration/systemd-mcp-lifecycle.mjs",
     "check": "node scripts/check.mjs"
   },
   "dependencies": {

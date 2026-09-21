@@ -79,6 +79,7 @@ if [[ ! -f ${env_file} ]]; then
     printf 'DP_PUBLIC_URL=https://%s\n' "${domain}"
     printf 'DP_DATA_DIR=/var/lib/dp-beget-bridge\n'
     printf 'DP_ALLOWED_ROOTS=%s\n' "${allowed_root}"
+    printf 'DP_TMUX_SOCKET=/var/lib/dp-beget-bridge/tmux/tmux.sock\n'
     printf 'DP_TELEMETRY_ENABLED=%s\n' "${telemetry}"
     printf 'DP_LOG_LEVEL=info\n'
   } > "${env_file}"
