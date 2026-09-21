@@ -28,6 +28,21 @@ DP-015 (does not block runtime while telemetry is OFF)
 
 Do not merge the whole program as one giant PR. Preferred pattern: regression test -> focused fix -> CI/evidence -> close issue.
 
+## Mandatory issue/PR contract
+
+Every implementation issue and PR must record:
+
+- planning ID, priority, milestone and dependencies;
+- user-visible/runtime outcome and explicit non-goals;
+- affected files/modules;
+- acceptance criteria and named `TEST_MATRIX.md` cases;
+- security and privacy considerations;
+- state/config migration impact;
+- rollback or safe-disable behavior;
+- exact commit, CI/integration environment and evidence links.
+
+If an item is not applicable, write `N/A` with a reason rather than omitting it.
+
 ---
 
 ## DP-001 — Prevent destructive move pre-delete
@@ -179,6 +194,14 @@ Acceptance:
 
 Do not put raw commands in operational logs.
 
+Implementation slices (separate PRs where practical):
+1. versioned Operation schema and migration;
+2. SQLite/local state adapter transaction tests;
+3. idempotency key + request fingerprint contract;
+4. per-session single-writer admission;
+5. crash reconciliation and `UNKNOWN` semantics;
+6. sanitized status API and integration evidence.
+
 ---
 
 ## DP-007 — Separate completion status from PTY output
@@ -200,6 +223,12 @@ Acceptance:
 - interactive/exec/exit cases do not fabricate success;
 - status survives transcript-retention changes.
 
+Implementation slices:
+1. select/document the control channel;
+2. write forged-marker and >256 KiB failing regressions;
+3. persist authoritative status independently of transcript;
+4. reconcile restart/crash ambiguity without replay.
+
 ---
 
 ## DP-008 — Preserve archived output and cursor integrity
@@ -220,6 +249,13 @@ Acceptance:
 - readers have independent cursors;
 - UTF-8 boundaries do not corrupt text;
 - expired/rotated cursor returns explicit gap.
+
+Implementation slices:
+1. CLOSED metadata retention and explicit purge;
+2. stream identity/epoch plus absolute byte cursor;
+3. UTF-8 boundary-safe reads and independent-reader tests;
+4. segmented retention/gap contract;
+5. restart and disk-pressure evidence.
 
 ---
 
@@ -245,6 +281,13 @@ Acceptance:
 
 Do not "fix" this only by changing `KillMode`.
 
+Implementation slices:
+1. explicit `dp-mcp`, `dp-agent`, `dp-work` identity/ACL design;
+2. installer refusal of implicit root runtime;
+3. clean work environment and unreadable service secrets;
+4. standalone Session Host and explicit tmux socket;
+5. restart/update/uninstall lifecycle integration tests.
+
 ---
 
 ## DP-010 — Enforce streaming backpressure and disk ceilings
@@ -267,6 +310,13 @@ Acceptance:
 - disk-full does not silently kill terminal process;
 - quota rejects new writes cleanly;
 - output gap/degraded state is explicit.
+
+Implementation slices:
+1. end-to-end pipeline/cancellation primitives;
+2. per-transfer and aggregate concurrency/memory bounds;
+3. transcript/upload budgets and minimum disk reserve;
+4. degraded/gap state contract;
+5. slow-reader, disconnect and disk-pressure evidence.
 
 ---
 

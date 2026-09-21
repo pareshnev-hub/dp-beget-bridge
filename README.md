@@ -18,6 +18,9 @@ Start here:
 - [Audit](docs/audit/AUDIT-2026-09-21.md)
 - [First implementation sprint](docs/audit/FIRST_SPRINT.md)
 - [Release acceptance test matrix](docs/audit/TEST_MATRIX.md)
+- [Finding-to-test traceability](docs/audit/TRACEABILITY.md)
+- [Threat model](docs/THREAT_MODEL.md)
+- [Implementation status](docs/IMPLEMENTATION_STATUS.md)
 - [Work handoff](docs/audit/GITHUB_HANDOFF.md)
 - [Architecture decisions](docs/adr/README.md)
 
@@ -60,7 +63,7 @@ Direct remains available independently of Catalog.
 - Normal runtime is not root-by-default.
 - Service credentials must be separated from restricted shell execution.
 - Arbitrary shell operations are not falsely advertised as exactly-once across crashes.
-- Unsafe file mutation cases are disabled until they can be implemented safely.
+- Unsafe file mutation cases must be disabled as they are identified; the current preview still contains the DP-001 destructive-move defect and must not be treated as safe for production data.
 - Sensitive session content remains local to the VPS except when intentionally returned to the chosen client.
 - Product telemetry is opt-in, coarse and non-blocking.
 - Scale is driven by measured load, not speculative Kubernetes/Redis/broker deployment.
