@@ -13,6 +13,14 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function diagnosticFailure(error) {
+  if (/^HTTP \d{3}$/.test(error?.message || "")) return error.message;
+  const code = error?.code || error?.cause?.code;
+  return code && /^[A-Z0-9_-]{1,40}$/i.test(String(code))
+    ? `unavailable (${code})`
+    : "check failed";
+}
+
 async function eventually(action) {
   const deadline = Date.now() + startupWaitMs;
   let lastError;
@@ -32,7 +40,7 @@ async function check(name, action) {
     const detail = await action();
     checks.push({ name, ok: true, detail });
   } catch (error) {
-    checks.push({ name, ok: false, detail: error.message });
+    checks.push({ name, ok: false, detail: diagnosticFailure(error) });
   }
 }
 

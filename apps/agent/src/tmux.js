@@ -93,7 +93,7 @@ export class TmuxSessionManager {
     ]);
     await this.store.save(session);
     this.telemetry.trackActivity?.();
-    this.logger.info("terminal.opened", { sessionId: id, cwd: resolvedCwd });
+    this.logger.info("terminal.opened", { sessionId: id });
     this.telemetry.track("terminal_opened");
     return { ...session, alive: true };
   }

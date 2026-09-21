@@ -3,6 +3,7 @@ import path from "node:path";
 import { capabilityDocument } from "../../../packages/core/src/contracts.js";
 import { BridgeError } from "../../../packages/core/src/errors.js";
 import { readJson, requireBearer, sendError, sendJson } from "../../../packages/core/src/http.js";
+import { requestRoute } from "../../../packages/core/src/logger.js";
 
 function routeSession(pathname) {
   const match = pathname.match(/^\/v1\/sessions\/([a-zA-Z0-9_-]+)(?:\/(commands|output|input|interrupt))?$/);
@@ -13,6 +14,7 @@ export function createAgentServer({ config, sessions, files, logger }) {
   return http.createServer(async (request, response) => {
     const started = Date.now();
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+    const route = requestRoute(url.pathname);
     try {
       if (request.method === "GET" && url.pathname === "/health") {
         sendJson(response, 200, { status: "ok", product: "DP Beget Bridge", agentId: config.agentId });
@@ -116,16 +118,15 @@ export function createAgentServer({ config, sessions, files, logger }) {
     } catch (error) {
       logger.error("agent.request_failed", {
         method: request.method,
-        path: url.pathname,
+        route,
         code: error.code,
-        message: error.message,
       });
       if (!response.headersSent) sendError(response, error);
       else response.destroy(error);
     } finally {
       logger.debug("agent.request_completed", {
         method: request.method,
-        path: url.pathname,
+        route,
         status: response.statusCode,
         durationMs: Date.now() - started,
       });

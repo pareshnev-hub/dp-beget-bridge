@@ -8,10 +8,17 @@ Agent and MCP services write structured JSON lines to stdout/stderr. Under
 systemd these records are managed by journald. Records include component,
 event, severity, duration, session identifier, and error code. They do not
 include command text, terminal output, file content, bearer tokens, cookies,
-or passwords.
+passwords, raw request URLs, download grants, query strings, filenames or
+filesystem paths. Request logs use fixed route templates, and exception text
+is reduced to a bounded error category rather than copied into records.
+
+The production Caddy example intentionally discards access logs because a
+download grant is carried in the URL path. Operators must not enable raw
+access logging for this virtual host without an equivalent URI redaction
+filter and canary verification.
 
 `DP_LOG_LEVEL` supports `debug`, `info`, `warn`, and `error`. `info` is the
-default. Debug mode is opt-in.
+default. Debug mode is opt-in and uses the same field allowlist.
 
 ## Terminal continuity log
 

@@ -15,6 +15,7 @@ the agent token as an administrator credential for the configured scope.
 - the MCP layer declares tool annotations, but their accuracy and the actual target-client file contract remain an R0002 verification item;
 - symlink traversal outside allowed roots is rejected.
 - telemetry has a code-level field allowlist and is disabled by default.
+- operational logs use a field allowlist and fixed route templates; raw request URLs, exception text, commands, file paths and credentials are excluded.
 
 ## Known technical-preview blockers
 
@@ -27,7 +28,6 @@ The current preview must not be described as a safe public connector. Open block
 - incomplete work/service credential separation and possible implicit root runtime;
 - incomplete outbound attachment URL/SSRF controls;
 - missing hard transcript/disk/output ceilings;
-- log sanitization that does not yet cover every URL/exception/proxy path.
 
 The authoritative finding-to-test mapping is `docs/audit/TRACEABILITY.md`.
 

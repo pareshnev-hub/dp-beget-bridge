@@ -76,7 +76,7 @@ export class FileManager {
       throw error;
     }
     const sha256 = hash.digest("hex");
-    this.logger.info("file.uploaded", { path: destination, size, sha256 });
+    this.logger.info("file.uploaded", { size });
     this.telemetry.track("file_transferred", { direction: "upload", sizeBucket: sizeBucket(size) });
     return { path: destination, size, sha256 };
   }
@@ -103,7 +103,7 @@ export class FileManager {
     const from = this.pathPolicy.resolve(source);
     const to = this.pathPolicy.resolve(destination);
     await fsp.cp(from, to, { recursive: true, force: Boolean(overwrite), errorOnExist: !overwrite });
-    this.logger.info("file.copied", { source: from, destination: to });
+    this.logger.info("file.copied");
     return { source: from, destination: to, copied: true };
   }
 
@@ -141,7 +141,7 @@ export class FileManager {
         409,
       );
     }
-    this.logger.info("file.moved", { source: from, destination: to });
+    this.logger.info("file.moved");
     return { source: from, destination: to, moved: true };
   }
 
@@ -149,7 +149,7 @@ export class FileManager {
     this.telemetry.trackActivity?.();
     const resolved = this.pathPolicy.resolve(candidate);
     await fsp.rm(resolved, { recursive: Boolean(recursive), force: false });
-    this.logger.warn("file.deleted", { path: resolved, recursive: Boolean(recursive) });
+    this.logger.warn("file.deleted", { recursive: Boolean(recursive) });
     return { path: resolved, deleted: true };
   }
 }
