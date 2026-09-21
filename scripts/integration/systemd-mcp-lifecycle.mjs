@@ -402,6 +402,7 @@ try {
   sessionId = opened.id;
   const command = await callTool("run_terminal_command", {
     session_id: sessionId,
+    idempotency_key: `systemd-phase-${suffix}`,
     command: "printf '\\160\\150\\141\\163\\145\\055\\157\\156\\145\\012'; sleep 12; printf '\\160\\150\\141\\163\\145\\055\\164\\167\\157\\012'",
     wait_ms: 50,
   });
@@ -438,6 +439,12 @@ try {
 
   const continued = await waitForTerminalOutput("phase-two");
   assert.match(continued, /phase-one/);
+  const uncertain = await callTool("get_terminal_operation", {
+    session_id: sessionId,
+    operation_id: command.operationId,
+  });
+  assert.equal(uncertain.status, "UNKNOWN", "Session Host restart must not replay an uncertain operation");
+  await callTool("interrupt_terminal", { session_id: sessionId });
   await callTool("send_terminal_input", {
     session_id: sessionId,
     input: "printf '\\151\\156\\164\\145\\162\\141\\143\\164\\151\\166\\145\\055\\157\\153\\012'",
@@ -448,6 +455,7 @@ try {
   const sharedFile = `dp009-shared-${suffix}.txt`;
   const sharedWrite = await callTool("run_terminal_command", {
     session_id: sessionId,
+    idempotency_key: `systemd-shared-${suffix}`,
     command: "printf '\\163\\150\\141\\162\\145\\144\\055\\167\\157\\162\\153\\163\\160\\141\\143\\145\\012' > " + sharedFile,
     wait_ms: 5000,
   });
@@ -464,6 +472,7 @@ try {
   guardSessionId = guard.id;
   const interruptTarget = await callTool("run_terminal_command", {
     session_id: sessionId,
+    idempotency_key: `systemd-interrupt-${suffix}`,
     command: "sleep 30",
     wait_ms: 50,
   });
@@ -478,6 +487,7 @@ try {
   );
   const afterInterrupt = await callTool("run_terminal_command", {
     session_id: sessionId,
+    idempotency_key: `systemd-after-interrupt-${suffix}`,
     command: "printf '\\160\\157\\163\\164\\055\\151\\156\\164\\145\\162\\162\\165\\160\\164\\055\\157\\153\\012'",
     wait_ms: 5000,
   });
@@ -511,6 +521,7 @@ try {
       "TERM-01",
       "TERM-02",
       "TERM-03",
+      "TERM-07",
       "TERM-10",
       "TERM-11",
       "TERM-12",

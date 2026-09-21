@@ -178,6 +178,7 @@ try {
   const command = await request(`/v1/sessions/${sessionId}/commands`, {
     method: "POST",
     body: {
+      idempotencyKey: `agent-smoke-${sessionId}`,
       command: "printf '\\160\\150\\141\\163\\145\\055\\157\\156\\145\\012'; sleep 2; printf '\\160\\150\\141\\163\\145\\055\\164\\167\\157\\012'",
       waitMs: 50,
     },

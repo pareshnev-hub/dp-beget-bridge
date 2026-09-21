@@ -54,8 +54,17 @@ export class SessionHostClient {
 
   list() { return this.request("/v1/sessions").then((result) => result.sessions); }
   open(input) { return this.request("/v1/sessions", "POST", input); }
-  runCommand(id, command, waitMs) {
-    return this.request(`/v1/sessions/${encodeURIComponent(id)}/commands`, "POST", { command, waitMs });
+  runCommand(id, command, waitMs, idempotencyKey) {
+    return this.request(`/v1/sessions/${encodeURIComponent(id)}/commands`, "POST", {
+      command,
+      waitMs,
+      idempotencyKey,
+    });
+  }
+  getOperation(sessionId, operationId) {
+    return this.request(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationId)}`,
+    );
   }
   readOutput(id, cursor, maxBytes) {
     const query = new URLSearchParams({ cursor: String(cursor || 0), maxBytes: String(maxBytes || 65536) });

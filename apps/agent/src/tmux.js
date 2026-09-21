@@ -8,6 +8,7 @@ import { durationBucket } from "./telemetry.js";
 
 const execFileAsync = promisify(execFile);
 const SAFE_ID = /^[a-zA-Z0-9_-]{1,80}$/;
+const SAFE_IDEMPOTENCY_KEY = /^[a-zA-Z0-9._:-]{1,128}$/;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -25,6 +26,8 @@ export class TmuxSessionManager {
     this.logger = logger;
     this.telemetry = telemetry;
     this.largeOutputWarnings = new Set();
+    this.fingerprintKeyPromise = null;
+    this.operationMonitors = new Map();
   }
 
   tmuxName(id) {
@@ -167,17 +170,175 @@ export class TmuxSessionManager {
     }
   }
 
-  async runCommand(id, command, waitMs = this.config.commandWaitMs) {
+  async fingerprintKey() {
+    if (!this.fingerprintKeyPromise) {
+      this.fingerprintKeyPromise = (async () => {
+        const secretPath = path.join(this.store.dataDir, "operation-fingerprint.key");
+        try {
+          const handle = await fs.open(secretPath, "wx", 0o600);
+          try {
+            await handle.writeFile(crypto.randomBytes(32));
+          } finally {
+            await handle.close();
+          }
+        } catch (error) {
+          if (error.code !== "EEXIST") throw error;
+        }
+        const key = await fs.readFile(secretPath);
+        if (key.length !== 32) {
+          throw new BridgeError("operation_fingerprint_key_invalid", "Operation fingerprint key is invalid", 503);
+        }
+        return key;
+      })();
+    }
+    return this.fingerprintKeyPromise;
+  }
+
+  async requestFingerprint(command) {
+    return crypto.createHmac("sha256", await this.fingerprintKey()).update(command, "utf8").digest("hex");
+  }
+
+  publicOperation(operation) {
+    if (!operation) return null;
+    return {
+      operationId: operation.id,
+      sessionId: operation.sessionId,
+      status: operation.status,
+      acceptedAt: operation.acceptedAt,
+      startedAt: operation.startedAt,
+      completedAt: operation.completedAt,
+      exitCode: operation.exitCode,
+      outcomeReason: operation.outcomeReason,
+    };
+  }
+
+  operationState(status) {
+    if (status === "SUCCEEDED" || status === "FAILED") return "completed";
+    return status.toLowerCase();
+  }
+
+  startOperationMonitor(operationId, sessionId, marker, startCursor) {
+    if (this.config.monitorOperations === false || this.operationMonitors.has(operationId)) return;
+    const monitor = (async () => {
+      while (true) {
+        const operation = this.store.getOperation(operationId, sessionId);
+        if (!operation || operation.status !== "RUNNING") return;
+        if (!(await this.isAlive(sessionId))) {
+          this.store.updateOperation(operationId, "UNKNOWN", {
+            completedAt: new Date().toISOString(),
+            outcomeReason: "session_lost_during_operation",
+          });
+          return;
+        }
+        const result = await this.readOutput(sessionId, startCursor, 256 * 1024);
+        const match = result.output.match(new RegExp(`${marker}:(\\d+)`));
+        if (match) {
+          const exitCode = Number(match[1]);
+          this.store.updateOperation(operationId, exitCode === 0 ? "SUCCEEDED" : "FAILED", {
+            completedAt: new Date().toISOString(),
+            exitCode,
+            outcomeReason: exitCode === 0 ? "exit_zero" : "exit_nonzero",
+          });
+          return;
+        }
+        await delay(100);
+      }
+    })().catch((error) => {
+      this.logger.error?.("terminal.operation_monitor_failed", {
+        sessionId,
+        operationId,
+        code: error.code,
+      });
+    }).finally(() => {
+      this.operationMonitors.delete(operationId);
+    });
+    this.operationMonitors.set(operationId, monitor);
+  }
+
+  async operationResponse(operation, { includeOutput = true } = {}) {
+    let output = "";
+    let cursor = operation.startCursor;
+    if (includeOutput) {
+      try {
+        const result = await this.readOutput(operation.sessionId, operation.startCursor, 256 * 1024);
+        output = result.output.replace(new RegExp(`\\n?__DPB_DONE_${operation.id}:\\d+\\r?\\n?`), "");
+        cursor = result.cursor;
+      } catch (error) {
+        if (!["session_not_found", "session_not_running"].includes(error.code)) throw error;
+      }
+    }
+    return {
+      sessionId: operation.sessionId,
+      commandId: operation.id,
+      operationId: operation.id,
+      status: operation.status,
+      state: this.operationState(operation.status),
+      exitCode: operation.exitCode,
+      cursor,
+      output,
+      note: ["ACCEPTED", "RUNNING"].includes(operation.status)
+        ? "The command is still running; the terminal session remains alive."
+        : operation.status === "UNKNOWN"
+          ? "The previous outcome is uncertain after interruption; the command was not replayed."
+          : undefined,
+    };
+  }
+
+  async getOperation(sessionId, operationId) {
+    if (!SAFE_ID.test(operationId)) throw new BridgeError("invalid_operation_id", "Invalid operation ID");
+    const session = await this.store.get(sessionId);
+    if (!session) throw new BridgeError("session_not_found", "Terminal session not found", 404);
+    const operation = this.store.getOperation(operationId, sessionId);
+    if (!operation) throw new BridgeError("operation_not_found", "Managed operation not found", 404);
+    return this.publicOperation(operation);
+  }
+
+  async runCommand(id, command, waitMs = this.config.commandWaitMs, idempotencyKey = undefined) {
     if (typeof command !== "string" || command.trim().length === 0) {
       throw new BridgeError("invalid_command", "Command must be a non-empty string");
     }
     await this.requireSession(id);
-    const commandId = crypto.randomUUID();
-    const marker = `__DPB_DONE_${commandId}`;
+    const operationId = crypto.randomUUID();
+    const effectiveKey = idempotencyKey === undefined ? "" : String(idempotencyKey);
+    if (!SAFE_IDEMPOTENCY_KEY.test(effectiveKey)) {
+      throw new BridgeError(
+        "invalid_idempotency_key",
+        "Idempotency key must contain 1-128 safe ASCII characters",
+      );
+    }
     const startCursor = await this.outputSize(id);
+    const admitted = this.store.admitOperation({
+      id: operationId,
+      sessionId: id,
+      idempotencyKey: effectiveKey,
+      requestFingerprint: await this.requestFingerprint(command),
+      acceptedAt: new Date().toISOString(),
+      startCursor,
+    });
+    if (admitted.duplicate) {
+      this.logger.info("terminal.command_duplicate", {
+        sessionId: id,
+        operationId: admitted.operation.id,
+        status: admitted.operation.status,
+      });
+      return this.operationResponse(admitted.operation);
+    }
+
+    const marker = `__DPB_DONE_${operationId}`;
     const wrapped = `${command}\n__dpb_exit=$?\nprintf '\\n${marker}:%s\\n' "$__dpb_exit"`;
-    await this.paste(id, wrapped, true);
-    this.logger.info("terminal.command_started", { sessionId: id, commandId });
+    const startedAt = new Date().toISOString();
+    this.store.updateOperation(operationId, "RUNNING", { startedAt });
+    try {
+      await this.paste(id, wrapped, true);
+    } catch (error) {
+      this.store.updateOperation(operationId, "UNKNOWN", {
+        completedAt: new Date().toISOString(),
+        outcomeReason: "spawn_result_uncertain",
+      });
+      throw error;
+    }
+    this.logger.info("terminal.command_started", { sessionId: id, operationId });
+    this.startOperationMonitor(operationId, id, marker, startCursor);
 
     const deadline = Date.now() + Math.max(0, Math.min(Number(waitMs) || 0, 30000));
     let result = await this.readOutput(id, startCursor, 256 * 1024);
@@ -186,16 +347,27 @@ export class TmuxSessionManager {
       result = await this.readOutput(id, startCursor, 256 * 1024);
     }
     const match = result.output.match(new RegExp(`${marker}:(\\d+)`));
-    const state = match ? "completed" : "running";
-    this.logger.info(`terminal.command_${state}`, { sessionId: id, commandId, exitCode: match ? Number(match[1]) : null });
-    return {
+    let operation;
+    if (match) {
+      const exitCode = Number(match[1]);
+      operation = this.store.updateOperation(operationId, exitCode === 0 ? "SUCCEEDED" : "FAILED", {
+        completedAt: new Date().toISOString(),
+        exitCode,
+        outcomeReason: exitCode === 0 ? "exit_zero" : "exit_nonzero",
+      });
+    } else {
+      operation = this.store.getOperation(operationId, id);
+    }
+    this.logger.info(`terminal.command_${this.operationState(operation.status)}`, {
       sessionId: id,
-      commandId,
-      state,
-      exitCode: match ? Number(match[1]) : null,
+      operationId,
+      status: operation.status,
+      exitCode: operation.exitCode,
+    });
+    return {
+      ...(await this.operationResponse(operation, { includeOutput: false })),
       cursor: result.cursor,
       output: result.output.replace(new RegExp(`\\n?${marker}:\\d+\\r?\\n?`), ""),
-      note: state === "running" ? "The command is still running; the terminal session remains alive." : undefined,
     };
   }
 
@@ -210,8 +382,9 @@ export class TmuxSessionManager {
   async interrupt(id) {
     await this.requireSession(id);
     await this.tmux(["send-keys", "-t", this.tmuxName(id), "C-c"]);
-    this.logger.warn("terminal.interrupted", { sessionId: id });
-    return { sessionId: id, interrupted: true };
+    const operation = this.store.interruptActiveOperation(id);
+    this.logger.warn("terminal.interrupted", { sessionId: id, operationId: operation?.id });
+    return { sessionId: id, interrupted: true, operation: this.publicOperation(operation) };
   }
 
   async close(id, keepOutput = false) {

@@ -12,6 +12,7 @@ const SAFE_FIELDS = new Set([
   "exitCode",
   "keepOutput",
   "method",
+  "operationId",
   "platform",
   "port",
   "recursive",
@@ -60,6 +61,9 @@ export function requestRoute(pathname, { mcpPath = "/mcp" } = {}) {
   if (pathname === "/v1/sessions") return "/v1/sessions";
   if (/^\/v1\/sessions\/[^/]+(?:\/(commands|output|input|interrupt))?$/.test(pathname)) {
     return pathname.replace(/^\/v1\/sessions\/[^/]+/, "/v1/sessions/:sessionId");
+  }
+  if (/^\/v1\/sessions\/[^/]+\/operations\/[^/]+$/.test(pathname)) {
+    return "/v1/sessions/:sessionId/operations/:operationId";
   }
   if ([
     "/v1/files",

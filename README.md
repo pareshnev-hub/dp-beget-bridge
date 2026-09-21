@@ -10,7 +10,7 @@ DP Beget Bridge keeps terminal sessions on the server instead of inside a single
 
 **0.1.x / RELEASE 0001 is a technical preview. It is not yet the public-ready Direct product.**
 
-A 2026-09-21 architecture/security audit found runtime issues that must be resolved before broader use, including a P0 file-move data-loss case and P1 work around terminal operation lifecycle, file-fetch security, process/credential isolation, transcript/resource controls and real tmux/systemd integration testing.
+A 2026-09-21 architecture/security audit defined the R0002 hardening queue. Current implementation and verification evidence is maintained in `docs/IMPLEMENTATION_STATUS.md`; unresolved work remains around authoritative command completion, transcript/resource controls and the remaining release gates.
 
 Start here:
 - [Roadmap](docs/ROADMAP.md)
@@ -63,7 +63,7 @@ Direct remains available independently of Catalog.
 - Normal runtime is not root-by-default.
 - Service credentials must be separated from restricted shell execution.
 - Arbitrary shell operations are not falsely advertised as exactly-once across crashes.
-- Unsafe file mutation cases must be disabled as they are identified; the current preview still contains the DP-001 destructive-move defect and must not be treated as safe for production data.
+- Unsafe file mutation cases are disabled as they are identified; verified fixes do not make the technical preview production-ready before the full R0002 gate passes.
 - Sensitive session content remains local to the VPS except when intentionally returned to the chosen client.
 - Product telemetry is opt-in, coarse and non-blocking.
 - Scale is driven by measured load, not speculative Kubernetes/Redis/broker deployment.

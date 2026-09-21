@@ -38,6 +38,7 @@ function shutdown(signal) {
   logger.info("session_host.stopping", { signal });
   server.close(async () => {
     await fs.rm(config.socketPath, { force: true }).catch(() => {});
+    store.close();
     process.exit(0);
   });
   setTimeout(() => process.exit(1), 5000).unref();

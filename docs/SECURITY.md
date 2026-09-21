@@ -16,6 +16,7 @@ the agent token as an administrator credential for the configured scope.
 - symlink traversal outside allowed roots is rejected, and mutation parents are pinned with `O_NOFOLLOW` before the filesystem commit.
 - telemetry has a code-level field allowlist and is disabled by default.
 - operational logs use a field allowlist and fixed route templates; raw request URLs, exception text, commands, file paths and credentials are excluded.
+- managed commands use a local SQLite ledger, one active writer per session and HMAC-protected fingerprints; retries with the same key do not spawn twice, conflicting payloads fail closed, and restart ambiguity becomes `UNKNOWN` without replay.
 
 ## Known technical-preview blockers
 
@@ -23,7 +24,7 @@ The current preview must not be described as a safe public connector. Open block
 
 - destructive destination pre-delete in the current move implementation;
 - DP-005 workspace-mutation evidence must remain linked before public exposure;
-- stdout-marker-based command completion and no durable single-writer operation ledger;
+- command completion is still stdout-marker-based until DP-007; the DP-006 ledger intentionally reports restart ambiguity as `UNKNOWN` instead of replaying;
 - unproven real tmux/systemd persistence behavior;
 - incomplete work/service credential separation and possible implicit root runtime;
 - external attachment fetch is restricted by the versioned policy in

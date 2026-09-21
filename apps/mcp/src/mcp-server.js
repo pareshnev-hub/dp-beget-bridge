@@ -77,10 +77,28 @@ export function createBridgeMcpServer({ agent, downloads, config, requestSignal 
       session_id: z.string(),
       command: z.string().min(1),
       wait_ms: z.number().int().min(0).max(30000).optional(),
+      idempotency_key: z.string().regex(/^[a-zA-Z0-9._:-]{1,128}$/)
+        .describe("Stable key for safe retries of the same command in this session."),
     },
     annotations: shellAccess,
-  }, async ({ session_id, command, wait_ms }) => textResult(
-    await agent.runCommand(session_id, { command, waitMs: wait_ms }),
+  }, async ({ session_id, command, wait_ms, idempotency_key }) => textResult(
+    await agent.runCommand(session_id, {
+      command,
+      waitMs: wait_ms,
+      idempotencyKey: idempotency_key,
+    }),
+  ));
+
+  server.registerTool("get_terminal_operation", {
+    title: "Get terminal operation status",
+    description: "Read durable managed-command status without returning command text or a request fingerprint.",
+    inputSchema: {
+      session_id: z.string(),
+      operation_id: z.string(),
+    },
+    annotations: readOnly,
+  }, async ({ session_id, operation_id }) => textResult(
+    await agent.getOperation(session_id, operation_id),
   ));
 
   server.registerTool("read_terminal", {

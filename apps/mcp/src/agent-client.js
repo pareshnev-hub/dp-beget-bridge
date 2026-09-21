@@ -44,6 +44,11 @@ export class AgentClient {
   listSessions() { return this.json("/v1/sessions"); }
   openTerminal(input) { return this.json("/v1/sessions", "POST", input); }
   runCommand(id, input) { return this.json(`/v1/sessions/${encodeURIComponent(id)}/commands`, "POST", input); }
+  getOperation(sessionId, operationId) {
+    return this.json(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationId)}`,
+    );
+  }
   readOutput(id, cursor, maxBytes) {
     const query = new URLSearchParams({ cursor: String(cursor || 0), maxBytes: String(maxBytes || 65536) });
     return this.json(`/v1/sessions/${encodeURIComponent(id)}/output?${query}`);
