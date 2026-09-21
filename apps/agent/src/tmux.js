@@ -343,7 +343,7 @@ export class TmuxSessionManager {
     }
     const completionPath = this.store.operationCompletionPath(id, operationId);
     const completionPartPath = this.store.operationCompletionPartPath(id, operationId);
-    const wrapped = `eval -- ${shellQuote(command)}\n__dpb_exit=$?\n( umask 077; printf '%s\\n' "$__dpb_exit" > ${shellQuote(completionPartPath)} && mv -f -- ${shellQuote(completionPartPath)} ${shellQuote(completionPath)} )`;
+    const wrapped = `eval -- ${shellQuote(command)}; __dpb_exit=$?; ( umask 077; printf '%s\\n' "$__dpb_exit" > ${shellQuote(completionPartPath)} && mv -f -- ${shellQuote(completionPartPath)} ${shellQuote(completionPath)} )`;
     const startedAt = new Date().toISOString();
     this.store.updateOperation(operationId, "RUNNING", { startedAt });
     try {

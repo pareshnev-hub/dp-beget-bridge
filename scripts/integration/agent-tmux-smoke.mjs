@@ -235,7 +235,7 @@ try {
     method: "POST",
     body: {
       idempotencyKey: `term09-${sessionId}`,
-      command: "yes x | head -c 300000; false",
+      command: "head -c 200000 /dev/zero | base64 -w0; false",
       waitMs: 50,
     },
   });
