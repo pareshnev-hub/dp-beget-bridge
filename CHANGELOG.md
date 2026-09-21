@@ -13,6 +13,7 @@ All notable changes are documented here.
 
 ### Fixed
 
+- Aligned ChatGPT file inputs with the dated OpenAI contract: required `download_url`/`file_id`, optional `mime_type`/`file_name`, safe filename fallback, honest overwrite annotations and declared file-result schemas.
 - Prevented move from pre-deleting an existing destination before a successful rename.
 - Defined same-path move as a non-destructive no-op and disabled unsafe cross-device fallback.
 - Added FILE-01, FILE-02, FILE-03 and FILE-09 data-loss regression coverage for DP-001.
@@ -21,6 +22,7 @@ All notable changes are documented here.
 
 ### Testing
 
+- Added a versioned DP-003 compatibility fixture and MCP descriptor/call assertions for required identity, optional metadata and structured output.
 - Added a real-tmux Agent lifecycle smoke in GitHub Actions covering timeout persistence, Agent restart/reconnect, interactive input and explicit close.
 - Extended the systemd smoke with identity/ACL checks and Session Host restart persistence.
 - Kept systemd/cgroup persistence explicitly outside this initial smoke; DP-002 remains open until disposable systemd evidence is linked.

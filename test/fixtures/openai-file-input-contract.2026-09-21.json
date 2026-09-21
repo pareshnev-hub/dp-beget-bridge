@@ -1,0 +1,21 @@
+{
+  "source": "OpenAI Plugins Reference — Define file inputs",
+  "source_url": "https://developers.openai.com/plugins/reference#define-file-inputs",
+  "captured_at": "2026-09-21",
+  "target_client": {
+    "name": "ChatGPT plugin host",
+    "contract_snapshot": "openai-plugins-reference@2026-09-21",
+    "mcp_protocol_version": "2025-06-18"
+  },
+  "file_object": {
+    "properties": ["download_url", "file_id", "mime_type", "file_name"],
+    "required": ["download_url", "file_id"],
+    "optional": ["mime_type", "file_name"]
+  },
+  "sample": {
+    "download_url": "https://files.example.test/download/opaque",
+    "file_id": "file_dp003_fixture",
+    "mime_type": "text/plain",
+    "file_name": "fixture.txt"
+  }
+}

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -6,9 +7,42 @@ const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: t
 const mutating = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 const destructive = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
 const shellAccess = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
+const externalDestructive = { ...destructive, openWorldHint: true };
+
+const openAiFile = z.object({
+  download_url: z.string().url(),
+  file_id: z.string(),
+  mime_type: z.string().optional(),
+  file_name: z.string().optional(),
+}).strict();
+
+const fileEntry = z.object({
+  name: z.string(),
+  path: z.string(),
+  type: z.enum(["directory", "file", "other"]),
+  size: z.number().int().nonnegative(),
+  modifiedAt: z.string(),
+}).strict();
+
+const transferredFile = z.object({
+  path: z.string(),
+  size: z.number().int().nonnegative(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
 
 function textResult(value) {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }], structuredContent: value };
+}
+
+function attachmentName(file) {
+  const supplied = file.file_name
+    ?.replaceAll("\\", "/")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim();
+  const safe = supplied ? path.posix.basename(supplied) : "";
+  if (safe && safe !== "." && safe !== "..") return safe;
+  const identity = crypto.createHash("sha256").update(file.file_id).digest("hex").slice(0, 16);
+  return `attachment-${identity}`;
 }
 
 export function createBridgeMcpServer({ agent, downloads, config }) {
@@ -91,6 +125,7 @@ export function createBridgeMcpServer({ agent, downloads, config }) {
     title: "List server files",
     description: "List files and directories within configured allowed roots.",
     inputSchema: { path: z.string().optional().default(".") },
+    outputSchema: { path: z.string(), entries: z.array(fileEntry) },
     annotations: readOnly,
   }, async ({ path: candidate }) => textResult(await agent.listFiles(candidate)));
 
@@ -98,22 +133,17 @@ export function createBridgeMcpServer({ agent, downloads, config }) {
     title: "Upload files to server",
     description: "Transfer files attached in ChatGPT to the connected server using atomic writes.",
     inputSchema: {
-      files: z.array(z.object({
-        download_url: z.string().url(),
-        file_id: z.string().optional(),
-        filename: z.string(),
-        mime_type: z.string().optional(),
-      })).min(1),
+      files: z.array(openAiFile).min(1),
       destination_directory: z.string().default("."),
       overwrite: z.boolean().optional().default(false),
     },
-    annotations: mutating,
+    outputSchema: { uploaded: z.array(transferredFile) },
+    annotations: externalDestructive,
     _meta: { "openai/fileParams": ["files"] },
   }, async ({ files, destination_directory, overwrite }) => {
     const uploaded = [];
     for (const file of files) {
-      const safeName = path.basename(file.filename).replaceAll("\0", "");
-      if (!safeName || safeName === "." || safeName === "..") throw new Error("Invalid attachment filename");
+      const safeName = attachmentName(file);
       const destination = path.posix.join(destination_directory.replaceAll("\\", "/"), safeName);
       uploaded.push(await agent.uploadFromUrl(file, destination, overwrite));
     }
@@ -124,6 +154,7 @@ export function createBridgeMcpServer({ agent, downloads, config }) {
     title: "Download a server file",
     description: "Create a short-lived download link for a file on the connected server.",
     inputSchema: { path: z.string() },
+    outputSchema: { uri: z.string().url(), expiresAt: z.string() },
     annotations: readOnly,
   }, async ({ path: candidate }) => {
     const { token, expiresAt } = downloads.issue(candidate);
@@ -141,13 +172,20 @@ export function createBridgeMcpServer({ agent, downloads, config }) {
     title: "Copy a server path",
     description: "Copy a file or directory within configured allowed roots.",
     inputSchema: { source: z.string(), destination: z.string(), overwrite: z.boolean().optional().default(false) },
-    annotations: mutating,
+    outputSchema: { source: z.string(), destination: z.string(), copied: z.boolean() },
+    annotations: destructive,
   }, async (input) => textResult(await agent.copyPath(input)));
 
   server.registerTool("move_path", {
     title: "Move a server path",
     description: "Move or rename a file or directory within configured allowed roots.",
     inputSchema: { source: z.string(), destination: z.string(), overwrite: z.boolean().optional().default(false) },
+    outputSchema: {
+      source: z.string(),
+      destination: z.string(),
+      moved: z.boolean(),
+      reason: z.literal("same_path").optional(),
+    },
     annotations: destructive,
   }, async (input) => textResult(await agent.movePath(input)));
 
@@ -155,6 +193,7 @@ export function createBridgeMcpServer({ agent, downloads, config }) {
     title: "Delete a server path",
     description: "Delete a file, or a directory only when recursive is explicitly true.",
     inputSchema: { path: z.string(), recursive: z.boolean().optional().default(false) },
+    outputSchema: { path: z.string(), deleted: z.boolean() },
     annotations: destructive,
   }, async ({ path: candidate, recursive }) => textResult(await agent.deletePath(candidate, recursive)));
 
