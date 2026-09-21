@@ -23,3 +23,47 @@ test("uses an explicit tmux socket and prepares its persistent directory", async
   await manager.ensureSocketDirectory();
   assert.equal((await fs.stat(path.dirname(socket))).isDirectory(), true);
 });
+
+test("submits text and Enter in one paste-buffer payload", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-tmux-paste-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const manager = new TmuxSessionManager({
+    config: {},
+    store: { sessionDir() { return root; } },
+    pathPolicy: {},
+    logger: {},
+  });
+  manager.requireSession = async () => ({ id: "session-1" });
+  const calls = [];
+  let payload;
+  manager.tmux = async (args) => {
+    calls.push(args);
+    if (args[0] === "load-buffer") payload = await fs.readFile(args.at(-1), "utf8");
+  };
+
+  await manager.paste("session-1", "printf atomic", true);
+
+  assert.equal(payload, "printf atomic\n");
+  assert.deepEqual(calls.map((args) => args[0]), ["load-buffer", "paste-buffer"]);
+  assert.equal(calls.some((args) => args[0] === "send-keys"), false);
+});
+
+test("does not add Enter when input submission disables it", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-tmux-paste-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const manager = new TmuxSessionManager({
+    config: {},
+    store: { sessionDir() { return root; } },
+    pathPolicy: {},
+    logger: {},
+  });
+  manager.requireSession = async () => ({ id: "session-1" });
+  let payload;
+  manager.tmux = async (args) => {
+    if (args[0] === "load-buffer") payload = await fs.readFile(args.at(-1), "utf8");
+  };
+
+  await manager.paste("session-1", "partial input", false);
+
+  assert.equal(payload, "partial input");
+});

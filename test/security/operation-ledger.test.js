@@ -155,14 +155,16 @@ test("TERM-08: forged PTY completion text cannot complete an operation", async (
   assert.equal(store.getOperation(result.operationId, session.id).status, "RUNNING");
 });
 
-test("completion capture is submitted on the same shell line as the command", async (t) => {
+test("completion capture is submitted on one shell line in one Enter-terminated paste", async (t) => {
   const { manager } = await fixture(t);
   let pasted = "";
-  manager.paste = async (_id, text) => { pasted = text; };
+  let enter;
+  manager.paste = async (_id, text, submit) => { pasted = text; enter = submit; };
 
   await manager.runCommand(session.id, "printf atomic", 0, "single-line-control-suffix");
   assert.equal(pasted.includes("\n__dpb_exit"), false);
   assert.match(pasted, /; __dpb_exit=\$\?; \( umask 077;/);
+  assert.equal(enter, true);
 });
 
 test("TERM-09: authoritative failure survives output beyond the transcript response ceiling", async (t) => {
