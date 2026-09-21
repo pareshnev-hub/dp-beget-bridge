@@ -21,7 +21,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Release | Status | Evidence / next gate |
 |---|---|---|
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
-| R0002 Core Safety & Persistent Runtime | IN PROGRESS | DP-001 verified; real Agent/tmux smoke merged; complete remaining DP-002 and DP-003–DP-011 gates |
+| R0002 Core Safety & Persistent Runtime | IN PROGRESS | DP-001 and DP-002 verified; complete DP-003–DP-011 and remaining R0002 gates |
 | R0003 Working Direct / Private Beta | PLANNED | requires verified R0002 and real-client OAuth/E2E evidence |
 | R0004 Public Direct 1.0 | PLANNED | requires verified R0003, reproducible lifecycle and independent security gate |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
@@ -33,7 +33,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Planning ID | GitHub | Priority | Release | Status | Verification gate |
 |---|---:|---:|---:|---|---|
 | DP-001 Prevent destructive move pre-delete | #1 | P0 | R0002 | VERIFIED | `e220903`; FILE-01/02/03/09; main CI run 35616705022 |
-| DP-002 Source-linked baseline and real runtime CI | #2 | P1 | R0002 | IN PROGRESS | `2c4a7c2`; real Agent/tmux smoke passed; systemd/MCP restart evidence remains |
+| DP-002 Source-linked baseline and real runtime CI | #2 | P1 | R0002 | VERIFIED | `aab7a90`; PR #21; TERM-01/02/03/10/12; main CI run 35619553887 |
 | DP-003 Align file schemas/descriptors | #3 | P1 | R0002 | PLANNED | target-client contract tests |
 | DP-004 Bound file fetch / SSRF | #4 | P1 | R0002 | PLANNED | SSRF-01…08 |
 | DP-005 Safe workspace mutations | #5 | P1 | R0002 | PLANNED | FILE-04…09 |
