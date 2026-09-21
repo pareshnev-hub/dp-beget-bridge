@@ -158,7 +158,6 @@ function createAbortScope(externalSignal, timeoutMs) {
     timeout = true;
     controller.abort(failure("attachment_timeout", "Attachment transfer exceeded its deadline", 504));
   }, timeoutMs);
-  timer.unref?.();
   return {
     signal: controller.signal,
     abort(reason) { if (!controller.signal.aborted) controller.abort(reason); },
