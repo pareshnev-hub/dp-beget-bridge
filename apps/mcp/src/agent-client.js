@@ -1,7 +1,10 @@
+import { BridgeError } from "../../../packages/core/src/errors.js";
+
 export class AgentClient {
-  constructor({ baseUrl, token }) {
+  constructor({ baseUrl, token, attachmentFetcher }) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.token = token;
+    this.attachmentFetcher = attachmentFetcher;
   }
 
   async request(path, options = {}) {
@@ -59,15 +62,22 @@ export class AgentClient {
   downloadPath(candidate) {
     return this.request(`/v1/files/content?path=${encodeURIComponent(candidate)}`);
   }
-  async uploadFromUrl(file, destination, overwrite) {
-    const source = await fetch(file.download_url);
-    if (!source.ok || !source.body) throw new Error(`Unable to download attached file: ${source.status}`);
-    const query = new URLSearchParams({ path: destination, overwrite: String(Boolean(overwrite)) });
-    const response = await this.request(`/v1/files/content?${query}`, {
-      method: "PUT",
-      body: source.body,
-      headers: file.mime_type ? { "content-type": file.mime_type } : {},
-    });
-    return response.json();
+  async uploadFromUrl(file, destination, overwrite, { signal } = {}) {
+    if (!this.attachmentFetcher) {
+      throw new BridgeError("attachment_fetch_disabled", "External attachment fetch is disabled", 503);
+    }
+    const source = await this.attachmentFetcher.fetch(file.download_url, { signal });
+    try {
+      const query = new URLSearchParams({ path: destination, overwrite: String(Boolean(overwrite)) });
+      const response = await this.request(`/v1/files/content?${query}`, {
+        method: "PUT",
+        body: source.body,
+        signal: source.signal,
+        headers: { "content-type": file.mime_type || "application/octet-stream" },
+      });
+      return response.json();
+    } finally {
+      source.dispose();
+    }
   }
 }

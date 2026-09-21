@@ -19,6 +19,14 @@ export function createMcpHttpServer({ config, agent, downloads, logger }) {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
     const route = requestRoute(url.pathname, { mcpPath: config.path });
     const started = Date.now();
+    const requestAbort = new AbortController();
+    const abortRequest = () => {
+      if (!requestAbort.signal.aborted) requestAbort.abort(new Error("MCP client disconnected"));
+    };
+    request.once("aborted", abortRequest);
+    response.once("close", () => {
+      if (!response.writableEnded) abortRequest();
+    });
     try {
       if (request.method === "GET" && url.pathname === "/health") {
         sendJson(response, 200, { status: "ok", product: "DP Beget Bridge" });
@@ -61,7 +69,7 @@ export function createMcpHttpServer({ config, agent, downloads, logger }) {
       }
 
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-      const mcp = createBridgeMcpServer({ agent, downloads, config });
+      const mcp = createBridgeMcpServer({ agent, downloads, config, requestSignal: requestAbort.signal });
       await mcp.connect(transport);
       response.on("close", () => {
         transport.close().catch(() => {});
@@ -70,6 +78,7 @@ export function createMcpHttpServer({ config, agent, downloads, logger }) {
       await transport.handleRequest(request, response);
     } catch (error) {
       logger.error("mcp.request_failed", { method: request.method, route, code: error.code });
+      if (response.destroyed) return;
       if (!response.headersSent) sendJson(response, 500, { error: { code: "internal_error", message: "Internal server error" } });
       else response.destroy(error);
     } finally {

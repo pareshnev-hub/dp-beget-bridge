@@ -6,6 +6,7 @@ All notable changes are documented here.
 
 ### Security
 
+- Added fail-closed HTTPS attachment fetching with DNS/IP pinning, redirect revalidation, private-address denial, deadlines, byte/concurrency ceilings and disconnect cancellation.
 - Split MCP, Agent and restricted work execution into distinct UNIX identities and credential files.
 - Added a standalone Session Host over a filesystem-permissioned UNIX socket; its environment rejects Agent/MCP credentials.
 - Added a preserve-only live-session update policy and migration path for the existing tmux socket/state.
@@ -22,6 +23,7 @@ All notable changes are documented here.
 
 ### Testing
 
+- Added SSRF-01 through SSRF-08 coverage plus DNS-deadline, mixed-answer, credential-isolation and bounded-concurrency assertions.
 - Added a versioned DP-003 compatibility fixture and MCP descriptor/call assertions for required identity, optional metadata and structured output.
 - Added a real-tmux Agent lifecycle smoke in GitHub Actions covering timeout persistence, Agent restart/reconnect, interactive input and explicit close.
 - Extended the systemd smoke with identity/ACL checks and Session Host restart persistence.

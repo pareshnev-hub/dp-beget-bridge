@@ -145,3 +145,66 @@ test("DP-003: file descriptors and results match the captured ChatGPT contract",
   assert.equal(rejectedMissingIdentity, true, "file_id must be enforced at the protocol boundary");
   assert.equal(uploaded.length, 1, "invalid file input must not reach the Agent");
 });
+
+test("SSRF-07: aborting the MCP HTTP request reaches attachment transfer cancellation", async (t) => {
+  let transferStarted;
+  let transferSignal;
+  const started = new Promise((resolve) => { transferStarted = resolve; });
+  const config = {
+    path: "/mcp",
+    publicUrl: "https://bridge.example.test",
+    accessToken: "c".repeat(32),
+  };
+  const cancellingAgent = {
+    uploadFromUrl(_file, _destination, _overwrite, { signal }) {
+      transferSignal = signal;
+      transferStarted();
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    },
+  };
+  const server = createMcpHttpServer({
+    config,
+    agent: cancellingAgent,
+    downloads: new DownloadTokenStore({ ttlMs: 1000 }),
+    logger,
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const { port } = server.address();
+  const request = new AbortController();
+  const pending = fetch(`http://127.0.0.1:${port}/mcp`, {
+    method: "POST",
+    signal: request.signal,
+    headers: {
+      authorization: `Bearer ${config.accessToken}`,
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "tools/call",
+      params: {
+        name: "upload_files",
+        arguments: {
+          files: [{ download_url: "https://public.example/file", file_id: "file_cancel" }],
+        },
+      },
+    }),
+  });
+  await Promise.race([
+    started,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("attachment transfer did not start")), 1000)),
+  ]);
+  request.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  if (!transferSignal.aborted) {
+    await Promise.race([
+      new Promise((resolve) => transferSignal.addEventListener("abort", resolve, { once: true })),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("transfer signal was not aborted")), 1000)),
+    ]);
+  }
+  assert.equal(transferSignal.aborted, true);
+});

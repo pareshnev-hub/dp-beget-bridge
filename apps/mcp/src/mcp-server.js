@@ -45,7 +45,7 @@ function attachmentName(file) {
   return `attachment-${identity}`;
 }
 
-export function createBridgeMcpServer({ agent, downloads, config }) {
+export function createBridgeMcpServer({ agent, downloads, config, requestSignal }) {
   const server = new McpServer({ name: "dp-beget-bridge", version: "0.1.0" });
 
   server.registerTool("get_bridge_status", {
@@ -140,12 +140,13 @@ export function createBridgeMcpServer({ agent, downloads, config }) {
     outputSchema: { uploaded: z.array(transferredFile) },
     annotations: externalDestructive,
     _meta: { "openai/fileParams": ["files"] },
-  }, async ({ files, destination_directory, overwrite }) => {
+  }, async ({ files, destination_directory, overwrite }, { signal }) => {
+    const transferSignal = requestSignal ? AbortSignal.any([signal, requestSignal]) : signal;
     const uploaded = [];
     for (const file of files) {
       const safeName = attachmentName(file);
       const destination = path.posix.join(destination_directory.replaceAll("\\", "/"), safeName);
-      uploaded.push(await agent.uploadFromUrl(file, destination, overwrite));
+      uploaded.push(await agent.uploadFromUrl(file, destination, overwrite, { signal: transferSignal }));
     }
     return textResult({ uploaded });
   });
