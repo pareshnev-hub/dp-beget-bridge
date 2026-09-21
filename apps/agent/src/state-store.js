@@ -58,7 +58,7 @@ export class StateStore {
     }
     if (currentVersion < SCHEMA_VERSION) await this.migrate(currentVersion);
     await this.importLegacySessions();
-    this.reconcileUncertainOperations();
+    await this.reconcileUncertainOperations();
   }
 
   close() {
@@ -185,12 +185,35 @@ export class StateStore {
     }
   }
 
-  reconcileUncertainOperations() {
-    this.db.prepare(`
-      UPDATE operations
-      SET status = 'UNKNOWN', completed_at = ?, outcome_reason = 'session_host_restart'
-      WHERE status IN ('ACCEPTED', 'RUNNING')
-    `).run(new Date().toISOString());
+  async reconcileUncertainOperations() {
+    const active = this.db.prepare(`
+      SELECT * FROM operations WHERE status IN ('ACCEPTED', 'RUNNING')
+    `).all().map(operationFromRow);
+    for (const operation of active) {
+      let completion;
+      try {
+        completion = await this.readOperationCompletion(operation.sessionId, operation.id);
+      } catch (error) {
+        if (error.code !== "operation_completion_invalid") throw error;
+        this.updateOperation(operation.id, "UNKNOWN", {
+          completedAt: new Date().toISOString(),
+          outcomeReason: "control_record_invalid",
+        });
+        continue;
+      }
+      if (completion) {
+        this.updateOperation(operation.id, completion.exitCode === 0 ? "SUCCEEDED" : "FAILED", {
+          completedAt: completion.completedAt,
+          exitCode: completion.exitCode,
+          outcomeReason: completion.exitCode === 0 ? "exit_zero" : "exit_nonzero",
+        });
+      } else {
+        this.updateOperation(operation.id, "UNKNOWN", {
+          completedAt: new Date().toISOString(),
+          outcomeReason: "session_host_restart",
+        });
+      }
+    }
   }
 
   sessionDir(id) {
@@ -203,6 +226,45 @@ export class StateStore {
 
   outputPath(id) {
     return path.join(this.sessionDir(id), "terminal.log");
+  }
+
+  operationsDir(id) {
+    return path.join(this.sessionDir(id), "operations");
+  }
+
+  operationCompletionPath(sessionId, operationId) {
+    return path.join(this.operationsDir(sessionId), `${operationId}.exit`);
+  }
+
+  operationCompletionPartPath(sessionId, operationId) {
+    return `${this.operationCompletionPath(sessionId, operationId)}.part`;
+  }
+
+  async prepareOperationCompletion(sessionId, operationId) {
+    await fs.mkdir(this.operationsDir(sessionId), { recursive: true, mode: 0o700 });
+    await fs.rm(this.operationCompletionPath(sessionId, operationId), { force: true });
+    await fs.rm(this.operationCompletionPartPath(sessionId, operationId), { force: true });
+  }
+
+  async readOperationCompletion(sessionId, operationId) {
+    const completionPath = this.operationCompletionPath(sessionId, operationId);
+    try {
+      const [raw, stat] = await Promise.all([
+        fs.readFile(completionPath, "utf8"),
+        fs.stat(completionPath),
+      ]);
+      if (!/^(0|[1-9]\d{0,2})\n?$/.test(raw)) {
+        throw new BridgeError("operation_completion_invalid", "Operation completion record is invalid", 503);
+      }
+      const exitCode = Number.parseInt(raw, 10);
+      if (exitCode > 255) {
+        throw new BridgeError("operation_completion_invalid", "Operation completion record is invalid", 503);
+      }
+      return { exitCode, completedAt: stat.mtime.toISOString() };
+    } catch (error) {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    }
   }
 
   async save(session) {

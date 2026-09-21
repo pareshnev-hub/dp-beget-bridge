@@ -129,25 +129,112 @@ test("operation status and logs omit raw commands and protected fingerprints", a
 test("a timed-out operation is completed asynchronously and releases the session writer", async (t) => {
   const { manager, store } = await fixture(t);
   manager.config.monitorOperations = true;
-  let marker = "";
-  let finished = false;
-  manager.paste = async (_id, text) => {
-    marker = text.match(/__DPB_DONE_[a-f0-9-]+/)?.[0] || "";
-  };
-  manager.readOutput = async () => ({
-    sessionId: session.id,
-    alive: true,
-    cursor: finished ? 32 : 0,
-    output: finished ? `${marker}:0\n` : "",
-    truncated: false,
-  });
+  manager.paste = async () => {};
 
   const started = await manager.runCommand(session.id, "sleep 1", 0, "background-monitor");
   assert.equal(started.status, "RUNNING");
-  finished = true;
+  await fs.writeFile(store.operationCompletionPath(session.id, started.operationId), "0\n", { mode: 0o600 });
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(store.getOperation(started.operationId, session.id).status, "SUCCEEDED");
   assert.equal(store.activeOperation(session.id), null);
+});
+
+test("TERM-08: forged PTY completion text cannot complete an operation", async (t) => {
+  const { manager, store } = await fixture(t);
+  manager.readOutput = async () => ({
+    sessionId: session.id,
+    alive: true,
+    cursor: 80,
+    output: "__DPB_DONE_forged:0\nRESULT: success\n",
+    truncated: false,
+  });
+
+  const result = await manager.runCommand(session.id, "printf forged", 0, "term08-forged-output");
+  assert.equal(result.status, "RUNNING");
+  assert.equal(result.exitCode, null);
+  assert.equal(store.getOperation(result.operationId, session.id).status, "RUNNING");
+});
+
+test("TERM-09: authoritative failure survives output beyond the transcript response ceiling", async (t) => {
+  const { manager, store } = await fixture(t);
+  manager.config.monitorOperations = true;
+  const largeOutput = "x".repeat(256 * 1024);
+  manager.readOutput = async () => ({
+    sessionId: session.id,
+    alive: true,
+    cursor: largeOutput.length,
+    output: largeOutput,
+    truncated: true,
+  });
+  manager.paste = async () => {
+    const operation = store.activeOperation(session.id);
+    await fs.writeFile(store.operationCompletionPath(session.id, operation.id), "7\n", { mode: 0o600 });
+  };
+
+  const result = await manager.runCommand(session.id, "large-output-command", 500, "term09-large-output");
+  assert.equal(result.status, "FAILED");
+  assert.equal(result.exitCode, 7);
+  assert.equal(result.output.length, 256 * 1024);
+});
+
+test("completion status remains available after transcript removal", async (t) => {
+  const { manager, store } = await fixture(t);
+  manager.config.monitorOperations = true;
+  manager.paste = async () => {
+    const operation = store.activeOperation(session.id);
+    await fs.writeFile(store.operationCompletionPath(session.id, operation.id), "0\n", { mode: 0o600 });
+  };
+
+  const result = await manager.runCommand(session.id, "printf retained", 500, "transcript-independent");
+  assert.equal(result.status, "SUCCEEDED");
+  await fs.rm(store.outputPath(session.id));
+  assert.equal((await manager.getOperation(session.id, result.operationId)).status, "SUCCEEDED");
+});
+
+test("restart reconciles an atomic completion record without replay", async (t) => {
+  const { dataDir, store, manager } = await fixture(t);
+  const started = await manager.runCommand(session.id, "printf complete", 0, "completed-before-restart");
+  await fs.writeFile(store.operationCompletionPath(session.id, started.operationId), "0\n", { mode: 0o600 });
+  store.close();
+
+  const recoveredStore = new StateStore(dataDir);
+  await recoveredStore.init();
+  t.after(() => recoveredStore.close());
+  const recovered = recoveredStore.getOperation(started.operationId, session.id);
+  assert.equal(recovered.status, "SUCCEEDED");
+  assert.equal(recovered.exitCode, 0);
+  assert.equal(recovered.outcomeReason, "exit_zero");
+});
+
+test("invalid control records fail closed to UNKNOWN", async (t) => {
+  const { dataDir, store, manager } = await fixture(t);
+  const started = await manager.runCommand(session.id, "printf uncertain", 0, "invalid-control-record");
+  await fs.writeFile(store.operationCompletionPath(session.id, started.operationId), "forged\n", { mode: 0o600 });
+  store.close();
+
+  const recoveredStore = new StateStore(dataDir);
+  await recoveredStore.init();
+  t.after(() => recoveredStore.close());
+  const recovered = recoveredStore.getOperation(started.operationId, session.id);
+  assert.equal(recovered.status, "UNKNOWN");
+  assert.equal(recovered.exitCode, null);
+  assert.equal(recovered.outcomeReason, "control_record_invalid");
+});
+
+test("exit without a control record becomes UNKNOWN and never fabricates success", async (t) => {
+  const { manager, store } = await fixture(t);
+  manager.config.monitorOperations = true;
+  let alive = true;
+  manager.isAlive = async () => alive;
+
+  const started = await manager.runCommand(session.id, "exit 7", 0, "exit-without-record");
+  assert.equal(started.status, "RUNNING");
+  alive = false;
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const final = store.getOperation(started.operationId, session.id);
+  assert.equal(final.status, "UNKNOWN");
+  assert.equal(final.exitCode, null);
+  assert.equal(final.outcomeReason, "session_lost_during_operation");
 });
 
 test("state migration imports legacy sessions, keeps a backup, and recovers an interrupted migration", async (t) => {

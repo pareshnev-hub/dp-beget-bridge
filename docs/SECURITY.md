@@ -17,20 +17,19 @@ the agent token as an administrator credential for the configured scope.
 - telemetry has a code-level field allowlist and is disabled by default.
 - operational logs use a field allowlist and fixed route templates; raw request URLs, exception text, commands, file paths and credentials are excluded.
 - managed commands use a local SQLite ledger, one active writer per session and HMAC-protected fingerprints; retries with the same key do not spawn twice, conflicting payloads fail closed, and restart ambiguity becomes `UNKNOWN` without replay.
+- managed-command completion uses an atomic per-operation control record, never PTY output; forged marker text and transcript truncation cannot fabricate success.
 
 ## Known technical-preview blockers
 
 The current preview must not be described as a safe public connector. Open blockers include:
 
-- destructive destination pre-delete in the current move implementation;
-- DP-005 workspace-mutation evidence must remain linked before public exposure;
-- command completion is still stdout-marker-based until DP-007; the DP-006 ledger intentionally reports restart ambiguity as `UNKNOWN` instead of replaying;
-- unproven real tmux/systemd persistence behavior;
-- incomplete work/service credential separation and possible implicit root runtime;
+- verified DP-001/DP-005 workspace-mutation evidence must remain linked before public exposure;
+- verified DP-002/DP-006/DP-007 tmux, systemd, operation-ledger and completion evidence must remain linked before public exposure;
+- the work identity is intentionally authorized to execute arbitrary commands inside allowed roots; completion records separate status from PTY bytes but are not a sandbox boundary against that identity;
 - external attachment fetch is restricted by the versioned policy in
   `ATTACHMENT_FETCH_POLICY.md`; DP-004 verification evidence must remain linked
   before public exposure;
-- missing hard transcript/disk/output ceilings;
+- missing hard transcript/disk/output ceilings (DP-010);
 
 The authoritative finding-to-test mapping is `docs/audit/TRACEABILITY.md`.
 

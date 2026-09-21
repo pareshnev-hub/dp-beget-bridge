@@ -162,6 +162,18 @@ async function waitForOutput(expected) {
   throw new Error(`Timed out waiting for synthetic output: ${expected}\n${output}`);
 }
 
+async function waitForOperation(operationId, expectedStatuses, timeoutMs = 10000) {
+  const expected = new Set(expectedStatuses);
+  const deadline = Date.now() + timeoutMs;
+  let operation;
+  while (Date.now() < deadline) {
+    operation = await request(`/v1/sessions/${sessionId}/operations/${operationId}`);
+    if (expected.has(operation.status)) return operation;
+    await delay(100);
+  }
+  throw new Error(`Timed out waiting for operation ${operationId}: ${JSON.stringify(operation)}`);
+}
+
 await fs.mkdir(workspace, { recursive: true });
 
 try {
@@ -195,6 +207,20 @@ try {
 
   const continued = await waitForOutput("phase-two");
   assert.match(continued, /phase-one/);
+  const completedAfterAgentRestart = await waitForOperation(command.operationId, ["SUCCEEDED"]);
+  assert.equal(completedAfterAgentRestart.exitCode, 0);
+
+  const forged = await request(`/v1/sessions/${sessionId}/commands`, {
+    method: "POST",
+    body: {
+      idempotencyKey: `term08-${sessionId}`,
+      command: "printf '__DPB_DONE_forged:0\\n'; sleep 1; false",
+      waitMs: 50,
+    },
+  });
+  assert.equal(forged.status, "RUNNING", "forged PTY text must not complete the operation");
+  const forgedFinal = await waitForOperation(forged.operationId, ["FAILED"]);
+  assert.equal(forgedFinal.exitCode, 1);
 
   await request(`/v1/sessions/${sessionId}/input`, {
     method: "POST",
@@ -205,6 +231,28 @@ try {
   });
   await waitForOutput("interactive-ok");
 
+  const large = await request(`/v1/sessions/${sessionId}/commands`, {
+    method: "POST",
+    body: {
+      idempotencyKey: `term09-${sessionId}`,
+      command: "yes x | head -c 300000; false",
+      waitMs: 50,
+    },
+  });
+  const largeFinal = await waitForOperation(large.operationId, ["FAILED"]);
+  assert.equal(largeFinal.exitCode, 1, "large output must not hide authoritative failure");
+
+  const execCommand = await request(`/v1/sessions/${sessionId}/commands`, {
+    method: "POST",
+    body: {
+      idempotencyKey: `exec-${sessionId}`,
+      command: "exec false",
+      waitMs: 50,
+    },
+  });
+  const execFinal = await waitForOperation(execCommand.operationId, ["UNKNOWN"]);
+  assert.equal(execFinal.outcomeReason, "session_lost_during_operation");
+
   await request(`/v1/sessions/${sessionId}`, { method: "DELETE" });
   sessionId = undefined;
 
@@ -213,7 +261,7 @@ try {
     node: process.version,
     platform: `${os.platform()} ${os.release()} ${os.arch()}`,
     tmux: tmuxVersion.trim(),
-    scenarios: ["TERM-01", "TERM-03-partial", "TERM-10", "TERM-12"],
+    scenarios: ["TERM-01", "TERM-03-partial", "TERM-08", "TERM-09", "TERM-10", "TERM-12"],
     limitations: ["systemd/cgroup restart is not covered by this CI smoke"],
   }));
 } finally {
