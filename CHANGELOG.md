@@ -2,7 +2,26 @@
 
 All notable changes are documented here.
 
-## [0.1.0] - Unreleased
+## [Unreleased]
+
+### Documentation / planning
+
+- Replaced the preliminary roadmap with the audited R0002–R0007 release sequence.
+- Added target Direct/optional-Catalog architecture and trust boundaries.
+- Added 2026-09-21 architecture/security audit.
+- Added first implementation sprint and release acceptance test matrix.
+- Added release-process and privacy/telemetry decisions.
+- Added accepted Architecture Decision Records.
+- Created GitHub Issues DP-001 through DP-015 as the implementation queue.
+- Corrected project scope: Linux VPS MCP bridge; Windows remote-desktop architecture is not part of this project.
+
+### Critical implementation priorities
+
+- P0: prevent destructive destination pre-delete in file move.
+- P1: real tmux/systemd persistence tests, operation idempotency/concurrency, file-fetch SSRF controls, transcript/resource safety, runtime credential separation and log sanitization.
+- OAuth/consent onboarding follows runtime hardening; Catalog Relay follows a distribution feasibility gate.
+
+## [0.1.0] - Unreleased technical preview
 
 ### Added
 
