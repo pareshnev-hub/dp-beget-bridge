@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible DP Beget Bridge problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not paste tokens, commands containing secrets, terminal transcripts, paths, or file contents.
+  - type: input
+    id: version
+    attributes:
+      label: DP version
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [Agent, MCP, Installer, Telemetry, Documentation]
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Safe reproduction steps
+    validations:
+      required: true

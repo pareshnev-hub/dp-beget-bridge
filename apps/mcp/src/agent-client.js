@@ -1,0 +1,73 @@
+export class AgentClient {
+  constructor({ baseUrl, token }) {
+    this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.token = token;
+  }
+
+  async request(path, options = {}) {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      ...options,
+      headers: {
+        authorization: `Bearer ${this.token}`,
+        ...(options.body && !(options.body instanceof ReadableStream) ? { "content-type": "application/json" } : {}),
+        ...options.headers,
+      },
+      duplex: options.body instanceof ReadableStream ? "half" : undefined,
+    });
+    if (!response.ok) {
+      const raw = await response.text();
+      let error = null;
+      try {
+        error = JSON.parse(raw).error;
+      } catch {}
+      if (!error) error = { code: "agent_error", message: raw || `Agent returned ${response.status}` };
+      const failure = new Error(error?.message || `Agent returned ${response.status}`);
+      failure.code = error?.code || "agent_error";
+      failure.status = response.status;
+      throw failure;
+    }
+    return response;
+  }
+
+  async json(path, method = "GET", body = undefined) {
+    const response = await this.request(path, {
+      method,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return response.json();
+  }
+
+  capabilities() { return this.json("/v1/capabilities"); }
+  listSessions() { return this.json("/v1/sessions"); }
+  openTerminal(input) { return this.json("/v1/sessions", "POST", input); }
+  runCommand(id, input) { return this.json(`/v1/sessions/${encodeURIComponent(id)}/commands`, "POST", input); }
+  readOutput(id, cursor, maxBytes) {
+    const query = new URLSearchParams({ cursor: String(cursor || 0), maxBytes: String(maxBytes || 65536) });
+    return this.json(`/v1/sessions/${encodeURIComponent(id)}/output?${query}`);
+  }
+  sendInput(id, input) { return this.json(`/v1/sessions/${encodeURIComponent(id)}/input`, "POST", input); }
+  interrupt(id) { return this.json(`/v1/sessions/${encodeURIComponent(id)}/interrupt`, "POST"); }
+  closeTerminal(id, keepOutput) {
+    return this.json(`/v1/sessions/${encodeURIComponent(id)}?keepOutput=${Boolean(keepOutput)}`, "DELETE");
+  }
+  listFiles(candidate) { return this.json(`/v1/files?path=${encodeURIComponent(candidate)}`); }
+  copyPath(input) { return this.json("/v1/files/copy", "POST", input); }
+  movePath(input) { return this.json("/v1/files/move", "POST", input); }
+  deletePath(candidate, recursive) {
+    return this.json(`/v1/files?path=${encodeURIComponent(candidate)}&recursive=${Boolean(recursive)}`, "DELETE");
+  }
+  downloadPath(candidate) {
+    return this.request(`/v1/files/content?path=${encodeURIComponent(candidate)}`);
+  }
+  async uploadFromUrl(file, destination, overwrite) {
+    const source = await fetch(file.download_url);
+    if (!source.ok || !source.body) throw new Error(`Unable to download attached file: ${source.status}`);
+    const query = new URLSearchParams({ path: destination, overwrite: String(Boolean(overwrite)) });
+    const response = await this.request(`/v1/files/content?${query}`, {
+      method: "PUT",
+      body: source.body,
+      headers: file.mime_type ? { "content-type": file.mime_type } : {},
+    });
+    return response.json();
+  }
+}

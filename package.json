@@ -1,0 +1,21 @@
+{
+  "name": "dp-beget-bridge",
+  "version": "0.1.0",
+  "description": "Persistent terminal and file bridge for Beget VPS, ChatGPT, and Codex.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start:agent": "node apps/agent/src/index.js",
+    "start:mcp": "node apps/mcp/src/index.js",
+    "start:telemetry": "node apps/telemetry/src/index.js",
+    "test": "node --test",
+    "check": "node scripts/check.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.2",
+    "zod": "^3.25.76"
+  }
+}
