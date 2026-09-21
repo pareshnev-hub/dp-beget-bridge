@@ -214,8 +214,11 @@ systemctl enable dp-beget-session-host.service dp-beget-agent.service dp-beget-m
 systemctl start dp-beget-session-host.service
 systemctl restart dp-beget-agent.service dp-beget-mcp.service
 
+# Do not report a successful install until every local endpoint and identity is ready.
+node scripts/doctor.mjs
+
 echo
-echo "DP Beget Bridge services are running."
+echo "DP Beget Bridge services are running and health checks passed."
 echo "Configure HTTPS reverse proxy ${domain} -> 127.0.0.1:8788 using deploy/Caddyfile.example."
 echo "MCP URL: https://${domain}/mcp"
 echo "Service credentials are split across ${agent_env} and ${mcp_env}; the work identity cannot read them."

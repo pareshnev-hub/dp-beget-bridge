@@ -2,33 +2,57 @@ import http from "node:http";
 import { execFileSync } from "node:child_process";
 
 const checks = [];
+const startupWaitMs = Number.parseInt(process.env.DP_DOCTOR_WAIT_MS || "15000", 10);
+const units = [
+  process.env.DP_MCP_SYSTEMD_UNIT || "dp-beget-mcp.service",
+  process.env.DP_AGENT_SYSTEMD_UNIT || "dp-beget-agent.service",
+  process.env.DP_SESSION_HOST_SYSTEMD_UNIT || "dp-beget-session-host.service",
+];
 
-function check(name, action) {
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function eventually(action) {
+  const deadline = Date.now() + startupWaitMs;
+  let lastError;
+  do {
+    try {
+      return await action();
+    } catch (error) {
+      lastError = error;
+      await delay(100);
+    }
+  } while (Date.now() < deadline);
+  throw lastError || new Error("health check timed out");
+}
+
+async function check(name, action) {
   try {
-    const detail = action();
+    const detail = await action();
     checks.push({ name, ok: true, detail });
   } catch (error) {
     checks.push({ name, ok: false, detail: error.message });
   }
 }
 
-check("Node.js", () => {
+await check("Node.js", () => {
   const major = Number(process.versions.node.split(".")[0]);
   if (major < 22) throw new Error(`version ${process.versions.node}; need 22+`);
   return process.versions.node;
 });
-check("tmux", () => execFileSync(process.env.DP_TMUX_BIN || "tmux", ["-V"], { encoding: "utf8" }).trim());
-check("Agent health", async () => {
+await check("tmux", () => execFileSync(process.env.DP_TMUX_BIN || "tmux", ["-V"], { encoding: "utf8" }).trim());
+await check("Agent health", () => eventually(async () => {
   const response = await fetch(`${process.env.DP_AGENT_URL || "http://127.0.0.1:8787"}/health`);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return "ok";
-});
-check("MCP health", async () => {
+}));
+await check("MCP health", () => eventually(async () => {
   const response = await fetch(`${process.env.DP_MCP_URL || "http://127.0.0.1:8788"}/health`);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return "ok";
-});
-check("Session Host health", () => new Promise((resolve, reject) => {
+}));
+await check("Session Host health", () => eventually(() => new Promise((resolve, reject) => {
   const request = http.get({
     socketPath: process.env.DP_SESSION_HOST_SOCKET || "/run/dp-beget-bridge/session-host.sock",
     path: "/health",
@@ -39,9 +63,8 @@ check("Session Host health", () => new Promise((resolve, reject) => {
       : reject(new Error(`HTTP ${response.statusCode}`)));
   });
   request.on("error", reject);
-}));
-check("Runtime identities", () => {
-  const units = ["dp-beget-mcp.service", "dp-beget-agent.service", "dp-beget-session-host.service"];
+})));
+await check("Runtime identities", () => {
   const users = units.map((unit) => execFileSync(
     "systemctl",
     ["show", unit, "--property=User", "--value"],
@@ -54,10 +77,6 @@ check("Runtime identities", () => {
 });
 
 for (const item of checks) {
-  if (item.detail instanceof Promise) {
-    try { item.detail = await item.detail; }
-    catch (error) { item.ok = false; item.detail = error.message; }
-  }
   console.log(`${item.ok ? "OK" : "FAIL"}  ${item.name}: ${item.detail}`);
 }
 if (checks.some((item) => !item.ok)) process.exit(1);
