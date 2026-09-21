@@ -17,6 +17,8 @@ const workspace = path.join(runtimeRoot, "workspace");
 const dataDir = path.join(runtimeRoot, "data");
 const tmuxSocket = path.join(runtimeRoot, "tmux", "tmux.sock");
 const envFile = path.join(runtimeRoot, "bridge.env");
+const installFixtureSource = path.join(runtimeRoot, "installer-source");
+const installFixtureTarget = path.join(runtimeRoot, "installer-target");
 const agentUnit = `${prefix}-agent.service`;
 const mcpUnit = `${prefix}-mcp.service`;
 const agentUnitPath = path.join("/etc/systemd/system", agentUnit);
@@ -145,6 +147,29 @@ try {
   await fs.mkdir(workspace, { recursive: true, mode: 0o700 });
   await fs.chown(runtimeRoot, runtimeUid, runtimeGid);
   await fs.chown(workspace, runtimeUid, runtimeGid);
+
+  await fs.mkdir(installFixtureSource, { mode: 0o700 });
+  await fs.writeFile(path.join(installFixtureSource, "probe.txt"), "installer-mode-probe\n");
+  await execFileAsync("bash", [
+    "-c",
+    "source \"$1\"; install_code_tree \"$2\" \"$3\"",
+    "installer-mode-test",
+    path.join(repoRoot, "deploy/lib/install-code.sh"),
+    installFixtureSource,
+    installFixtureTarget,
+  ]);
+  const installedRoot = await fs.stat(installFixtureTarget);
+  assert.equal(installedRoot.mode & 0o777, 0o755, "installed code root must remain traversable by service users");
+  assert.equal(installedRoot.uid, 0, "installed code root must remain root-owned");
+  assert.equal(installedRoot.gid, 0, "installed code root must remain root-owned");
+  await execFileAsync("runuser", [
+    "-u",
+    runtimeUser,
+    "--",
+    "test",
+    "-r",
+    path.join(installFixtureTarget, "probe.txt"),
+  ]);
   await fs.writeFile(envFile, [
     "DP_AGENT_HOST=127.0.0.1",
     `DP_AGENT_PORT=${agentPort}`,
@@ -234,7 +259,7 @@ try {
     systemd: (await output("systemctl", ["--version"])).split("\n")[0],
     tmux: await output("tmux", ["-V"]),
     profile: { privateTmp: true, protectSystem: "strict", explicitTmuxSocket: true },
-    scenarios: ["TERM-01", "TERM-02", "TERM-03", "TERM-10", "TERM-12", "OPS-03"],
+    scenarios: ["TERM-01", "TERM-02", "TERM-03", "TERM-10", "TERM-12", "OPS-01-install-root-mode", "OPS-03"],
   }));
 } finally {
   await disconnectMcp();

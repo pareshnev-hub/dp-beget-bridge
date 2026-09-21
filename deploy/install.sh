@@ -8,6 +8,7 @@ fi
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source_dir=$(cd -- "${script_dir}/.." && pwd)
+source "${script_dir}/lib/install-code.sh"
 domain=""
 service_user=${SUDO_USER:-}
 allowed_root=""
@@ -64,8 +65,7 @@ if (( node_major < 22 )); then
   exit 1
 fi
 
-install -d -m 0755 /opt/dp-beget-bridge
-cp -a "${source_dir}/." /opt/dp-beget-bridge/
+install_code_tree "${source_dir}" /opt/dp-beget-bridge
 cd /opt/dp-beget-bridge
 npm ci --omit=dev
 
