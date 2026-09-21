@@ -8,12 +8,12 @@ the agent token as an administrator credential for the configured scope.
 - the agent listens on loopback by default;
 - every agent request requires a bearer token;
 - file paths must stay inside configured allowed roots;
-- uploads use a protected temporary file followed by rename, but no-replace race safety and broader mutation semantics are not yet release-verified;
+- uploads and regular-file copy/move use descriptor-pinned parents and atomic no-replace commits; unsupported recursive/complex mutations fail closed as documented in `WORKSPACE_MUTATION_POLICY.md`;
 - overwrite and delete are explicit operations;
 - terminal sessions are named with generated identifiers;
 - secrets are never committed to the repository;
 - the MCP layer declares tool annotations, but their accuracy and the actual target-client file contract remain an R0002 verification item;
-- symlink traversal outside allowed roots is rejected.
+- symlink traversal outside allowed roots is rejected, and mutation parents are pinned with `O_NOFOLLOW` before the filesystem commit.
 - telemetry has a code-level field allowlist and is disabled by default.
 - operational logs use a field allowlist and fixed route templates; raw request URLs, exception text, commands, file paths and credentials are excluded.
 
@@ -22,7 +22,7 @@ the agent token as an administrator credential for the configured scope.
 The current preview must not be described as a safe public connector. Open blockers include:
 
 - destructive destination pre-delete in the current move implementation;
-- incomplete TOCTOU/no-replace mutation protection;
+- DP-005 workspace-mutation evidence must remain linked before public exposure;
 - stdout-marker-based command completion and no durable single-writer operation ledger;
 - unproven real tmux/systemd persistence behavior;
 - incomplete work/service credential separation and possible implicit root runtime;
