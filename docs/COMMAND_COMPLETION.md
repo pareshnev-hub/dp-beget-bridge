@@ -6,7 +6,7 @@ DP-007 separates managed-operation status from the PTY transcript. Terminal byte
 
 1. Session Host admits the operation to the SQLite ledger before sending input to tmux.
 2. It creates a private `operations/` directory inside the session state directory and removes stale files for the new operation ID.
-3. The submitted command and its completion suffix are dispatched as one shell input line. This prevents readline/TTY type-ahead flushing from discarding the suffix after sustained output.
+3. The submitted command, completion suffix and terminating Enter are dispatched in one tmux paste-buffer payload. tmux converts the payload's final LF to the pane's carriage return. This avoids cross-client ordering races between a queued paste and a separate `send-keys Enter`, while keeping the suffix on the same shell input line.
 4. The submitted command is evaluated by the session shell. If that shell expression returns, the suffix writes its numeric exit code to `<operation-id>.exit.part` with `umask 077` and atomically renames it to `<operation-id>.exit`.
 5. Session Host accepts only a complete decimal exit code from 0 through 255. It persists `SUCCEEDED` for zero and `FAILED` for nonzero.
 6. A missing record never implies success. Session loss produces `UNKNOWN`; an invalid record fails closed to `UNKNOWN`.
