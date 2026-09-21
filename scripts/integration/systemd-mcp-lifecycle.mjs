@@ -39,6 +39,22 @@ async function output(command, args = []) {
   return (await execFileAsync(command, args, { encoding: "utf8" })).stdout.trim();
 }
 
+async function assertInstallerRejectsRoot(args, expected) {
+  const { SUDO_USER: _sudoUser, ...rootEnvironment } = process.env;
+  rootEnvironment.USER = "root";
+  try {
+    await execFileAsync("bash", ["deploy/install.sh", "--domain", "bridge.invalid", ...args], {
+      cwd: repoRoot,
+      env: rootEnvironment,
+      encoding: "utf8",
+    });
+    assert.fail("installer unexpectedly accepted a root runtime identity");
+  } catch (error) {
+    assert.notEqual(error.code, 0);
+    assert.match(`${error.stdout || ""}${error.stderr || ""}`, expected);
+  }
+}
+
 async function freePort() {
   const server = net.createServer();
   await new Promise((resolve, reject) => {
@@ -117,6 +133,9 @@ if (/\s/.test(repoRoot) || /\s/.test(process.execPath)) {
 }
 
 try {
+  await assertInstallerRejectsRoot([], /non-root runtime user is required/);
+  await assertInstallerRejectsRoot(["--user", "root"], /Refusing to run Agent, MCP, or terminal sessions as root/);
+
   const runtimeUid = Number(await output("id", ["-u", runtimeUser]));
   const runtimeGid = Number(await output("id", ["-g", runtimeUser]));
   runtimeGroup = await output("id", ["-gn", runtimeUser]);
@@ -215,7 +234,7 @@ try {
     systemd: (await output("systemctl", ["--version"])).split("\n")[0],
     tmux: await output("tmux", ["-V"]),
     profile: { privateTmp: true, protectSystem: "strict", explicitTmuxSocket: true },
-    scenarios: ["TERM-01", "TERM-02", "TERM-03", "TERM-10", "TERM-12"],
+    scenarios: ["TERM-01", "TERM-02", "TERM-03", "TERM-10", "TERM-12", "OPS-03"],
   }));
 } finally {
   await disconnectMcp();
