@@ -22,6 +22,28 @@ export class FileManager {
     this.fileSystem = fileSystem;
   }
 
+  destinationExists(error) {
+    if (error?.code !== "EEXIST") throw error;
+    throw new BridgeError("destination_exists", "Destination already exists", 409);
+  }
+
+  unsupportedComplex(message = "Complex workspace mutation is not safely supported") {
+    return new BridgeError("unsupported_complex_mutation", message, 409);
+  }
+
+  async commitTemporary(temporary, destination, overwrite) {
+    if (overwrite) {
+      await this.fileSystem.rename(temporary, destination);
+      return;
+    }
+    try {
+      await this.fileSystem.link(temporary, destination);
+    } catch (error) {
+      this.destinationExists(error);
+    }
+    await this.fileSystem.unlink(temporary);
+  }
+
   async list(candidate) {
     this.telemetry.trackActivity?.();
     const resolved = this.pathPolicy.resolve(candidate);
@@ -41,20 +63,10 @@ export class FileManager {
   }
 
   async upload(request, candidate, overwrite = false) {
-    const destination = this.pathPolicy.resolve(candidate);
+    const destination = this.pathPolicy.mutation(candidate);
     this.telemetry.trackActivity?.();
-    await fsp.mkdir(path.dirname(destination), { recursive: true });
-    if (!overwrite) {
-      try {
-        await fsp.access(destination);
-        throw new BridgeError("destination_exists", "Destination already exists", 409);
-      } catch (error) {
-        if (error instanceof BridgeError) throw error;
-        if (error.code !== "ENOENT") throw error;
-      }
-    }
-
-    const temporary = `${destination}.dpb-part-${crypto.randomUUID()}`;
+    const pinned = await this.pathPolicy.openMutationParent(destination, { createParents: true });
+    const temporary = path.join(pinned.parentPath, `.dpb-part-${crypto.randomUUID()}`);
     const hash = crypto.createHash("sha256");
     let size = 0;
     const meter = new Transform({
@@ -70,15 +82,17 @@ export class FileManager {
     });
     try {
       await pipeline(request, meter, fs.createWriteStream(temporary, { mode: 0o600, flags: "wx" }));
-      await fsp.rename(temporary, destination);
+      await this.commitTemporary(temporary, pinned.path, overwrite);
     } catch (error) {
-      await fsp.rm(temporary, { force: true });
+      await this.fileSystem.rm(temporary, { force: true }).catch(() => {});
       throw error;
+    } finally {
+      await pinned.close();
     }
     const sha256 = hash.digest("hex");
     this.logger.info("file.uploaded", { size });
     this.telemetry.track("file_transferred", { direction: "upload", sizeBucket: sizeBucket(size) });
-    return { path: destination, size, sha256 };
+    return { path: destination.displayPath, size, sha256 };
   }
 
   recordDownload(size) {
@@ -100,39 +114,89 @@ export class FileManager {
 
   async copy(source, destination, overwrite = false) {
     this.telemetry.trackActivity?.();
-    const from = this.pathPolicy.resolve(source);
-    const to = this.pathPolicy.resolve(destination);
-    await fsp.cp(from, to, { recursive: true, force: Boolean(overwrite), errorOnExist: !overwrite });
+    const from = this.pathPolicy.mutation(source);
+    const to = this.pathPolicy.mutation(destination);
+    if (from.displayPath === to.displayPath) {
+      return { source: from.displayPath, destination: to.displayPath, copied: false, reason: "same_path" };
+    }
+    this.pathPolicy.assertNoDangerousOverlap(from, to);
+
+    const sourceParent = await this.pathPolicy.openMutationParent(from);
+    let destinationParent;
+    let sourceHandle;
+    let temporary;
+    try {
+      try {
+        sourceHandle = await this.fileSystem.open(
+          sourceParent.path,
+          fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+        );
+      } catch (error) {
+        if (error.code === "ELOOP") throw this.unsupportedComplex("Symlink copy is not safely supported");
+        throw error;
+      }
+      if (!(await sourceHandle.stat()).isFile()) {
+        throw this.unsupportedComplex("Recursive or non-regular copy is not safely supported");
+      }
+      destinationParent = await this.pathPolicy.openMutationParent(to);
+      temporary = path.join(destinationParent.parentPath, `.dpb-copy-${crypto.randomUUID()}`);
+      await this.fileSystem.copyFile(
+        `/proc/self/fd/${sourceHandle.fd}`,
+        temporary,
+        fs.constants.COPYFILE_EXCL,
+      );
+      await this.commitTemporary(temporary, destinationParent.path, overwrite);
+      temporary = undefined;
+    } finally {
+      if (temporary) await this.fileSystem.rm(temporary, { force: true }).catch(() => {});
+      await sourceHandle?.close().catch(() => {});
+      await destinationParent?.close().catch(() => {});
+      await sourceParent.close().catch(() => {});
+    }
     this.logger.info("file.copied");
-    return { source: from, destination: to, copied: true };
+    return { source: from.displayPath, destination: to.displayPath, copied: true };
   }
 
   async move(source, destination, overwrite = false) {
     this.telemetry.trackActivity?.();
-    const from = this.pathPolicy.resolve(source);
-    const to = this.pathPolicy.resolve(destination);
-
-    // Resolve source existence before inspecting or changing the destination.
-    // This is also important when source and destination are the same path.
-    await this.fileSystem.lstat(from);
-    if (from === to) {
-      return { source: from, destination: to, moved: false, reason: "same_path" };
+    const from = this.pathPolicy.mutation(source);
+    const to = this.pathPolicy.mutation(destination);
+    if (from.displayPath === to.displayPath) {
+      return { source: from.displayPath, destination: to.displayPath, moved: false, reason: "same_path" };
     }
+    this.pathPolicy.assertNoDangerousOverlap(from, to);
 
-    if (!overwrite) {
-      try {
-        await this.fileSystem.access(to);
-        throw new BridgeError("destination_exists", "Destination already exists", 409);
-      } catch (error) {
-        if (error instanceof BridgeError) throw error;
-        if (error.code !== "ENOENT") throw error;
-      }
-    }
-
+    const sourceParent = await this.pathPolicy.openMutationParent(from);
+    let destinationParent;
     try {
-      // On the supported Linux platform rename is the commit operation. Never
-      // pre-delete the destination: if rename fails, both paths remain intact.
-      await this.fileSystem.rename(from, to);
+      const sourceStat = await this.fileSystem.lstat(sourceParent.path);
+      if (!sourceStat.isFile()) {
+        throw this.unsupportedComplex("Directory and symlink moves are not safely supported");
+      }
+      destinationParent = await this.pathPolicy.openMutationParent(to);
+      if (overwrite) {
+        try {
+          const destinationStat = await this.fileSystem.lstat(destinationParent.path);
+          if (destinationStat.isDirectory()) {
+            throw this.unsupportedComplex("Directory replacement is not safely supported");
+          }
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+        await this.fileSystem.rename(sourceParent.path, destinationParent.path);
+      } else {
+        try {
+          await this.fileSystem.link(sourceParent.path, destinationParent.path);
+        } catch (error) {
+          this.destinationExists(error);
+        }
+        try {
+          await this.fileSystem.unlink(sourceParent.path);
+        } catch (error) {
+          await this.fileSystem.unlink(destinationParent.path).catch(() => {});
+          throw error;
+        }
+      }
     } catch (error) {
       if (error.code !== "EXDEV") throw error;
       throw new BridgeError(
@@ -140,16 +204,29 @@ export class FileManager {
         "Cross-device move is not safely supported",
         409,
       );
+    } finally {
+      await destinationParent?.close().catch(() => {});
+      await sourceParent.close().catch(() => {});
     }
     this.logger.info("file.moved");
-    return { source: from, destination: to, moved: true };
+    return { source: from.displayPath, destination: to.displayPath, moved: true };
   }
 
   async remove(candidate, recursive = false) {
     this.telemetry.trackActivity?.();
-    const resolved = this.pathPolicy.resolve(candidate);
-    await fsp.rm(resolved, { recursive: Boolean(recursive), force: false });
+    const resolved = this.pathPolicy.mutation(candidate);
+    if (recursive) {
+      throw this.unsupportedComplex("Recursive delete is not safely supported");
+    }
+    const pinned = await this.pathPolicy.openMutationParent(resolved);
+    try {
+      const stat = await this.fileSystem.lstat(pinned.path);
+      if (stat.isDirectory()) await this.fileSystem.rmdir(pinned.path);
+      else await this.fileSystem.unlink(pinned.path);
+    } finally {
+      await pinned.close();
+    }
     this.logger.warn("file.deleted", { recursive: Boolean(recursive) });
-    return { path: resolved, deleted: true };
+    return { path: resolved.displayPath, deleted: true };
   }
 }
