@@ -20,6 +20,7 @@ export function loadConfig() {
       .map((value) => value.trim())
       .filter(Boolean),
     tmuxBin: process.env.DP_TMUX_BIN || "tmux",
+    tmuxSocket: process.env.DP_TMUX_SOCKET ? path.resolve(process.env.DP_TMUX_SOCKET) : "",
     historyLines: integer("DP_TERMINAL_HISTORY_LINES", 100000),
     commandWaitMs: integer("DP_COMMAND_WAIT_MS", 10000),
     sessionOutputWarnBytes: integer("DP_SESSION_OUTPUT_WARN_BYTES", 50 * 1024 * 1024),

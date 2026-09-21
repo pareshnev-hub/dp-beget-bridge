@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-tmux-integration-"));
 const workspace = path.join(root, "workspace");
 const dataDir = path.join(root, "data");
+const tmuxSocket = path.join(root, "tmux", "tmux.sock");
 const port = 18000 + (process.pid % 10000);
 const baseUrl = `http://127.0.0.1:${port}`;
 const token = "integration-agent-token-that-is-not-a-production-secret";
@@ -20,6 +21,7 @@ const environment = {
   DP_AGENT_TOKEN: token,
   DP_DATA_DIR: dataDir,
   DP_ALLOWED_ROOTS: workspace,
+  DP_TMUX_SOCKET: tmuxSocket,
   DP_COMMAND_WAIT_MS: "50",
   DP_TERMINAL_HISTORY_LINES: "10000",
   DP_SESSION_OUTPUT_WARN_BYTES: String(4 * 1024 * 1024),
@@ -124,7 +126,7 @@ try {
   assert.equal(command.state, "running", "short MCP wait must not claim command completion");
 
   await stopAgent();
-  await execFileAsync("tmux", ["has-session", "-t", `dpb_${sessionId}`]);
+  await execFileAsync("tmux", ["-S", tmuxSocket, "has-session", "-t", `dpb_${sessionId}`]);
 
   await startAgent();
   const listed = await request("/v1/sessions");
@@ -157,7 +159,7 @@ try {
 } finally {
   await stopAgent();
   if (sessionId) {
-    await execFileAsync("tmux", ["kill-session", "-t", `dpb_${sessionId}`]).catch(() => {});
+    await execFileAsync("tmux", ["-S", tmuxSocket, "kill-session", "-t", `dpb_${sessionId}`]).catch(() => {});
   }
   await fs.rm(root, { recursive: true, force: true });
 }
