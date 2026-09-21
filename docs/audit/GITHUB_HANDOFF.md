@@ -10,9 +10,12 @@ Read in this order:
 3. `docs/audit/AUDIT-2026-09-21.md`
 4. `docs/audit/FIRST_SPRINT.md`
 5. `docs/audit/TEST_MATRIX.md`
-6. `docs/RELEASE_PROCESS.md`
-7. `docs/PRIVACY_DECISIONS.md`
-8. `docs/adr/`
+6. `docs/audit/TRACEABILITY.md`
+7. `docs/THREAT_MODEL.md`
+8. `docs/IMPLEMENTATION_STATUS.md`
+9. `docs/RELEASE_PROCESS.md`
+10. `docs/PRIVACY_DECISIONS.md`
+11. `docs/adr/`
 
 The working baseline audited was:
 `f22032ec6c465f0eeffec6c360959d266941ea29`.
@@ -44,6 +47,8 @@ For each issue:
 4. update docs if semantics changed;
 5. link PR/commit/evidence to issue;
 6. close only when acceptance criteria are satisfied.
+
+Every implementation issue/PR must state affected files, required test IDs, security considerations, migration/rollback behavior and exact acceptance evidence. Update `docs/IMPLEMENTATION_STATUS.md` only when linked evidence supports the new status.
 
 Do not silently change fundamental architecture. Use ADR + PR for such changes.
 

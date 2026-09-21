@@ -1,0 +1,81 @@
+name: Roadmap implementation task
+description: Implement a scoped DP planning item with release evidence
+title: "[DP-___]: "
+labels: [implementation]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include production tokens, terminal transcripts, user paths, file contents or other sensitive evidence.
+  - type: input
+    id: planning
+    attributes:
+      label: Planning ID and release
+      description: "Example: DP-001 / R0002"
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options: [P0, P1, P2, P3, P4]
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome and non-goals
+      description: State the observable result and what this issue intentionally does not include.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Related issues, ADRs, environments or N/A with a reason.
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Affected files/modules
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Required test IDs and evidence
+      description: Reference TEST_MATRIX IDs and the environment required.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and privacy considerations
+    validations:
+      required: true
+  - type: textarea
+    id: migration
+    attributes:
+      label: State/config migration impact
+      description: Use N/A with a reason when no persistent state changes.
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback or safe-disable behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Completion evidence
+      description: Fill before closing with exact commit, CI/runtime links and environment versions.
+    validations:
+      required: false

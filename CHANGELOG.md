@@ -10,6 +10,9 @@ All notable changes are documented here.
 - Added target Direct/optional-Catalog architecture and trust boundaries.
 - Added 2026-09-21 architecture/security audit.
 - Added first implementation sprint and release acceptance test matrix.
+- Added a full threat/control matrix, finding-to-test traceability and live implementation-status ledger.
+- Standardized per-release user value, dependencies, migrations, tests, security, observability, rollback, documentation and exit gates.
+- Added implementation Issue/PR evidence templates and decomposed the largest R0002 work items.
 - Added release-process and privacy/telemetry decisions.
 - Added accepted Architecture Decision Records.
 - Created GitHub Issues DP-001 through DP-015 as the implementation queue.
