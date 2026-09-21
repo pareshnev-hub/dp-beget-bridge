@@ -26,7 +26,9 @@ The current preview must not be described as a safe public connector. Open block
 - stdout-marker-based command completion and no durable single-writer operation ledger;
 - unproven real tmux/systemd persistence behavior;
 - incomplete work/service credential separation and possible implicit root runtime;
-- incomplete outbound attachment URL/SSRF controls;
+- external attachment fetch is restricted by the versioned policy in
+  `ATTACHMENT_FETCH_POLICY.md`; DP-004 verification evidence must remain linked
+  before public exposure;
 - missing hard transcript/disk/output ceilings;
 
 The authoritative finding-to-test mapping is `docs/audit/TRACEABILITY.md`.

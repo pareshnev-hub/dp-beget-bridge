@@ -3,6 +3,7 @@ import { loadMcpConfig } from "./config.js";
 import { DownloadTokenStore } from "./download-tokens.js";
 import { createMcpHttpServer } from "./server.js";
 import { createLogger } from "../../../packages/core/src/logger.js";
+import { AttachmentFetcher } from "../../../packages/core/src/attachment-fetch.js";
 
 const config = loadMcpConfig();
 if (!config.agentToken || config.agentToken.length < 32) throw new Error("DP_AGENT_TOKEN must contain at least 32 characters");
@@ -11,7 +12,13 @@ if (!config.accessToken && !["127.0.0.1", "::1", "localhost"].includes(config.ho
 }
 
 const logger = createLogger("mcp", process.env.DP_LOG_LEVEL || "info");
-const agent = new AgentClient({ baseUrl: config.agentUrl, token: config.agentToken });
+const attachmentFetcher = config.attachmentFetchEnabled ? new AttachmentFetcher({
+  timeoutMs: config.attachmentFetchTimeoutMs,
+  maxBytes: config.attachmentMaxBytes,
+  maxRedirects: config.attachmentMaxRedirects,
+  maxConcurrent: config.attachmentMaxConcurrent,
+}) : undefined;
+const agent = new AgentClient({ baseUrl: config.agentUrl, token: config.agentToken, attachmentFetcher });
 const downloads = new DownloadTokenStore({ ttlMs: config.downloadTokenTtlMs });
 const server = createMcpHttpServer({ config, agent, downloads, logger });
 

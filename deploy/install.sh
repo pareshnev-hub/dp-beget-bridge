@@ -168,6 +168,11 @@ chown root:"${agent_user}" "${agent_env}"
   printf 'DP_MCP_PATH=/mcp\n'
   printf 'DP_MCP_ACCESS_TOKEN=%s\n' "${mcp_token}"
   printf 'DP_PUBLIC_URL=https://%s\n' "${domain}"
+  printf 'DP_ATTACHMENT_FETCH_ENABLED=true\n'
+  printf 'DP_ATTACHMENT_FETCH_TIMEOUT_MS=120000\n'
+  printf 'DP_ATTACHMENT_MAX_BYTES=67108864\n'
+  printf 'DP_ATTACHMENT_MAX_REDIRECTS=5\n'
+  printf 'DP_ATTACHMENT_MAX_CONCURRENT=2\n'
   printf 'DP_LOG_LEVEL=info\n'
 } > "${mcp_env}"
 chmod 0640 "${mcp_env}"
