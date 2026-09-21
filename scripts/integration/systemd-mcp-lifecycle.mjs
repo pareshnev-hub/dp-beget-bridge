@@ -27,6 +27,7 @@ const legacyConfigDir = path.join(runtimeRoot, "legacy-config");
 const legacyTmuxSocket = path.join(runtimeRoot, "legacy-tmux", "tmux.sock");
 const installFixtureSource = path.join(runtimeRoot, "installer-source");
 const installFixtureTarget = path.join(runtimeRoot, "installer-target");
+const installedCodeRoot = path.join(runtimeRoot, "installed-code");
 const agentUnit = `${prefix}-agent.service`;
 const mcpUnit = `${prefix}-mcp.service`;
 const sessionHostUnit = `${prefix}-session-host.service`;
@@ -217,8 +218,9 @@ function unitBody({
   supplementaryGroups = "",
   killMode = "control-group",
   readWritePaths = runtimeRoot,
+  workingDirectory = repoRoot,
 }) {
-  return `[Unit]\nDescription=${description}\nAfter=${after}\n${requires ? `Requires=${requires}\n` : ""}${wants ? `Wants=${wants}\n` : ""}\n[Service]\nType=simple\nUser=${user}\nGroup=${group}\n${supplementaryGroups ? `SupplementaryGroups=${supplementaryGroups}\n` : ""}WorkingDirectory=${repoRoot}\nEnvironmentFile=${environmentFile}\nExecStart=${process.execPath} ${execStart}\nRestart=on-failure\nRestartSec=1\nKillMode=${killMode}\nTimeoutStopSec=15\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nReadWritePaths=${readWritePaths}\n`;
+  return `[Unit]\nDescription=${description}\nAfter=${after}\n${requires ? `Requires=${requires}\n` : ""}${wants ? `Wants=${wants}\n` : ""}\n[Service]\nType=simple\nUser=${user}\nGroup=${group}\n${supplementaryGroups ? `SupplementaryGroups=${supplementaryGroups}\n` : ""}WorkingDirectory=${workingDirectory}\nEnvironmentFile=${environmentFile}\nExecStart=${process.execPath} ${execStart}\nRestart=on-failure\nRestartSec=1\nKillMode=${killMode}\nTimeoutStopSec=15\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nReadWritePaths=${readWritePaths}\n`;
 }
 
 if (process.getuid?.() !== 0) throw new Error("This integration test must run as root through sudo");
@@ -283,6 +285,14 @@ try {
     "-r",
     path.join(installFixtureTarget, "probe.txt"),
   ]);
+  await execFileAsync("bash", [
+    "-c",
+    "source \"$1\"; install_code_tree \"$2\" \"$3\"",
+    "installed-code-test",
+    path.join(repoRoot, "deploy/lib/install-code.sh"),
+    repoRoot,
+    installedCodeRoot,
+  ]);
   await fs.writeFile(sessionHostEnvFile, [
     `DP_SESSION_HOST_SOCKET=${sessionHostSocket}`,
     `DP_SESSION_DATA_DIR=${sessionDataDir}`,
@@ -331,7 +341,7 @@ try {
 
   await fs.writeFile(sessionHostUnitPath, unitBody({
     description: "Disposable DP Beget Bridge Session Host integration test",
-    execStart: path.join(repoRoot, "apps/session-host/src/index.js"),
+    execStart: path.join(installedCodeRoot, "apps/session-host/src/index.js"),
     after: "network.target",
     user: workUser,
     group: ipcGroup,
@@ -339,11 +349,12 @@ try {
     environmentFile: sessionHostEnvFile,
     killMode: "process",
     readWritePaths: `${sessionDataDir} ${socketDir} ${workspace}`,
+    workingDirectory: installedCodeRoot,
   }));
 
   await fs.writeFile(agentUnitPath, unitBody({
     description: "Disposable DP Beget Bridge Agent integration test",
-    execStart: path.join(repoRoot, "apps/agent/src/index.js"),
+    execStart: path.join(installedCodeRoot, "apps/agent/src/index.js"),
     after: `network.target ${sessionHostUnit}`,
     wants: sessionHostUnit,
     user: agentUser,
@@ -351,15 +362,17 @@ try {
     supplementaryGroups: ipcGroup,
     environmentFile: agentEnvFile,
     readWritePaths: `${agentDataDir} ${workspace}`,
+    workingDirectory: installedCodeRoot,
   }));
   await fs.writeFile(mcpUnitPath, unitBody({
     description: "Disposable DP Beget Bridge MCP integration test",
-    execStart: path.join(repoRoot, "apps/mcp/src/index.js"),
+    execStart: path.join(installedCodeRoot, "apps/mcp/src/index.js"),
     after: `network.target ${agentUnit}`,
     requires: agentUnit,
     user: mcpUser,
     group: mcpUser,
     environmentFile: mcpEnvFile,
+    workingDirectory: installedCodeRoot,
   }));
 
   await execFileAsync("systemd-analyze", ["verify", sessionHostUnitPath, agentUnitPath, mcpUnitPath]);
