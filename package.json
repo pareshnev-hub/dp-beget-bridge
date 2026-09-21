@@ -12,6 +12,7 @@
     "start:mcp": "node apps/mcp/src/index.js",
     "start:telemetry": "node apps/telemetry/src/index.js",
     "test": "node --test",
+    "test:integration:live-mcp": "node scripts/integration/live-mcp-smoke.mjs",
     "test:integration:tmux": "node scripts/integration/agent-tmux-smoke.mjs",
     "test:integration:systemd": "node scripts/integration/systemd-mcp-lifecycle.mjs",
     "check": "node scripts/check.mjs"
