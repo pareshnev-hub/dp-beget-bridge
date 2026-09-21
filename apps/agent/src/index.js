@@ -1,8 +1,7 @@
 import fs from "node:fs/promises";
 import { loadConfig } from "./config.js";
-import { StateStore } from "./state-store.js";
-import { TmuxSessionManager } from "./tmux.js";
 import { FileManager } from "./files.js";
+import { SessionHostClient } from "./session-host-client.js";
 import { createAgentServer } from "./server.js";
 import { PathPolicy } from "../../../packages/core/src/path-policy.js";
 import { createLogger } from "../../../packages/core/src/logger.js";
@@ -17,8 +16,6 @@ if (!config.token || config.token.length < 32) {
 }
 
 await fs.mkdir(config.dataDir, { recursive: true, mode: 0o700 });
-const store = new StateStore(config.dataDir);
-await store.init();
 const installationId = await loadOrCreateInstallationId(config.dataDir);
 const telemetry = new TelemetryClient({
   enabled: config.telemetryEnabled,
@@ -27,7 +24,7 @@ const telemetry = new TelemetryClient({
   logger,
 });
 const pathPolicy = new PathPolicy(config.allowedRoots);
-const sessions = new TmuxSessionManager({ config, store, pathPolicy, logger, telemetry });
+const sessions = new SessionHostClient({ socketPath: config.sessionHostSocket });
 const files = new FileManager({ pathPolicy, logger, telemetry, uploadMaxBytes: config.fileUploadMaxBytes });
 const server = createAgentServer({ config, sessions, files, logger });
 

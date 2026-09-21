@@ -5,34 +5,52 @@ import path from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { promisify } from "node:util";
+import { SessionHostClient } from "../../apps/agent/src/session-host-client.js";
 
 const execFileAsync = promisify(execFile);
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-tmux-integration-"));
 const workspace = path.join(root, "workspace");
-const dataDir = path.join(root, "data");
-const tmuxSocket = path.join(root, "tmux", "tmux.sock");
+const agentDataDir = path.join(root, "agent-data");
+const sessionDataDir = path.join(root, "session-data");
+const sessionHostSocket = path.join(root, "run", "session-host.sock");
+const tmuxSocket = path.join(sessionDataDir, "tmux", "tmux.sock");
 const port = 18000 + (process.pid % 10000);
 const baseUrl = `http://127.0.0.1:${port}`;
 const token = "integration-agent-token-that-is-not-a-production-secret";
-const environment = {
+const agentEnvironment = {
   ...process.env,
   DP_AGENT_HOST: "127.0.0.1",
   DP_AGENT_PORT: String(port),
   DP_AGENT_TOKEN: token,
-  DP_DATA_DIR: dataDir,
+  DP_DATA_DIR: agentDataDir,
+  DP_SESSION_HOST_SOCKET: sessionHostSocket,
+  DP_ALLOWED_ROOTS: workspace,
+  DP_FILE_UPLOAD_MAX_BYTES: String(4 * 1024 * 1024),
+  DP_TELEMETRY_ENABLED: "false",
+  DP_LOG_LEVEL: "info",
+};
+const {
+  DP_AGENT_TOKEN: _agentToken,
+  DP_MCP_ACCESS_TOKEN: _mcpToken,
+  ...credentialFreeEnvironment
+} = process.env;
+const sessionHostEnvironment = {
+  ...credentialFreeEnvironment,
+  DP_SESSION_HOST_SOCKET: sessionHostSocket,
+  DP_SESSION_DATA_DIR: sessionDataDir,
   DP_ALLOWED_ROOTS: workspace,
   DP_TMUX_SOCKET: tmuxSocket,
   DP_COMMAND_WAIT_MS: "50",
   DP_TERMINAL_HISTORY_LINES: "10000",
   DP_SESSION_OUTPUT_WARN_BYTES: String(4 * 1024 * 1024),
-  DP_FILE_UPLOAD_MAX_BYTES: String(4 * 1024 * 1024),
-  DP_TELEMETRY_ENABLED: "false",
   DP_LOG_LEVEL: "info",
 };
 
 let agent;
+let sessionHost;
 let sessionId;
 let agentLogs = "";
+let sessionHostLogs = "";
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -70,15 +88,55 @@ async function waitForAgent() {
   throw new Error(`Agent health timeout\n${agentLogs}`);
 }
 
+async function waitForSessionHost() {
+  const deadline = Date.now() + 10000;
+  const client = new SessionHostClient({ socketPath: sessionHostSocket });
+  while (Date.now() < deadline) {
+    if (sessionHost.exitCode !== null) {
+      throw new Error(`Session Host exited early (${sessionHost.exitCode})\n${sessionHostLogs}`);
+    }
+    try {
+      const health = await client.request("/health");
+      if (health.status === "ok") return;
+    } catch {
+      // Socket startup errors are expected until listen() completes.
+    }
+    await delay(100);
+  }
+  throw new Error(`Session Host health timeout\n${sessionHostLogs}`);
+}
+
+async function startSessionHost() {
+  sessionHost = spawn(process.execPath, ["apps/session-host/src/index.js"], {
+    cwd: process.cwd(),
+    env: sessionHostEnvironment,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  sessionHost.stdout.on("data", (chunk) => { sessionHostLogs += chunk; });
+  sessionHost.stderr.on("data", (chunk) => { sessionHostLogs += chunk; });
+  await waitForSessionHost();
+}
+
 async function startAgent() {
   agent = spawn(process.execPath, ["apps/agent/src/index.js"], {
     cwd: process.cwd(),
-    env: environment,
+    env: agentEnvironment,
     stdio: ["ignore", "pipe", "pipe"],
   });
   agent.stdout.on("data", (chunk) => { agentLogs += chunk; });
   agent.stderr.on("data", (chunk) => { agentLogs += chunk; });
   await waitForAgent();
+}
+
+async function stopSessionHost() {
+  if (!sessionHost || sessionHost.exitCode !== null) return;
+  const exited = once(sessionHost, "exit");
+  sessionHost.kill("SIGTERM");
+  const timedOut = delay(5000).then(() => "timeout");
+  if (await Promise.race([exited, timedOut]) === "timeout") {
+    sessionHost.kill("SIGKILL");
+    await once(sessionHost, "exit");
+  }
 }
 
 async function stopAgent() {
@@ -108,6 +166,7 @@ await fs.mkdir(workspace, { recursive: true });
 
 try {
   const { stdout: tmuxVersion } = await execFileAsync("tmux", ["-V"]);
+  await startSessionHost();
   await startAgent();
 
   const opened = await request("/v1/sessions", {
@@ -158,8 +217,10 @@ try {
   }));
 } finally {
   await stopAgent();
+  await stopSessionHost();
   if (sessionId) {
     await execFileAsync("tmux", ["-S", tmuxSocket, "kill-session", "-t", `dpb_${sessionId}`]).catch(() => {});
   }
+  await execFileAsync("tmux", ["-S", tmuxSocket, "kill-server"]).catch(() => {});
   await fs.rm(root, { recursive: true, force: true });
 }

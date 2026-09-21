@@ -5,10 +5,10 @@ Requires=dp-beget-agent.service
 
 [Service]
 Type=simple
-User=__DP_USER__
-Group=__DP_GROUP__
+User=__DP_MCP_USER__
+Group=__DP_MCP_GROUP__
 WorkingDirectory=/opt/dp-beget-bridge
-EnvironmentFile=/etc/dp-beget-bridge/bridge.env
+EnvironmentFile=/etc/dp-beget-bridge/mcp.env
 ExecStart=/usr/bin/env node apps/mcp/src/index.js
 Restart=on-failure
 RestartSec=3
@@ -16,7 +16,7 @@ TimeoutStopSec=15
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/dp-beget-bridge
+ReadWritePaths=/var/lib/dp-beget-bridge-mcp
 
 [Install]
 WantedBy=multi-user.target

@@ -10,6 +10,7 @@
   "scripts": {
     "start:agent": "node apps/agent/src/index.js",
     "start:mcp": "node apps/mcp/src/index.js",
+    "start:session-host": "node apps/session-host/src/index.js",
     "start:telemetry": "node apps/telemetry/src/index.js",
     "test": "node --test",
     "test:integration:live-mcp": "node scripts/integration/live-mcp-smoke.mjs",

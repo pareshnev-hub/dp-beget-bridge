@@ -1,5 +1,25 @@
 # Migration and continuity
 
+## Single-user preview to separated runtime identities
+
+DP-009 changes the production layout from one shared runtime user/configuration to:
+
+- `dp-mcp` for the network-facing MCP process;
+- `dp-agent` for local policy and file capability enforcement;
+- the explicitly selected `--user` / `--work-user` for Session Host, tmux and shell processes.
+
+The installer defaults to `--live-session-policy preserve`. It stops and restarts Agent/MCP, but does not stop an already-running separated Session Host or tmux server. On the first migration, legacy tmux cannot be preserved safely because its process environment may contain the former shared credentials. If any legacy tmux session is alive, migration fails before mutation and requires an explicit owner close. With no live legacy session, the stale server is stopped, while `/var/lib/dp-beget-bridge` metadata/transcripts remain in place for the new Session Host.
+
+Credentials are split into root-owned files:
+
+- `/etc/dp-beget-bridge/mcp.env` — readable by `dp-mcp`;
+- `/etc/dp-beget-bridge/agent.env` — readable by `dp-agent`;
+- `/etc/dp-beget-bridge/session-host.env` — contains paths and limits, but no Agent/MCP credentials.
+
+The legacy `bridge.env` is retained as `root:root 0600` rollback material. The work identity must fail read checks against it and both service credential files. An existing telemetry installation ID is copied non-destructively into the Agent-owned state directory so identity separation does not create a false new installation. The installer refuses any live-session policy other than `preserve`; destructive stop/uninstall behavior is not implicit.
+
+Rollback to the shared-identity preview is a manual owner action: stop the three API services, restore the previous code/unit files and root-only legacy configuration, then restart Agent/MCP under the former work identity. Do not kill the explicit tmux server during rollback. If ownership, state or socket preflight fails, leave the session state in place and stop rather than deleting it.
+
 ## User moves to another Beget VPS
 
 1. Install the same or newer DP version on the new VPS.
