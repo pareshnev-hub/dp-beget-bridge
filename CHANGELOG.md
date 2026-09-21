@@ -8,6 +8,7 @@ All notable changes are documented here.
 
 - Added a versioned SQLite operation ledger with HMAC-protected request fingerprints, per-session single-writer admission, idempotent retry/conflict semantics and fail-closed `UNKNOWN` reconciliation.
 - Replaced PTY marker parsing with atomic per-operation exit records so forged or truncated terminal output cannot fabricate command completion.
+- Submit the command and completion suffix as one shell input line so sustained PTY output cannot flush the pending status write.
 - Added descriptor-pinned workspace mutations with atomic no-replace commits, protected roots, overlap denial and fail-closed complex-operation handling.
 - Added fail-closed HTTPS attachment fetching with DNS/IP pinning, redirect revalidation, private-address denial, deadlines, byte/concurrency ceilings and disconnect cancellation.
 - Split MCP, Agent and restricted work execution into distinct UNIX identities and credential files.
