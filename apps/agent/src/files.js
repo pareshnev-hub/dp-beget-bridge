@@ -8,11 +8,18 @@ import { BridgeError } from "../../../packages/core/src/errors.js";
 import { sizeBucket } from "./telemetry.js";
 
 export class FileManager {
-  constructor({ pathPolicy, logger, telemetry = { track() {} }, uploadMaxBytes }) {
+  constructor({
+    pathPolicy,
+    logger,
+    telemetry = { track() {} },
+    uploadMaxBytes,
+    fileSystem = fsp,
+  }) {
     this.pathPolicy = pathPolicy;
     this.logger = logger;
     this.uploadMaxBytes = uploadMaxBytes;
     this.telemetry = telemetry;
+    this.fileSystem = fileSystem;
   }
 
   async list(candidate) {
@@ -104,22 +111,35 @@ export class FileManager {
     this.telemetry.trackActivity?.();
     const from = this.pathPolicy.resolve(source);
     const to = this.pathPolicy.resolve(destination);
+
+    // Resolve source existence before inspecting or changing the destination.
+    // This is also important when source and destination are the same path.
+    await this.fileSystem.lstat(from);
+    if (from === to) {
+      return { source: from, destination: to, moved: false, reason: "same_path" };
+    }
+
     if (!overwrite) {
       try {
-        await fsp.access(to);
+        await this.fileSystem.access(to);
         throw new BridgeError("destination_exists", "Destination already exists", 409);
       } catch (error) {
         if (error instanceof BridgeError) throw error;
         if (error.code !== "ENOENT") throw error;
       }
     }
-    if (overwrite) await fsp.rm(to, { recursive: true, force: true });
+
     try {
-      await fsp.rename(from, to);
+      // On the supported Linux platform rename is the commit operation. Never
+      // pre-delete the destination: if rename fails, both paths remain intact.
+      await this.fileSystem.rename(from, to);
     } catch (error) {
       if (error.code !== "EXDEV") throw error;
-      await fsp.cp(from, to, { recursive: true });
-      await fsp.rm(from, { recursive: true, force: true });
+      throw new BridgeError(
+        "unsupported_cross_device_move",
+        "Cross-device move is not safely supported",
+        409,
+      );
     }
     this.logger.info("file.moved", { source: from, destination: to });
     return { source: from, destination: to, moved: true };

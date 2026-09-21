@@ -4,6 +4,12 @@ All notable changes are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevented move from pre-deleting an existing destination before a successful rename.
+- Defined same-path move as a non-destructive no-op and disabled unsafe cross-device fallback.
+- Added FILE-01, FILE-02, FILE-03 and FILE-09 data-loss regression coverage for DP-001.
+
 ### Documentation / planning
 
 - Replaced the preliminary roadmap with the audited R0002–R0007 release sequence.
