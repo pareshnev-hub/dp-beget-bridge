@@ -20,8 +20,8 @@ test("Agent delegates terminal lifecycle over a Unix socket", async (context) =>
   const sessions = {
     async list() { calls.push(["list"]); return [{ id: "one", alive: true }]; },
     async open(input) { calls.push(["open", input]); return { id: "one", ...input, alive: true }; },
-    async runCommand(id, command, waitMs) {
-      calls.push(["run", id, command, waitMs]);
+    async runCommand(id, command, waitMs, idempotencyKey) {
+      calls.push(["run", id, command, waitMs, idempotencyKey]);
       return { sessionId: id, state: "running" };
     },
     async readOutput(id, cursor, maxBytes) {
@@ -43,7 +43,7 @@ test("Agent delegates terminal lifecycle over a Unix socket", async (context) =>
   const client = new SessionHostClient({ host: "127.0.0.1", port });
   assert.deepEqual(await client.list(), [{ id: "one", alive: true }]);
   assert.equal((await client.open({ cwd: ".", label: "test" })).id, "one");
-  assert.equal((await client.runCommand("one", "sleep 1", 50)).state, "running");
+  assert.equal((await client.runCommand("one", "sleep 1", 50, "session-host-test")).state, "running");
   assert.equal((await client.readOutput("one", 0, 100)).output, "test");
   assert.equal((await client.sendInput("one", "yes", true)).accepted, true);
   assert.equal((await client.interrupt("one")).interrupted, true);
@@ -51,7 +51,7 @@ test("Agent delegates terminal lifecycle over a Unix socket", async (context) =>
   assert.deepEqual(calls, [
     ["list"],
     ["open", { cwd: ".", label: "test" }],
-    ["run", "one", "sleep 1", 50],
+    ["run", "one", "sleep 1", 50, "session-host-test"],
     ["read", "one", "0", "100"],
     ["input", "one", "yes", true],
     ["interrupt", "one"],

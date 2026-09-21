@@ -8,6 +8,11 @@ function routeSession(pathname) {
   return match ? { id: match[1], action: match[2] || "session" } : null;
 }
 
+function routeOperation(pathname) {
+  const match = pathname.match(/^\/v1\/sessions\/([a-zA-Z0-9_-]+)\/operations\/([a-zA-Z0-9_-]+)$/);
+  return match ? { sessionId: match[1], operationId: match[2] } : null;
+}
+
 export function createSessionHostServer({ sessions, logger }) {
   return http.createServer(async (request, response) => {
     const started = Date.now();
@@ -28,12 +33,26 @@ export function createSessionHostServer({ sessions, logger }) {
         return;
       }
 
+      const operationRoute = routeOperation(url.pathname);
+      if (request.method === "GET" && operationRoute) {
+        sendJson(response, 200, await sessions.getOperation(
+          operationRoute.sessionId,
+          operationRoute.operationId,
+        ));
+        return;
+      }
+
       const sessionRoute = routeSession(url.pathname);
       if (sessionRoute) {
         const { id, action } = sessionRoute;
         if (request.method === "POST" && action === "commands") {
           const body = await readJson(request);
-          sendJson(response, 200, await sessions.runCommand(id, body.command, body.waitMs));
+          sendJson(response, 200, await sessions.runCommand(
+            id,
+            body.command,
+            body.waitMs,
+            body.idempotencyKey,
+          ));
           return;
         }
         if (request.method === "GET" && action === "output") {

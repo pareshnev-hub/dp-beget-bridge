@@ -6,6 +6,7 @@ All notable changes are documented here.
 
 ### Security
 
+- Added a versioned SQLite operation ledger with HMAC-protected request fingerprints, per-session single-writer admission, idempotent retry/conflict semantics and fail-closed `UNKNOWN` reconciliation.
 - Added descriptor-pinned workspace mutations with atomic no-replace commits, protected roots, overlap denial and fail-closed complex-operation handling.
 - Added fail-closed HTTPS attachment fetching with DNS/IP pinning, redirect revalidation, private-address denial, deadlines, byte/concurrency ceilings and disconnect cancellation.
 - Split MCP, Agent and restricted work execution into distinct UNIX identities and credential files.
@@ -24,6 +25,7 @@ All notable changes are documented here.
 
 ### Testing
 
+- Added TERM-04 through TERM-07 coverage plus legacy import, migration backup and interrupted-migration recovery tests.
 - Added FILE-04 through FILE-09 race, root-protection, symlink-swap, path-overlap and unsupported-operation regression coverage.
 - Added SSRF-01 through SSRF-08 coverage plus DNS-deadline, mixed-answer, credential-isolation and bounded-concurrency assertions.
 - Added a versioned DP-003 compatibility fixture and MCP descriptor/call assertions for required identity, optional metadata and structured output.

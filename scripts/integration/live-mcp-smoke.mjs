@@ -148,6 +148,7 @@ try {
 
   const command = await callTool("run_terminal_command", {
     session_id: sessionId,
+    idempotency_key: `live-phase-${sessionId}`,
     command: "printf '\\142\\145\\147\\145\\164\\055\\160\\150\\141\\163\\145\\055\\157\\156\\145\\012'; sleep " + (restartSystemd ? "12" : "2") + "; printf '\\142\\145\\147\\145\\164\\055\\160\\150\\141\\163\\145\\055\\164\\167\\157\\012'",
     wait_ms: 50,
   });
@@ -180,6 +181,15 @@ try {
   const continued = await waitForOutput("beget-phase-two");
   assert.match(continued, /beget-phase-one/);
 
+  if (restartSystemd) {
+    const uncertain = await callTool("get_terminal_operation", {
+      session_id: sessionId,
+      operation_id: command.operationId,
+    });
+    assert.equal(uncertain.status, "UNKNOWN", "Session Host restart must expose crash ambiguity honestly");
+    await callTool("interrupt_terminal", { session_id: sessionId });
+  }
+
   await callTool("send_terminal_input", {
     session_id: sessionId,
     input: "printf '\\142\\145\\147\\145\\164\\055\\151\\156\\164\\145\\162\\141\\143\\164\\151\\166\\145\\055\\157\\153\\012'",
@@ -192,6 +202,7 @@ try {
 
   const interruptTarget = await callTool("run_terminal_command", {
     session_id: sessionId,
+    idempotency_key: `live-interrupt-${sessionId}`,
     command: "sleep 30",
     wait_ms: 50,
   });
@@ -202,6 +213,7 @@ try {
   assert.equal(afterInterrupt.sessions.find((session) => session.id === guard.id)?.alive, true);
   const usableAfterInterrupt = await callTool("run_terminal_command", {
     session_id: sessionId,
+    idempotency_key: `live-after-interrupt-${sessionId}`,
     command: "printf '\\142\\145\\147\\145\\164\\055\\160\\157\\163\\164\\055\\151\\156\\164\\145\\162\\162\\165\\160\\164\\055\\157\\153\\012'",
     wait_ms: 5000,
   });
@@ -239,7 +251,7 @@ try {
       telemetryEnabled: /^(1|true|yes)$/i.test(process.env.DP_TELEMETRY_ENABLED || "false"),
       identities,
     },
-    scenarios: ["TERM-01", "TERM-10", "TERM-11", "TERM-12", ...(restartSystemd ? ["TERM-02", "TERM-03"] : [])],
+    scenarios: ["TERM-01", "TERM-10", "TERM-11", "TERM-12", ...(restartSystemd ? ["TERM-02", "TERM-03", "TERM-07"] : [])],
     supplemental: {
       clientDisconnectReconnect: "pass",
       serviceRestartCoveredHere: restartSystemd,
