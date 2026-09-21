@@ -40,7 +40,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | DP-006 Single-writer operation ledger | #6 | P1 | R0002 | PLANNED | TERM-04…07 |
 | DP-007 Completion independent of PTY | #7 | P1 | R0002 | PLANNED | TERM-08/09 |
 | DP-008 Archived output/cursor integrity | #8 | P1 | R0002 | PLANNED | CUR-01…06 |
-| DP-009 Runner lifetime/credential separation | #9 | P1 | R0002 | PLANNED | identity/ACL + TERM/OPS evidence |
+| DP-009 Runner lifetime/credential separation | #9 | P1 | R0002 | IN PROGRESS | `93031b4`; OPS-03 root guard verified; identity/ACL and live-session policy remain |
 | DP-010 Backpressure/disk ceilings | #10 | P1 | R0002 | PLANNED | STR-01…05 |
 | DP-011 Log/diagnostic credential safety | #11 | P1 | R0002 | PLANNED | LOG-01…06 |
 | DP-012 OAuth discovery/registration spike | #12 | P1 | R0003 | PLANNED | AUTH-01…03 + real client |
