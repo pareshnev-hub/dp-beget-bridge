@@ -1,20 +1,43 @@
 import { BridgeError } from "../../../packages/core/src/errors.js";
+import { AGENT_CONTEXT_HEADER, createAgentContext } from "../../../packages/auth/src/agent-context.js";
 
 export class AgentClient {
-  constructor({ baseUrl, token, attachmentFetcher }) {
+  constructor({ baseUrl, token, attachmentFetcher, contextSecret, authorization }) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.token = token;
     this.attachmentFetcher = attachmentFetcher;
+    this.contextSecret = contextSecret;
+    this.authorization = authorization;
+  }
+
+  withAuthorization(authorization) {
+    return new AgentClient({
+      baseUrl: this.baseUrl,
+      token: this.token,
+      attachmentFetcher: this.attachmentFetcher,
+      contextSecret: this.contextSecret,
+      authorization,
+    });
   }
 
   async request(path, options = {}) {
+    const method = String(options.method || "GET").toUpperCase();
+    const headers = {
+      ...options.headers,
+      ...(options.body && !(options.body instanceof ReadableStream) ? { "content-type": "application/json" } : {}),
+      authorization: `Bearer ${this.token}`,
+    };
+    if (this.authorization?.kind === "oauth-spike") {
+      headers[AGENT_CONTEXT_HEADER] = createAgentContext({
+        secret: this.contextSecret,
+        authorization: this.authorization,
+        method,
+        path,
+      });
+    }
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...options,
-      headers: {
-        authorization: `Bearer ${this.token}`,
-        ...(options.body && !(options.body instanceof ReadableStream) ? { "content-type": "application/json" } : {}),
-        ...options.headers,
-      },
+      headers,
       duplex: options.body instanceof ReadableStream ? "half" : undefined,
     });
     if (!response.ok) {
