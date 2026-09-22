@@ -252,6 +252,21 @@ test("M002b binds authorization codes and tokens to a durable owner grant", asyn
     grantTtlMs: 60_000,
     now: () => now,
   });
+  const dcrMetadata = {
+    redirect_uris: [oauthDefaults.chatGptRedirectUri],
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code"],
+    response_types: ["code"],
+  };
+  const dcrRegistration = oauth.registerClient(dcrMetadata);
+  const rotatedApproval = createOauth({
+    approvalSecret: "rotated-owner-approval-secret-that-is-long-enough",
+    authStore: store,
+    ownerId,
+    now: () => now,
+  });
+  assert.equal(rotatedApproval.registerClient(dcrMetadata).client_id, dcrRegistration.client_id);
+
   const transaction = await oauth.beginAuthorization(authorizationParams({ confirmed: "true" }));
   assert.equal(store.getClient(oauthDefaults.chatGptClientId).ownerId, ownerId);
 
