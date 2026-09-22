@@ -18,6 +18,26 @@ agent_user="dp-agent"
 mcp_user="dp-mcp"
 ipc_group="dp-bridge-work"
 config_dir=${DP_INSTALL_CONFIG_DIR:-/etc/dp-beget-bridge}
+session_data_dir=/var/lib/dp-beget-bridge
+session_host_unit=dp-beget-session-host.service
+agent_unit=dp-beget-agent.service
+mcp_unit=dp-beget-mcp.service
+api_services_stopped=false
+session_host_stopped=false
+
+restore_services_on_error() {
+  local status=$?
+  trap - EXIT
+  if [[ ${status} -ne 0 && ${api_services_stopped} == "true" ]]; then
+    echo "Installation failed; restoring local services without changing public exposure." >&2
+    if [[ ${session_host_stopped} == "true" ]]; then
+      systemctl start "${session_host_unit}" 2>/dev/null || true
+    fi
+    systemctl restart "${agent_unit}" "${mcp_unit}" 2>/dev/null || true
+  fi
+  exit "${status}"
+}
+trap restore_services_on_error EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -121,8 +141,19 @@ usermod -a -G "${ipc_group}" "${work_user}"
 chgrp "${ipc_group}" "${allowed_root}"
 chmod g+rwx,g+s "${allowed_root}"
 
-# Updating Agent/MCP must not stop tmux or an already-running Session Host.
-systemctl stop dp-beget-mcp.service dp-beget-agent.service 2>/dev/null || true
+# Freeze normal API admission before proving that Session Host has no active
+# operation. tmux remains outside the Session Host process lifecycle.
+session_host_was_active=false
+if systemctl is-active --quiet "${session_host_unit}"; then
+  session_host_was_active=true
+fi
+systemctl stop "${mcp_unit}" "${agent_unit}" 2>/dev/null || true
+api_services_stopped=true
+if [[ ${session_host_was_active} == "true" ]]; then
+  node "${source_dir}/scripts/deploy/session-host-restart-preflight.mjs" "${session_data_dir}/state.sqlite"
+  systemctl stop "${session_host_unit}"
+  session_host_stopped=true
+fi
 if [[ ${legacy_migration} == "true" ]]; then
   runuser -u "${work_user}" -- tmux -S "${legacy_tmux_socket}" kill-server 2>/dev/null || true
 fi
@@ -131,7 +162,7 @@ cd /opt/dp-beget-bridge
 npm ci --omit=dev
 
 install -d -m 0750 -o root -g root "${config_dir}"
-install -d -m 0700 -o "${work_user}" -g "${work_group}" /var/lib/dp-beget-bridge
+install -d -m 0700 -o "${work_user}" -g "${work_group}" "${session_data_dir}"
 install -d -m 0700 -o "${agent_user}" -g "${agent_user}" /var/lib/dp-beget-bridge-agent
 install -d -m 0700 -o "${mcp_user}" -g "${mcp_user}" /var/lib/dp-beget-bridge-mcp
 if [[ -f /var/lib/dp-beget-bridge/installation-id && ! -f /var/lib/dp-beget-bridge-agent/installation-id ]]; then
@@ -215,9 +246,10 @@ sed \
   deploy/systemd/dp-beget-session-host.service > /etc/systemd/system/dp-beget-session-host.service
 
 systemctl daemon-reload
-systemctl enable dp-beget-session-host.service dp-beget-agent.service dp-beget-mcp.service
-systemctl start dp-beget-session-host.service
-systemctl restart dp-beget-agent.service dp-beget-mcp.service
+systemctl enable "${session_host_unit}" "${agent_unit}" "${mcp_unit}"
+systemctl start "${session_host_unit}"
+node scripts/deploy/wait-session-host.mjs /run/dp-beget-bridge/session-host.sock 15000
+systemctl restart "${agent_unit}" "${mcp_unit}"
 
 # Do not report a successful install until every local endpoint and identity is ready.
 node scripts/doctor.mjs
