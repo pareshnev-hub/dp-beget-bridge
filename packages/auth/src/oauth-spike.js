@@ -22,6 +22,13 @@ function randomToken() {
   return base64url(crypto.randomBytes(32));
 }
 
+function sameStrings(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+  const a = [...left].sort();
+  const b = [...right].sort();
+  return a.every((value, index) => value === b[index]);
+}
+
 function oauthError(code, description, status = 400) {
   const error = new Error(description);
   error.name = "OAuthError";
@@ -171,9 +178,9 @@ export class ChatGptCimdRegistry {
 }
 
 export class ChatGptDcrRegistry {
-  constructor({ approvalSecret }) {
-    this.clientId = "dcr_" + base64url(crypto.createHmac("sha256", approvalSecret)
-      .update("DP-012 ChatGPT DCR public client v1").digest());
+  constructor({ approvalSecret, clientId }) {
+    this.clientId = clientId || ("dcr_" + base64url(crypto.createHmac("sha256", approvalSecret)
+      .update("DP-012 ChatGPT DCR public client v1").digest()));
   }
 
   register(document) {
@@ -215,7 +222,11 @@ export class OAuthSpike {
     transactionTtlMs = 5 * 60 * 1000,
     codeTtlMs = 2 * 60 * 1000,
     accessTokenTtlMs = 10 * 60 * 1000,
+    grantTtlMs = 24 * 60 * 60 * 1000,
     maxPendingTransactions = 128,
+    authStore,
+    ownerId,
+    executionProfile = "files-read",
     now = () => Date.now(),
   }) {
     this.issuer = canonicalHttpsUrl("issuer", issuer);
@@ -227,11 +238,31 @@ export class OAuthSpike {
     this.scopes = new Set(scopes);
     if (this.scopes.size === 0) throw new Error("At least one OAuth scope is required");
     this.clientRegistry = clientRegistry;
-    this.dcrRegistry = new ChatGptDcrRegistry({ approvalSecret });
+    const durableDcrClient = authStore && ownerId
+      ? authStore.findActiveClient({
+        ownerId,
+        redirectUri: DEFAULT_CHATGPT_REDIRECT_URI,
+        clientIdPrefix: "dcr_",
+      })
+      : null;
+    this.dcrRegistry = new ChatGptDcrRegistry({
+      approvalSecret,
+      clientId: durableDcrClient?.clientId,
+    });
     this.transactionTtlMs = transactionTtlMs;
     this.codeTtlMs = codeTtlMs;
     this.accessTokenTtlMs = accessTokenTtlMs;
+    this.grantTtlMs = grantTtlMs;
     this.maxPendingTransactions = maxPendingTransactions;
+    this.authStore = authStore || null;
+    this.ownerId = ownerId || null;
+    this.executionProfile = executionProfile;
+    if (Boolean(this.authStore) !== Boolean(this.ownerId)) {
+      throw new Error("authStore and ownerId must be configured together");
+    }
+    if (!Number.isFinite(this.grantTtlMs) || this.grantTtlMs < 1) {
+      throw new Error("OAuth grant TTL must be a positive number");
+    }
     this.now = now;
     this.transactions = new Map();
     this.codes = new Map();
@@ -265,7 +296,23 @@ export class OAuthSpike {
   }
 
   registerClient(document) {
-    return this.dcrRegistry.register(document);
+    const registration = this.dcrRegistry.register(document);
+    this.persistClient(registration.client_id, registration.redirect_uris[0]);
+    return registration;
+  }
+
+  persistClient(clientId, redirectUri) {
+    if (!this.authStore) return;
+    try {
+      this.authStore.registerClient({
+        clientId,
+        ownerId: this.ownerId,
+        redirectUri,
+        createdAt: new Date(this.now()).toISOString(),
+      });
+    } catch {
+      throw oauthError("temporarily_unavailable", "OAuth client state could not be persisted", 503);
+    }
   }
 
   challenge(scope = [...this.scopes].join(" ")) {
@@ -294,6 +341,7 @@ export class OAuthSpike {
     }
     if (clientId.startsWith("dcr_")) this.dcrRegistry.validate(clientId, redirectUri);
     else await this.clientRegistry.validate(clientId, redirectUri);
+    this.persistClient(clientId, redirectUri);
     const scopes = parseScope(params.get("scope"), this.scopes);
     if (this.transactions.size >= this.maxPendingTransactions) {
       throw oauthError("temporarily_unavailable", "Too many pending authorization transactions", 503);
@@ -320,8 +368,31 @@ export class OAuthSpike {
     if (!equalText(approvalSecret || "", this.approvalSecret)) {
       throw oauthError("access_denied", "Owner approval was not accepted", 403);
     }
+    const approvedAt = this.now();
+    let durableGrant = null;
+    if (this.authStore) {
+      try {
+        durableGrant = this.authStore.createGrant({
+          ownerId: this.ownerId,
+          clientId: transaction.clientId,
+          resource: transaction.resource,
+          scopes: transaction.scopes,
+          executionProfile: this.executionProfile,
+          grantedAt: new Date(approvedAt).toISOString(),
+          expiresAt: new Date(approvedAt + this.grantTtlMs).toISOString(),
+        });
+      } catch {
+        throw oauthError("temporarily_unavailable", "Authorization grant could not be persisted", 503);
+      }
+    }
     const code = randomToken();
-    this.codes.set(digest(code), { ...transaction, expiresAt: this.now() + this.codeTtlMs });
+    this.codes.set(digest(code), {
+      ...transaction,
+      grantId: durableGrant?.id || null,
+      ownerId: durableGrant?.ownerId || null,
+      executionProfile: durableGrant?.executionProfile || null,
+      expiresAt: approvedAt + this.codeTtlMs,
+    });
     const redirect = new URL(transaction.redirectUri);
     redirect.searchParams.set("code", code);
     if (transaction.state) redirect.searchParams.set("state", transaction.state);
@@ -345,17 +416,40 @@ export class OAuthSpike {
     if (!PKCE_VERIFIER.test(verifier)) throw oauthError("invalid_grant", "PKCE code_verifier is invalid");
     const calculated = base64url(crypto.createHash("sha256").update(verifier).digest());
     if (!equalText(calculated, grant.codeChallenge)) throw oauthError("invalid_grant", "PKCE verification failed");
+    let durableGrant = null;
+    if (this.authStore) {
+      try {
+        durableGrant = this.authStore.getGrant(grant.grantId, { now: new Date(this.now()).toISOString() });
+      } catch {
+        throw oauthError("temporarily_unavailable", "Authorization grant state is unavailable", 503);
+      }
+      if (!durableGrant
+        || durableGrant.status !== "ACTIVE"
+        || durableGrant.ownerId !== this.ownerId
+        || durableGrant.clientId !== grant.clientId
+        || durableGrant.resource !== grant.resource
+        || !sameStrings(durableGrant.scopes, grant.scopes)) {
+        throw oauthError("invalid_grant", "Authorization grant is inactive or does not match the authorization code");
+      }
+    }
+    const issuedAt = this.now();
+    const expiresAt = durableGrant
+      ? Math.min(issuedAt + this.accessTokenTtlMs, Date.parse(durableGrant.expiresAt))
+      : issuedAt + this.accessTokenTtlMs;
     const token = randomToken();
     this.tokens.set(digest(token), {
       clientId: grant.clientId,
       resource: grant.resource,
       scopes: grant.scopes,
-      expiresAt: this.now() + this.accessTokenTtlMs,
+      grantId: durableGrant?.id || null,
+      ownerId: durableGrant?.ownerId || null,
+      executionProfile: durableGrant?.executionProfile || null,
+      expiresAt,
     });
     return {
       access_token: token,
       token_type: "Bearer",
-      expires_in: Math.floor(this.accessTokenTtlMs / 1000),
+      expires_in: Math.floor((expiresAt - issuedAt) / 1000),
       scope: grant.scopes.join(" "),
     };
   }
@@ -366,7 +460,29 @@ export class OAuthSpike {
     if (!match) return null;
     const record = this.tokens.get(digest(match[1]));
     if (!record || record.resource !== this.resource || record.expiresAt <= this.now()) return null;
-    return { kind: "oauth-spike", clientId: record.clientId, scopes: new Set(record.scopes) };
+    if (this.authStore) {
+      let grant;
+      try {
+        grant = this.authStore.getGrant(record.grantId, { now: new Date(this.now()).toISOString() });
+      } catch {
+        return null;
+      }
+      if (!grant
+        || grant.status !== "ACTIVE"
+        || grant.ownerId !== record.ownerId
+        || grant.clientId !== record.clientId
+        || grant.resource !== record.resource
+        || grant.executionProfile !== record.executionProfile
+        || !sameStrings(grant.scopes, record.scopes)) return null;
+    }
+    return {
+      kind: "oauth-spike",
+      clientId: record.clientId,
+      scopes: new Set(record.scopes),
+      ownerId: record.ownerId,
+      grantId: record.grantId,
+      executionProfile: record.executionProfile,
+    };
   }
 }
 

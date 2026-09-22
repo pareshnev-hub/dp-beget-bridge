@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { AuthStore } from "../packages/auth/src/auth-store.js";
 import { ChatGptCimdRegistry, OAuthSpike, oauthDefaults } from "../packages/auth/src/oauth-spike.js";
 
 const issuer = "https://bridge.example.test";
@@ -219,4 +223,75 @@ test("DCR registers only the fixed ChatGPT callback and survives process restart
     () => first.registerClient({ ...metadata, redirect_uris: ["https://attacker.example/callback"] }),
     { name: "OAuthError", code: "invalid_client_metadata" },
   );
+});
+
+test("M002b binds authorization codes and tokens to a durable owner grant", async (t) => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-oauth-grant-"));
+  t.after(() => fs.rm(dataDir, { recursive: true, force: true }));
+  const store = new AuthStore(dataDir, { supportedScopes: ["files:read"] });
+  await store.init();
+  t.after(() => store.close());
+
+  const ownerId = "owner-primary";
+  store.createOwnerBootstrap({
+    ownerId,
+    secret: approvalSecret,
+    createdAt: "2026-09-22T20:00:00.000Z",
+    expiresAt: "2026-09-22T20:10:00.000Z",
+  });
+  store.consumeOwnerBootstrap({
+    secret: approvalSecret,
+    now: "2026-09-22T20:01:00.000Z",
+  });
+
+  let now = Date.parse("2026-09-22T20:02:00.000Z");
+  const oauth = createOauth({
+    authStore: store,
+    ownerId,
+    executionProfile: "files-read",
+    grantTtlMs: 60_000,
+    now: () => now,
+  });
+  const dcrMetadata = {
+    redirect_uris: [oauthDefaults.chatGptRedirectUri],
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code"],
+    response_types: ["code"],
+  };
+  const dcrRegistration = oauth.registerClient(dcrMetadata);
+  const rotatedApproval = createOauth({
+    approvalSecret: "rotated-owner-approval-secret-that-is-long-enough",
+    authStore: store,
+    ownerId,
+    now: () => now,
+  });
+  assert.equal(rotatedApproval.registerClient(dcrMetadata).client_id, dcrRegistration.client_id);
+
+  const transaction = await oauth.beginAuthorization(authorizationParams({ confirmed: "true" }));
+  assert.equal(store.getClient(oauthDefaults.chatGptClientId).ownerId, ownerId);
+
+  const redirect = new URL(oauth.approve({ transactionId: transaction.id, approvalSecret }));
+  const { verifier } = verifierAndChallenge();
+  const token = oauth.exchange(new URLSearchParams({
+    grant_type: "authorization_code",
+    code: redirect.searchParams.get("code"),
+    client_id: oauthDefaults.chatGptClientId,
+    redirect_uri: oauthDefaults.chatGptRedirectUri,
+    resource,
+    code_verifier: verifier,
+  }));
+  assert.equal(token.expires_in, 60);
+  const authorization = oauth.authenticate(`Bearer ${token.access_token}`);
+  assert.equal(authorization.ownerId, ownerId);
+  assert.equal(authorization.executionProfile, "files-read");
+  assert.match(authorization.grantId, /^[0-9a-f-]{36}$/);
+  assert.deepEqual([...authorization.scopes], ["files:read"]);
+
+  const grant = store.getGrant(authorization.grantId, { now: new Date(now).toISOString() });
+  assert.equal(grant.clientId, oauthDefaults.chatGptClientId);
+  assert.equal(grant.resource, resource);
+  assert.deepEqual(grant.scopes, ["files:read"]);
+
+  now += 60_000;
+  assert.equal(oauth.authenticate(`Bearer ${token.access_token}`), null);
 });
