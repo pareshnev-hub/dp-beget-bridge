@@ -9,7 +9,7 @@ function integer(name, fallback) {
 
 export function loadConfig() {
   const dataDir = path.resolve(process.env.DP_DATA_DIR || "./runtime/agent");
-  return {
+  const config = {
     agentId: process.env.DP_AGENT_ID || os.hostname(),
     host: process.env.DP_AGENT_HOST || "127.0.0.1",
     port: integer("DP_AGENT_PORT", 8787),
@@ -25,9 +25,18 @@ export function loadConfig() {
     historyLines: integer("DP_TERMINAL_HISTORY_LINES", 100000),
     commandWaitMs: integer("DP_COMMAND_WAIT_MS", 10000),
     sessionOutputWarnBytes: integer("DP_SESSION_OUTPUT_WARN_BYTES", 50 * 1024 * 1024),
+    sessionOutputMaxBytes: integer("DP_SESSION_OUTPUT_MAX_BYTES", 64 * 1024 * 1024),
     storageMinFreeBytes: integer("DP_STORAGE_MIN_FREE_BYTES", 256 * 1024 * 1024),
     fileUploadMaxBytes: integer("DP_FILE_UPLOAD_MAX_BYTES", 512 * 1024 * 1024),
+    fileTransferMaxConcurrent: integer("DP_FILE_TRANSFER_MAX_CONCURRENT", 2),
     telemetryEnabled: /^(1|true|yes)$/i.test(process.env.DP_TELEMETRY_ENABLED || "false"),
     telemetryUrl: process.env.DP_TELEMETRY_URL || "https://pareshnev.com/api/dp-beget-bridge/events",
   };
+  if (config.fileTransferMaxConcurrent < 1) {
+    throw new Error("DP_FILE_TRANSFER_MAX_CONCURRENT must be at least 1");
+  }
+  if (config.sessionOutputMaxBytes < 1) {
+    throw new Error("DP_SESSION_OUTPUT_MAX_BYTES must be at least 1");
+  }
+  return config;
 }

@@ -220,7 +220,7 @@ function unitBody({
   readWritePaths = runtimeRoot,
   workingDirectory = repoRoot,
 }) {
-  return `[Unit]\nDescription=${description}\nAfter=${after}\n${requires ? `Requires=${requires}\n` : ""}${wants ? `Wants=${wants}\n` : ""}\n[Service]\nType=simple\nUser=${user}\nGroup=${group}\n${supplementaryGroups ? `SupplementaryGroups=${supplementaryGroups}\n` : ""}WorkingDirectory=${workingDirectory}\nEnvironmentFile=${environmentFile}\nExecStart=${process.execPath} ${execStart}\nRestart=on-failure\nRestartSec=1\nKillMode=${killMode}\nTimeoutStopSec=15\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nReadWritePaths=${readWritePaths}\n`;
+  return `[Unit]\nDescription=${description}\nAfter=${after}\n${requires ? `Requires=${requires}\n` : ""}${wants ? `Wants=${wants}\n` : ""}\n[Service]\nType=simple\nUser=${user}\nGroup=${group}\n${supplementaryGroups ? `SupplementaryGroups=${supplementaryGroups}\n` : ""}WorkingDirectory=${workingDirectory}\nEnvironmentFile=${environmentFile}\nExecStart=${process.execPath} ${execStart}\nRestart=on-failure\nRestartSec=1\nKillMode=${killMode}\nTimeoutStopSec=15\nTasksMax=128\nLimitNOFILE=4096\nMemoryMax=512M\nMemorySwapMax=512M\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nReadWritePaths=${readWritePaths}\n`;
 }
 
 if (process.getuid?.() !== 0) throw new Error("This integration test must run as root through sudo");
@@ -301,6 +301,7 @@ try {
     "DP_COMMAND_WAIT_MS=50",
     "DP_TERMINAL_HISTORY_LINES=10000",
     `DP_SESSION_OUTPUT_WARN_BYTES=${4 * 1024 * 1024}`,
+    `DP_SESSION_OUTPUT_MAX_BYTES=${8 * 1024 * 1024}`,
     "DP_STORAGE_MIN_FREE_BYTES=1048576",
     "DP_LOG_LEVEL=info",
     "",
@@ -315,6 +316,8 @@ try {
     `DP_DATA_DIR=${agentDataDir}`,
     `DP_ALLOWED_ROOTS=${workspace}`,
     `DP_FILE_UPLOAD_MAX_BYTES=${4 * 1024 * 1024}`,
+    "DP_FILE_TRANSFER_MAX_CONCURRENT=2",
+    "DP_STORAGE_MIN_FREE_BYTES=1048576",
     "DP_TELEMETRY_ENABLED=false",
     "DP_LOG_LEVEL=info",
     "",
@@ -379,6 +382,18 @@ try {
   await execFileAsync("systemd-analyze", ["verify", sessionHostUnitPath, agentUnitPath, mcpUnitPath]);
   await execFileAsync("systemctl", ["daemon-reload"]);
   await execFileAsync("systemctl", ["start", mcpUnit]);
+  for (const unit of [sessionHostUnit, agentUnit, mcpUnit]) {
+    const controls = await output("systemctl", [
+      "show",
+      unit,
+      "--property=TasksMax,LimitNOFILE,MemoryMax,MemorySwapMax,NoNewPrivileges",
+    ]);
+    assert.match(controls, /^TasksMax=128$/m);
+    assert.match(controls, /^LimitNOFILE=4096$/m);
+    assert.match(controls, /^MemoryMax=536870912$/m);
+    assert.match(controls, /^MemorySwapMax=536870912$/m);
+    assert.match(controls, /^NoNewPrivileges=yes$/m);
+  }
   const doctor = await execFileAsync(process.execPath, [path.join(installedCodeRoot, "scripts/doctor.mjs")], {
     cwd: installedCodeRoot,
     env: {

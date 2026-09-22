@@ -185,6 +185,8 @@ mcp_token=$(env_value "${mcp_env}" DP_MCP_ACCESS_TOKEN)
   printf 'DP_DATA_DIR=/var/lib/dp-beget-bridge-agent\n'
   printf 'DP_ALLOWED_ROOTS=%s\n' "${allowed_root}"
   printf 'DP_FILE_UPLOAD_MAX_BYTES=536870912\n'
+  printf 'DP_FILE_TRANSFER_MAX_CONCURRENT=2\n'
+  printf 'DP_STORAGE_MIN_FREE_BYTES=268435456\n'
   printf 'DP_TELEMETRY_ENABLED=%s\n' "${telemetry}"
   printf 'DP_LOG_LEVEL=info\n'
 } > "${agent_env}"
@@ -217,6 +219,7 @@ chown root:"${mcp_user}" "${mcp_env}"
   printf 'DP_COMMAND_WAIT_MS=10000\n'
   printf 'DP_TERMINAL_HISTORY_LINES=100000\n'
   printf 'DP_SESSION_OUTPUT_WARN_BYTES=52428800\n'
+  printf 'DP_SESSION_OUTPUT_MAX_BYTES=67108864\n'
   printf 'DP_STORAGE_MIN_FREE_BYTES=268435456\n'
   printf 'DP_LOG_LEVEL=info\n'
 } > "${session_host_env}"

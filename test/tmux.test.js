@@ -5,6 +5,30 @@ import path from "node:path";
 import test from "node:test";
 import { TmuxSessionManager } from "../apps/agent/src/tmux.js";
 
+test("STR-03: new terminal capture pipe has a hard byte ceiling", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-tmux-limit-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const calls = [];
+  const manager = new TmuxSessionManager({
+    config: { historyLines: 1000, sessionOutputMaxBytes: 12345 },
+    store: {
+      sessionDir(id) { return path.join(root, id); },
+      outputPath(id) { return path.join(root, id, "terminal.log"); },
+      async save(session) { return session; },
+    },
+    pathPolicy: { resolve() { return root; } },
+    logger: { info() {} },
+  });
+  manager.tmux = async (args) => calls.push(args);
+
+  const opened = await manager.open({ cwd: ".", label: "bounded" });
+  const pipe = calls.find((args) => args[0] === "pipe-pane");
+  assert.match(
+    pipe.at(-1),
+    new RegExp(`^/usr/bin/env node '.*scripts/transcript-capture\\.mjs' '.*${opened.id}/terminal\\.log' 12345$`),
+  );
+});
+
 test("uses an explicit tmux socket and prepares its persistent directory", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-tmux-socket-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));

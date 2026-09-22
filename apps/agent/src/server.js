@@ -1,5 +1,6 @@
 import http from "node:http";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import { capabilityDocument } from "../../../packages/core/src/contracts.js";
 import { BridgeError } from "../../../packages/core/src/errors.js";
 import { readJson, requireBearer, sendError, sendJson } from "../../../packages/core/src/http.js";
@@ -105,18 +106,30 @@ export function createAgentServer({ config, sessions, files, logger }) {
         return;
       }
       if (request.method === "GET" && url.pathname === "/v1/files/content") {
-        const candidate = url.searchParams.get("path");
-        const stat = await files.stat(candidate);
-        files.recordDownload(stat.size);
-        const file = files.createReadStream(candidate);
-        response.writeHead(200, {
-          "content-type": "application/octet-stream",
-          "content-length": stat.size,
-          "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(file.path))}`,
-          "cache-control": "no-store",
+        const release = files.acquireTransfer("download");
+        const downloadAbort = new AbortController();
+        const abortDownload = () => {
+          if (!downloadAbort.signal.aborted) downloadAbort.abort(new Error("Download client disconnected"));
+        };
+        request.once("aborted", abortDownload);
+        response.once("close", () => {
+          if (!response.writableEnded) abortDownload();
         });
-        file.stream.on("error", (error) => response.destroy(error));
-        file.stream.pipe(response);
+        try {
+          const candidate = url.searchParams.get("path");
+          const stat = await files.stat(candidate);
+          files.recordDownload(stat.size);
+          const file = files.createReadStream(candidate);
+          response.writeHead(200, {
+            "content-type": "application/octet-stream",
+            "content-length": stat.size,
+            "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(file.path))}`,
+            "cache-control": "no-store",
+          });
+          await pipeline(file.stream, response, { signal: downloadAbort.signal });
+        } finally {
+          release();
+        }
         return;
       }
       if (request.method === "POST" && url.pathname === "/v1/files/copy") {

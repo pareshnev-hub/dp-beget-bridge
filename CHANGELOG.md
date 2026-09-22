@@ -18,6 +18,7 @@ All notable changes are documented here.
 
 ### Fixed
 
+- Added backpressure-aware download pipelines, aggregate transfer admission, upload/copy disk reserve checks, hard transcript capture ceilings and production systemd resource controls.
 - Added SQLite schema v2 retained-session metadata, versioned UTF-8-safe transcript cursors, explicit gap/degraded responses, and separate CLOSED-session purge.
 - Aligned ChatGPT file inputs with the dated OpenAI contract: required `download_url`/`file_id`, optional `mime_type`/`file_name`, safe filename fallback, honest overwrite annotations and declared file-result schemas.
 - Prevented move from pre-deleting an existing destination before a successful rename.

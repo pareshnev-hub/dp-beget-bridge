@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { BridgeError } from "../../../packages/core/src/errors.js";
 import { durationBucket } from "./telemetry.js";
@@ -10,6 +11,10 @@ const execFileAsync = promisify(execFile);
 const SAFE_ID = /^[a-zA-Z0-9_-]{1,80}$/;
 const SAFE_IDEMPOTENCY_KEY = /^[a-zA-Z0-9._:-]{1,128}$/;
 const CURSOR_VERSION = 1;
+const CAPTURE_SCRIPT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../scripts/transcript-capture.mjs",
+);
 
 function encodeCursor(session, offset) {
   return `v${CURSOR_VERSION}:${session.transcriptStreamId}:${session.transcriptEpoch}:${offset}`;
@@ -150,7 +155,7 @@ export class TmuxSessionManager {
       "-o",
       "-t",
       name,
-      `cat >> ${shellQuote(this.store.outputPath(id))}`,
+      `/usr/bin/env node ${shellQuote(CAPTURE_SCRIPT)} ${shellQuote(this.store.outputPath(id))} ${Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024))}`,
     ]);
     const saved = await this.store.save(session);
     this.telemetry.trackActivity?.();
@@ -229,6 +234,25 @@ export class TmuxSessionManager {
     return degraded;
   }
 
+  async enforceCaptureCeiling(id, session, alive, range) {
+    const maximum = Number(this.config.sessionOutputMaxBytes || 0);
+    if (
+      !alive
+      || session.transcriptCaptureState !== "ACTIVE"
+      || maximum <= 0
+      || range.physicalSize < maximum
+    ) {
+      return session;
+    }
+    await this.tmux(["pipe-pane", "-t", this.tmuxName(id)]);
+    const degraded = await this.store.updateTranscript(id, {
+      captureState: "DEGRADED",
+      gapReason: "transcript_limit",
+    });
+    this.logger.warn("terminal.capture_degraded", { sessionId: id, reason: "transcript_limit" });
+    return degraded;
+  }
+
   async readOutput(id, cursor = undefined, maxBytes = 64 * 1024) {
     let session = await this.store.get(id);
     if (!session) throw new BridgeError("session_not_found", "Terminal session not found", 404);
@@ -236,6 +260,7 @@ export class TmuxSessionManager {
     session = await this.enforceCaptureReserve(id, session, alive);
     this.telemetry.trackActivity?.();
     const range = await this.outputRange(id, session);
+    session = await this.enforceCaptureCeiling(id, session, alive, range);
     const requested = parseCursor(cursor, session);
     let logicalStart = requested.offset;
     let gap = null;

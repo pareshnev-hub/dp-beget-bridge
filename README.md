@@ -14,6 +14,7 @@ A 2026-09-21 architecture/security audit defined the R0002 hardening queue. Curr
 
 Start here:
 - [Roadmap](docs/ROADMAP.md)
+- [Resource limits](docs/RESOURCE_LIMITS.md)
 - [Target architecture](docs/ARCHITECTURE.md)
 - [Audit](docs/audit/AUDIT-2026-09-21.md)
 - [First implementation sprint](docs/audit/FIRST_SPRINT.md)

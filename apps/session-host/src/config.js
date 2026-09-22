@@ -8,7 +8,7 @@ function integer(name, fallback) {
 
 export function loadSessionHostConfig() {
   const dataDir = path.resolve(process.env.DP_SESSION_DATA_DIR || "/var/lib/dp-beget-bridge/session-host");
-  return {
+  const config = {
     dataDir,
     socketPath: path.resolve(process.env.DP_SESSION_HOST_SOCKET || "/run/dp-beget-bridge/session-host.sock"),
     allowedRoots: (process.env.DP_ALLOWED_ROOTS || process.cwd())
@@ -22,6 +22,11 @@ export function loadSessionHostConfig() {
     historyLines: integer("DP_TERMINAL_HISTORY_LINES", 100000),
     commandWaitMs: integer("DP_COMMAND_WAIT_MS", 10000),
     sessionOutputWarnBytes: integer("DP_SESSION_OUTPUT_WARN_BYTES", 50 * 1024 * 1024),
+    sessionOutputMaxBytes: integer("DP_SESSION_OUTPUT_MAX_BYTES", 64 * 1024 * 1024),
     storageMinFreeBytes: integer("DP_STORAGE_MIN_FREE_BYTES", 256 * 1024 * 1024),
   };
+  if (config.sessionOutputMaxBytes < 1) {
+    throw new Error("DP_SESSION_OUTPUT_MAX_BYTES must be at least 1");
+  }
+  return config;
 }

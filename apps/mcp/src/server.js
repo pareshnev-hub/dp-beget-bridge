@@ -1,5 +1,7 @@
 import http from "node:http";
 import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createBridgeMcpServer } from "./mcp-server.js";
 import { requestRoute } from "../../../packages/core/src/logger.js";
@@ -39,7 +41,7 @@ export function createMcpHttpServer({ config, agent, downloads, logger }) {
           sendJson(response, 404, { error: { code: "download_not_found", message: "Download link is invalid or expired" } });
           return;
         }
-        const upstream = await agent.downloadPath(entry.filePath);
+        const upstream = await agent.downloadPath(entry.filePath, { signal: requestAbort.signal });
         const headers = {
           "content-type": upstream.headers.get("content-type") || "application/octet-stream",
           "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(entry.filePath))}`,
@@ -50,8 +52,7 @@ export function createMcpHttpServer({ config, agent, downloads, logger }) {
         if (length) headers["content-length"] = length;
         response.writeHead(200, headers);
         if (!upstream.body) throw new Error("Agent returned an empty download stream");
-        for await (const chunk of upstream.body) response.write(chunk);
-        response.end();
+        await pipeline(Readable.fromWeb(upstream.body), response, { signal: requestAbort.signal });
         return;
       }
       if (url.pathname !== config.path) {

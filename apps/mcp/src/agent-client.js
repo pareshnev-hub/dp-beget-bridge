@@ -64,8 +64,8 @@ export class AgentClient {
   deletePath(candidate, recursive) {
     return this.json(`/v1/files?path=${encodeURIComponent(candidate)}&recursive=${Boolean(recursive)}`, "DELETE");
   }
-  downloadPath(candidate) {
-    return this.request(`/v1/files/content?path=${encodeURIComponent(candidate)}`);
+  downloadPath(candidate, { signal } = {}) {
+    return this.request(`/v1/files/content?path=${encodeURIComponent(candidate)}`, { signal });
   }
   async uploadFromUrl(file, destination, overwrite, { signal } = {}) {
     if (!this.attachmentFetcher) {

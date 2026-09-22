@@ -32,9 +32,12 @@ Rotating or truncating old output does not terminate the `tmux` session. Log
 retention and live process lifetime are deliberately independent.
 
 `DP_SESSION_OUTPUT_WARN_BYTES` emits a size warning without deleting data.
+`DP_SESSION_OUTPUT_MAX_BYTES` caps captured transcript bytes per terminal; reaching
+the cap reports `DEGRADED / transcript_limit` and does not kill the terminal.
 `DP_STORAGE_MIN_FREE_BYTES` reserves local disk space: below the threshold,
 capture becomes explicitly `DEGRADED` while the tmux process remains under
-control. Segmented quotas and capture resumption are completed under DP-010.
+control. The same reserve rejects new file writes, and
+`DP_FILE_TRANSFER_MAX_CONCURRENT` bounds aggregate Agent uploads/downloads.
 
 ## Development and release records
 
