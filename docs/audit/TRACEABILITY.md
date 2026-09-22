@@ -10,7 +10,7 @@ This matrix links every audit finding to implementation work, required tests and
 | F01 destructive move pre-delete | P0 | DP-001, DP-005 | FILE-01, FILE-02, FILE-03, FILE-09 | R0002 |
 | F02 implicit root runtime | P1 | DP-009 | OPS-03 plus identity/ACL integration evidence | R0002 |
 | F03 external URL fetch / SSRF | P1 | DP-004 | SSRF-01 through SSRF-08 | R0002 |
-| F04 file input contract/descriptors | P1 | DP-003 | target-client contract fixture, schema/output snapshots, annotation assertions | R0002 |
+| F04 file input contract/descriptors | P1 | DP-003, DP-017 | target-client contract fixture, schema/output snapshots, annotation assertions and actual ChatGPT `clientInfo`/contract calls through the private test tunnel | R0002 |
 | F05 stdout marker completion | P1 | DP-006, DP-007 | TERM-05, TERM-07 through TERM-09 | R0002 |
 | F06 fixed completion search window | P1 | DP-007 | TERM-09 and operation-status persistence evidence | R0002 |
 | F07 no single-writer/durable operations | P1 | DP-006 | TERM-04 through TERM-07 | R0002 |
