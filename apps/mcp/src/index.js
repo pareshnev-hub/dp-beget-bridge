@@ -26,6 +26,7 @@ const oauth = config.authMode === "oauth" ? new OAuthSpike({
   clientRegistry: new ChatGptCimdRegistry({
     allowedClientIds: config.oauth.allowedClientIds,
     timeoutMs: config.oauth.clientMetadataTimeoutMs,
+    allowPinnedChatGptFallback: config.oauth.allowPinnedChatGptFallback,
   }),
 }) : undefined;
 const server = createMcpHttpServer({ config, agent, downloads, logger, oauth });
