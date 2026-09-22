@@ -42,7 +42,7 @@ export function loadMcpConfig() {
       accessTokenTtlMs: integer("DP_OAUTH_ACCESS_TOKEN_TTL_MS", 10 * 60 * 1000),
       grantTtlMs: integer("DP_OAUTH_GRANT_TTL_MS", 24 * 60 * 60 * 1000),
       clientMetadataTimeoutMs: integer("DP_OAUTH_CLIENT_METADATA_TIMEOUT_MS", 5000),
-      authDataDir: path.resolve(process.env.DP_AUTH_DATA_DIR || "./runtime/auth"),
+      authDataDir: path.resolve(process.env.DP_AUTH_DATA_DIR || "/var/lib/dp-beget-bridge-mcp/auth"),
       ownerId: process.env.DP_OWNER_ID || "owner-primary",
       executionProfile: process.env.DP_OAUTH_EXECUTION_PROFILE || "files-read",
     },
