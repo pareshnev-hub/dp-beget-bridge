@@ -28,6 +28,16 @@ bounded response and verifies the stable ChatGPT redirect URI. It accepts only
 the public-client token exchange method `none`, protected by PKCE S256. DCR is
 not exposed.
 
+Some hosting networks receive a Cloudflare `403` when they fetch the official
+ChatGPT CIMD URL. For this staging-only case,
+`DP_OAUTH_ALLOW_PINNED_CHATGPT_CIMD_FALLBACK=true` enables a pinned document
+only when the allowlisted client is the exact official URL and its fetch
+returns exactly `403`. The pinned document permits only the official ChatGPT
+connector callback, authorization-code flow and unauthenticated public-client
+token exchange. The option defaults to false; every other status and client
+continues to fail closed. Remove the exception when direct CIMD fetch succeeds
+or before replacing the spike with the durable DP-013 authorization service.
+
 ## Endpoints
 
 - `GET /.well-known/oauth-protected-resource`
