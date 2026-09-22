@@ -45,8 +45,27 @@ function attachmentName(file) {
   return `attachment-${identity}`;
 }
 
-export function createBridgeMcpServer({ agent, downloads, config, requestSignal }) {
+function clientImplementationField(value) {
+  if (typeof value !== "string") return "unknown";
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 80) return "unknown";
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9 ._+()/:@-]*$/.test(normalized)) return "unknown";
+  return normalized;
+}
+
+export function createBridgeMcpServer({ agent, downloads, config, requestSignal, logger }) {
   const server = new McpServer({ name: "dp-beget-bridge", version: "0.1.0" });
+  // Stateless HTTP creates one MCP server per POST, so a later `initialized`
+  // notification cannot recover the initialize request's clientInfo.
+  const initialize = server.server._oninitialize.bind(server.server);
+  server.server._oninitialize = async (request) => {
+    const result = await initialize(request);
+    logger?.info("mcp.client_initialized", {
+      platform: clientImplementationField(request.params?.clientInfo?.name),
+      version: clientImplementationField(request.params?.clientInfo?.version),
+    });
+    return result;
+  };
 
   server.registerTool("get_bridge_status", {
     title: "Get DP Beget Bridge status",
