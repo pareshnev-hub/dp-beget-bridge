@@ -675,6 +675,38 @@ export class AuthStore {
     return this.getGrant(grantId, { now: revoked.value });
   }
 
+  revokeOwnerAccess({
+    ownerId,
+    revokedAt = new Date().toISOString(),
+    reason = "owner_revoke_all",
+  }) {
+    const revoked = isoTime("revokedAt", revokedAt);
+    const owner = this.getOwner(ownerId);
+    if (!owner) throw authError("invalid_owner", "Owner is unavailable", 404);
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      this.db.prepare(`
+        UPDATE authorization_grants SET status = 'REVOKED'
+        WHERE owner_id = ? AND status = 'ACTIVE'
+      `).run(ownerId);
+      this.db.prepare(`
+        UPDATE oauth_token_families
+        SET status = 'REVOKED', revoked_at = ?, revoke_reason = ?
+        WHERE owner_id = ? AND status IN ('ACTIVE','COMPROMISED')
+      `).run(revoked.value, reason, ownerId);
+      this.db.prepare(`
+        UPDATE oauth_refresh_tokens SET status = 'REVOKED'
+        WHERE family_id IN (SELECT id FROM oauth_token_families WHERE owner_id = ?)
+          AND status = 'ACTIVE'
+      `).run(ownerId);
+      this.db.exec("COMMIT");
+    } catch {
+      try { this.db.exec("ROLLBACK"); } catch {}
+      throw authError("auth_storage_failure", "Owner revocation could not be committed", 503);
+    }
+    return this.ownerAccessSummary(ownerId);
+  }
+
   resetOwnerAccess({
     ownerId,
     bootstrapSecret,
