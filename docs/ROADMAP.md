@@ -146,9 +146,10 @@ A private evaluator can use the terminal and small-file vertical slice without k
 
 ### Dependencies
 - R0001 technical-preview codebase;
-- DP-001 through DP-011 as sequenced in `docs/audit/FIRST_SPRINT.md`;
+- DP-001 through DP-011 plus residual gate DP-016;
+- DP-017 for the final actual-client compatibility evidence;
 - disposable Linux/systemd/tmux integration environment;
-- accepted ADR-003, ADR-004, ADR-006, ADR-007 and ADR-010.
+- accepted ADR-003, ADR-004, ADR-006, ADR-007, ADR-010 and ADR-013.
 
 ### Scope
 - Fix destructive move behavior; same-path and missing-source regressions.
@@ -178,6 +179,8 @@ Migration evidence must cover preflight, backup, forward migration, interrupted 
 - STR-01 through STR-05;
 - LOG-01 through LOG-06;
 - OPS-03 for no implicit root runtime.
+- Actual ChatGPT `clientInfo` and DP-003 file-contract evidence through the
+  outbound-only, test-only transport defined by ADR-013 and DP-017.
 
 ### Security gate
 - F01 is closed with regression evidence.
@@ -198,9 +201,11 @@ Migration evidence must cover preflight, backup, forward migration, interrupted 
 - Shell execution profile cannot read MCP/Agent authorization secrets.
 - Known data-loss file cases have regression tests.
 - Evidence references exact commit + CI/runtime run.
+- The actual target client presents its identity and accepts the enabled
+  DP-003 file contract without requiring a public preview-bearer endpoint.
 
 ### Not in R0002
-Public OAuth onboarding, polished installer, Relay, large resumable transfers, billing, multi-tenant features.
+Public OAuth onboarding, production reliance on OpenAI Secure MCP Tunnel, polished installer, Relay, large resumable transfers, billing, multi-tenant features.
 
 ### Rollback
 Rollback may restore service code and compatible state backups. It must not re-enable the known destructive move behavior, replay an uncertain shell operation or delete legacy state. An incompatible schema downgrade is blocked explicitly.
@@ -209,7 +214,7 @@ Rollback may restore service code and compatible state backups. It must not re-e
 Update architecture/contracts, migration notes, known limitations, issue evidence and the test matrix for every changed runtime semantic.
 
 ### Exit criterion
-R0003 becomes the primary track only after the R0002 Definition of Done is linked to an exact commit and real Linux runtime evidence.
+R0003 becomes the primary track only after the R0002 Definition of Done is linked to an exact commit and real Linux runtime evidence. DP-017 may use OpenAI Secure MCP Tunnel only to collect actual-client acceptance evidence while the Beget MCP listener remains private; that evidence does not satisfy the R0003 HTTPS/OAuth gate.
 
 ## RELEASE 0003 — Working Direct / Private Beta
 

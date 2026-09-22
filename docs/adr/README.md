@@ -16,3 +16,4 @@ Accepted ADRs define architecture constraints. Implementation may lag behind the
 - ADR-010 Direct transactional metadata uses local embedded state
 - ADR-011 Public releases use immutable verified artifacts and rollback
 - ADR-012 Scaling decisions are driven by measured workload
+- ADR-013 Real-client acceptance may use an outbound-only test tunnel
