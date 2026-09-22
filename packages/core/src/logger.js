@@ -24,6 +24,7 @@ const SAFE_FIELDS = new Set([
   "size",
   "sizeBucket",
   "status",
+  "tool",
   "version",
 ]);
 
