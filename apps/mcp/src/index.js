@@ -4,6 +4,7 @@ import { DownloadTokenStore } from "./download-tokens.js";
 import { createMcpHttpServer } from "./server.js";
 import { createLogger } from "../../../packages/core/src/logger.js";
 import { AttachmentFetcher } from "../../../packages/core/src/attachment-fetch.js";
+import { ChatGptCimdRegistry, OAuthSpike } from "../../../packages/auth/src/oauth-spike.js";
 
 const config = loadMcpConfig();
 if (!config.agentToken || config.agentToken.length < 32) throw new Error("DP_AGENT_TOKEN must contain at least 32 characters");
@@ -20,7 +21,14 @@ const attachmentFetcher = config.attachmentFetchEnabled ? new AttachmentFetcher(
 }) : undefined;
 const agent = new AgentClient({ baseUrl: config.agentUrl, token: config.agentToken, attachmentFetcher });
 const downloads = new DownloadTokenStore({ ttlMs: config.downloadTokenTtlMs });
-const server = createMcpHttpServer({ config, agent, downloads, logger });
+const oauth = config.authMode === "oauth" ? new OAuthSpike({
+  ...config.oauth,
+  clientRegistry: new ChatGptCimdRegistry({
+    allowedClientIds: config.oauth.allowedClientIds,
+    timeoutMs: config.oauth.clientMetadataTimeoutMs,
+  }),
+}) : undefined;
+const server = createMcpHttpServer({ config, agent, downloads, logger, oauth });
 
 server.listen(config.port, config.host, () => {
   logger.info("mcp.started", { port: config.port, route: "/mcp" });

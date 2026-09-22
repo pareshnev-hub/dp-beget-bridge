@@ -6,6 +6,8 @@ All notable changes are documented here.
 
 ### Security
 
+- Added an isolated DP-012 OAuth compatibility mode with RFC 9728 protected-resource metadata, RFC 8414 authorization-server metadata, ChatGPT CIMD validation, exact issuer/resource/redirect binding, PKCE S256, one-use codes and short memory-only access tokens.
+- Kept the OAuth staging listener separate from the retained Secure MCP Tunnel bearer and restricted spike tokens to read-only file tools.
 - Added a versioned SQLite operation ledger with HMAC-protected request fingerprints, per-session single-writer admission, idempotent retry/conflict semantics and fail-closed `UNKNOWN` reconciliation.
 - Replaced PTY marker parsing with atomic per-operation exit records so forged or truncated terminal output cannot fabricate command completion.
 - Submit the command, completion suffix and terminating Enter in one tmux buffer so sustained PTY output cannot reorder or flush the pending status write.
@@ -31,6 +33,7 @@ All notable changes are documented here.
 
 ### Testing
 
+- Added AUTH-01…03, OAuth HTTP lifecycle, fail-closed legacy-bearer, bounded CIMD fetch, tool-scope and staging-installer regression coverage for DP-012.
 - Verified the DP-003 file contract through the actual ChatGPT developer-mode app over the outbound-only OpenAI Secure MCP Tunnel: list, upload and download completed while the Beget MCP listener remained loopback-only.
 - Added TERM-04 through TERM-09 coverage plus legacy import, migration backup, interrupted-migration recovery, forged-output, large-output and transcript-independent completion tests.
 - Added FILE-04 through FILE-09 race, root-protection, symlink-swap, path-overlap and unsupported-operation regression coverage.

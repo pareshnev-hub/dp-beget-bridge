@@ -5,18 +5,21 @@ import { pipeline } from "node:stream/promises";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createBridgeMcpServer } from "./mcp-server.js";
 import { requestRoute } from "../../../packages/core/src/logger.js";
+import { handleOAuthRoute } from "./oauth-routes.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   response.end(JSON.stringify(body));
 }
 
-function bearerMatches(request, expected) {
-  if (!expected) return true;
-  return request.headers.authorization === `Bearer ${expected}`;
+function authenticate(request, config, oauth) {
+  if (config.authMode === "oauth") return oauth?.authenticate(request.headers.authorization);
+  if (!config.accessToken) return { kind: "static", scopes: null };
+  if (request.headers.authorization === `Bearer ${config.accessToken}`) return { kind: "static", scopes: null };
+  return null;
 }
 
-export function createMcpHttpServer({ config, agent, downloads, logger }) {
+export function createMcpHttpServer({ config, agent, downloads, logger, oauth }) {
   return http.createServer(async (request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
     const route = requestRoute(url.pathname, { mcpPath: config.path });
@@ -34,6 +37,7 @@ export function createMcpHttpServer({ config, agent, downloads, logger }) {
         sendJson(response, 200, { status: "ok", product: "DP Beget Bridge" });
         return;
       }
+      if (await handleOAuthRoute({ request, response, url, oauth })) return;
       if (request.method === "GET" && url.pathname.startsWith("/download/")) {
         const token = url.pathname.slice("/download/".length);
         const entry = downloads.get(token);
@@ -59,8 +63,9 @@ export function createMcpHttpServer({ config, agent, downloads, logger }) {
         sendJson(response, 404, { error: { code: "not_found", message: "Route not found" } });
         return;
       }
-      if (!bearerMatches(request, config.accessToken)) {
-        response.setHeader("www-authenticate", "Bearer");
+      const authorization = authenticate(request, config, oauth);
+      if (!authorization) {
+        response.setHeader("www-authenticate", oauth ? oauth.challenge() : "Bearer");
         sendJson(response, 401, { error: { code: "unauthorized", message: "Invalid access token" } });
         return;
       }
@@ -70,7 +75,14 @@ export function createMcpHttpServer({ config, agent, downloads, logger }) {
       }
 
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-      const mcp = createBridgeMcpServer({ agent, downloads, config, requestSignal: requestAbort.signal, logger });
+      const mcp = createBridgeMcpServer({
+        agent,
+        downloads,
+        config,
+        requestSignal: requestAbort.signal,
+        logger,
+        authorization,
+      });
       await mcp.connect(transport);
       response.on("close", () => {
         transport.close().catch(() => {});

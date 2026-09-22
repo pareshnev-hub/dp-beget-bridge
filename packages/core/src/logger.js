@@ -59,6 +59,13 @@ export function sanitizeLogFields(fields = {}) {
 export function requestRoute(pathname, { mcpPath = "/mcp" } = {}) {
   if (pathname === "/health") return "/health";
   if (pathname === mcpPath) return "/mcp";
+  if (pathname === "/.well-known/oauth-protected-resource") return "/.well-known/oauth-protected-resource";
+  if (pathname === `/.well-known/oauth-protected-resource${mcpPath}`) {
+    return "/.well-known/oauth-protected-resource/:mcpPath";
+  }
+  if (pathname === "/.well-known/oauth-authorization-server") return "/.well-known/oauth-authorization-server";
+  if (pathname === "/oauth/authorize") return "/oauth/authorize";
+  if (pathname === "/oauth/token") return "/oauth/token";
   if (pathname.startsWith("/download/")) return "/download/:grant";
   if (pathname === "/v1/capabilities") return "/v1/capabilities";
   if (pathname === "/v1/sessions") return "/v1/sessions";

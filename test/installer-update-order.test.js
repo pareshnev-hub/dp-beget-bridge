@@ -21,4 +21,6 @@ test("installer activates new Session Host code only after a fail-closed ledger 
     previousOffset = offset;
   }
   assert.match(installer, /Installation failed; restoring local services/);
+  assert.match(installer, /systemctl stop "\$\{oauth_unit\}"/);
+  assert.match(installer, /systemctl start "\$\{oauth_unit\}"/);
 });
