@@ -21,7 +21,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Release | Status | Evidence / next gate |
 |---|---|---|
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
-| R0002 Core Safety & Persistent Runtime | IN PROGRESS | DP-001, DP-002 and DP-004–DP-011 verified; DP-003 has real-client evidence pending; DP-016 closes residual FILE-10/11 and active-session gates, with live-host evidence pending |
+| R0002 Core Safety & Persistent Runtime | IN PROGRESS | DP-001, DP-002, DP-004–DP-011 and DP-016 verified; DP-003 is implemented with Beget contract evidence, but real ChatGPT `clientInfo` capture remains the sole R0002 verification gap |
 | R0003 Working Direct / Private Beta | PLANNED | requires verified R0002 and real-client OAuth/E2E evidence |
 | R0004 Public Direct 1.0 | PLANNED | requires verified R0003, reproducible lifecycle and independent security gate |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
@@ -43,7 +43,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | DP-009 Runner lifetime/credential separation | #9 | P1 | R0002 | VERIFIED | `386b083`; PRs #27–29; TERM-01/02/03/10/11/12, OPS-03, identity/ACL and restart evidence on Beget; main CI run 35639678847 |
 | DP-010 Backpressure/disk ceilings | #10 | P1 | R0002 | VERIFIED | `0796e74`; PRs #51–#52; STR-01…05 plus 28/28 focused tests; exact-commit Beget limits, completion/lifecycle, doctor, identity and loopback evidence |
 | DP-011 Log/diagnostic credential safety | #11 | P1 | R0002 | VERIFIED | `2685e67`; PR #31; LOG-01…06, live journald canary and lifecycle smoke on Beget; main CI run 35641471859 |
-| DP-016 Residual R0002 file/session gates | #54 | P1 | R0002 | IMPLEMENTED | FILE-10/11 deterministic cleanup/preservation tests; concurrent active-session admission cap; FILE-12 explicitly N/A until expected-digest input exists; live Beget evidence pending |
+| DP-016 Residual R0002 file/session gates | #54 | P1 | R0002 | VERIFIED | `cc25961`; PRs #55–#56; FILE-10/11 deterministic cleanup/preservation; FILE-12 explicitly N/A; CI run 35703730372; exact-commit Beget 8+1 concurrent admission, `session_limit`, cleanup, lifecycle, doctor and loopback evidence |
 | DP-012 OAuth discovery/registration spike | #12 | P1 | R0003 | PLANNED | AUTH-01…03 + real client |
 | DP-013 Owner consent/grants | #13 | P1 | R0003 | PLANNED | AUTH-04/08/09 |
 | DP-014 Refresh/revoke/re-pair | #14 | P1 | R0003 | PLANNED | AUTH-05…07/10 |
