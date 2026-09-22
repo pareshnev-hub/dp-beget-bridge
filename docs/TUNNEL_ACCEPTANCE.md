@@ -1,6 +1,6 @@
 # DP-017 private ChatGPT acceptance tunnel
 
-This harness collects the actual ChatGPT `initialize.clientInfo` and DP-003 file-contract evidence without opening an inbound port or changing Traefik. It is temporary acceptance infrastructure, not the R0003 production transport.
+This harness collects actual ChatGPT DP-003 file-contract evidence without opening an inbound port or changing Traefik. It is temporary acceptance infrastructure, not the R0003 production transport. The local MCP server correctly sees the immediate peer, `tunnel-client`; the secure tunnel does not forward a separate ChatGPT host build in `initialize.clientInfo`.
 
 ## Trust boundary
 
@@ -26,11 +26,22 @@ With the service healthy:
 
 1. associate the Platform tunnel with the target ChatGPT workspace;
 2. create a developer-mode ChatGPT app using Tunnel connection;
-3. capture the sanitized `initialize.clientInfo.name` and `.version` in the MCP process;
+3. capture the sanitized immediate MCP peer name and version in the MCP process;
 4. verify `tools/list` descriptors and call `list_files`, upload, and download through the real client;
 5. record the exact bridge commit, tunnel-client version, systemd limits, loopback listeners and redacted health output.
 
 Never record runtime keys, bearers, cookies, authorization headers, attachment grants or raw user paths.
+
+## Verified evidence — 2026-09-22
+
+- Bridge commit: `41db3063de886a4c85b38f5545df13b6029edc14`.
+- Official tunnel client: `0.0.14+0f870e50a973fa820d4c409000059e181e8d242b`.
+- Platform tunnel: `tunnel_6ab24ccf943481919a95e9ed3fd8c404`; ChatGPT developer-mode app: `DP Beget Bridge R0002`.
+- The first real ChatGPT read-only call invoked `list_files` and reported an empty `/srv/dp-preview-workspace`.
+- The real ChatGPT attachment round trip uploaded the 144-byte `dp017-chatgpt-roundtrip.txt` with `overwrite=false`, observed it through `list_files`, invoked `download_file`, and reported matching SHA-256 `a64605eb0b73b65107816c5a2aaa1ea1950122161f1c3bc5be8b82fb5daf2746` plus the expected text prefix.
+- Sanitized MCP evidence recorded `mcp.client_initialized` with `platform=tunnel-client` and the pinned version, followed by `mcp.tool_called` for `list_files`; no arguments, paths, bodies, grants or credentials were logged.
+- Core and tunnel doctors passed; all four services were `active/running` with zero restarts; only loopback listeners `127.0.0.1:8787`, `:8788` and `:8790` existed.
+- No DNS, Traefik, firewall or public-port change was made. This proves R0002 compatibility only and does not satisfy the R0003 production HTTPS/OAuth gate.
 
 ## Teardown
 

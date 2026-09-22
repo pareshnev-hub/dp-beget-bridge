@@ -136,7 +136,7 @@ Hardening                   |
 ## RELEASE 0002 — Core Safety & Persistent Runtime
 
 Proposed version: **0.2.0**  
-Status: **PLANNED**
+Status: **VERIFIED**
 
 ### Goal
 Make the existing local vertical slice safe enough to expose to real clients.
@@ -179,8 +179,9 @@ Migration evidence must cover preflight, backup, forward migration, interrupted 
 - STR-01 through STR-05;
 - LOG-01 through LOG-06;
 - OPS-03 for no implicit root runtime.
-- Actual ChatGPT `clientInfo` and DP-003 file-contract evidence through the
-  outbound-only, test-only transport defined by ADR-013 and DP-017.
+- Actual ChatGPT DP-003 file-contract evidence plus the immediate tunnel peer
+  identity through the outbound-only, test-only transport defined by ADR-013
+  and DP-017.
 
 ### Security gate
 - F01 is closed with regression evidence.
@@ -201,8 +202,9 @@ Migration evidence must cover preflight, backup, forward migration, interrupted 
 - Shell execution profile cannot read MCP/Agent authorization secrets.
 - Known data-loss file cases have regression tests.
 - Evidence references exact commit + CI/runtime run.
-- The actual target client presents its identity and accepts the enabled
-  DP-003 file contract without requiring a public preview-bearer endpoint.
+- The actual target ChatGPT app accepts the enabled DP-003 file contract, while
+  the local MCP boundary records its real immediate tunnel peer, without
+  requiring a public preview-bearer endpoint.
 
 ### Not in R0002
 Public OAuth onboarding, production reliance on OpenAI Secure MCP Tunnel, polished installer, Relay, large resumable transfers, billing, multi-tenant features.
