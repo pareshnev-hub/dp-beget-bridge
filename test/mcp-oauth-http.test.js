@@ -93,6 +93,8 @@ test("DP-012 HTTP flow exposes metadata, challenges with RFC9728, and restricts 
   const page = await fetch(authorize);
   assert.equal(page.status, 200);
   const html = await page.text();
+  assert.match(html, /Execution profile: <strong>Read-only files<\/strong>/);
+  assert.match(html, /cannot modify files or run commands/);
   const transaction = /name="transaction" value="([A-Za-z0-9_-]+)"/.exec(html)?.[1];
   assert.ok(transaction);
 
@@ -132,6 +134,54 @@ test("DP-012 HTTP flow exposes metadata, challenges with RFC9728, and restricts 
   assert.deepEqual(names, ["download_file", "get_bridge_status", "list_files"]);
   const listed = await client.callTool({ name: "list_files", arguments: { path: "." } });
   assert.deepEqual(listed.structuredContent, { path: ".", entries: [] });
+});
+
+test("DP-013 full-shell consent clearly discloses operating-system rights", async (t) => {
+  const config = {
+    path: "/mcp",
+    publicUrl: "https://bridge.example.test",
+    accessToken: "",
+    authMode: "oauth",
+  };
+  const oauth = new OAuthSpike({
+    issuer: config.publicUrl,
+    resource: `${config.publicUrl}${config.path}`,
+    approvalSecret,
+    clientRegistry: clientRegistry(),
+    executionProfile: "full-shell",
+  });
+  const server = createMcpHttpServer({
+    config,
+    oauth,
+    agent: {},
+    downloads: new DownloadTokenStore({ ttlMs: 1000 }),
+    logger,
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const verifier = "v".repeat(64);
+  const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+  const authorize = new URL(`${origin}/oauth/authorize`);
+  for (const [name, value] of Object.entries({
+    response_type: "code",
+    client_id: oauthDefaults.chatGptClientId,
+    redirect_uri: oauthDefaults.chatGptRedirectUri,
+    resource: `${config.publicUrl}${config.path}`,
+    scope: "files:read",
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state: "full-shell-disclosure",
+  })) authorize.searchParams.set(name, value);
+  const page = await fetch(authorize);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /Execution profile: <strong>Full shell access<\/strong>/);
+  assert.match(html, /configured work-account operating-system rights/);
+  assert.match(html, /read, create, modify, move, or delete every file accessible to that account/);
+  assert.match(html, /cause irreversible data loss/);
+  assert.match(html, /existing sudo or elevation rights/);
+  assert.match(html, />Authorize full shell access<\/button>/);
 });
 
 test("DP-012 OAuth mode never falls back to the legacy static bearer", async (t) => {
