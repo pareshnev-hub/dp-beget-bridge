@@ -59,8 +59,7 @@ function requireSessionOwner(authorization, sessionOwners, sessionId) {
   }
 }
 
-export function createAgentServer({ config, sessions, files, logger }) {
-  const sessionOwners = new Map();
+export function createAgentServer({ config, sessions, files, logger, sessionOwners = new Map() }) {
   return http.createServer(async (request, response) => {
     const started = Date.now();
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
@@ -89,7 +88,19 @@ export function createAgentServer({ config, sessions, files, logger }) {
         requireScope(authorization, "terminal:execute");
         const body = await readJson(request);
         const opened = await sessions.open({ cwd: body.cwd, label: body.label });
-        if (authorization.kind === "oauth") sessionOwners.set(opened.id, authorization.ownerId);
+        if (authorization.kind === "oauth") {
+          try {
+            sessionOwners.set(opened.id, authorization.ownerId);
+          } catch {
+            await sessions.close(opened.id).catch(() => {});
+            await sessions.purge(opened.id).catch(() => {});
+            throw new BridgeError(
+              "session_owner_storage_failure",
+              "Terminal ownership could not be persisted",
+              503,
+            );
+          }
+        }
         sendJson(response, 201, opened);
         return;
       }
@@ -148,8 +159,9 @@ export function createAgentServer({ config, sessions, files, logger }) {
         }
         if (request.method === "DELETE" && action === "purge") {
           requireScope(authorization, "terminal:close");
-          sendJson(response, 200, await sessions.purge(id));
-          if (authorization.kind === "oauth") sessionOwners.delete(id);
+          const purged = await sessions.purge(id);
+          sessionOwners.delete(id);
+          sendJson(response, 200, purged);
           return;
         }
       }
