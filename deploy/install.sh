@@ -22,10 +22,12 @@ session_data_dir=/var/lib/dp-beget-bridge
 session_host_unit=dp-beget-session-host.service
 agent_unit=dp-beget-agent.service
 mcp_unit=dp-beget-mcp.service
+oauth_unit=dp-beget-mcp-oauth-spike.service
 tunnel_unit=dp-beget-tunnel.service
 api_services_stopped=false
 session_host_stopped=false
 tunnel_was_active=false
+oauth_was_active=false
 
 restore_services_on_error() {
   local status=$?
@@ -36,6 +38,9 @@ restore_services_on_error() {
       systemctl start "${session_host_unit}" 2>/dev/null || true
     fi
     systemctl restart "${agent_unit}" "${mcp_unit}" 2>/dev/null || true
+    if [[ ${oauth_was_active} == "true" ]]; then
+      systemctl start "${oauth_unit}" 2>/dev/null || true
+    fi
     if [[ ${tunnel_was_active} == "true" ]]; then
       systemctl start "${tunnel_unit}" 2>/dev/null || true
     fi
@@ -109,6 +114,7 @@ env_value() {
 legacy_env=${config_dir}/bridge.env
 agent_env=${config_dir}/agent.env
 mcp_env=${config_dir}/mcp.env
+oauth_env=${config_dir}/mcp-oauth-spike.env
 session_host_env=${config_dir}/session-host.env
 legacy_migration=false
 legacy_tmux_socket=""
@@ -155,6 +161,10 @@ fi
 if systemctl is-active --quiet "${tunnel_unit}"; then
   tunnel_was_active=true
   systemctl stop "${tunnel_unit}"
+fi
+if systemctl is-active --quiet "${oauth_unit}"; then
+  oauth_was_active=true
+  systemctl stop "${oauth_unit}"
 fi
 systemctl stop "${mcp_unit}" "${agent_unit}" 2>/dev/null || true
 api_services_stopped=true
@@ -264,6 +274,27 @@ systemctl enable "${session_host_unit}" "${agent_unit}" "${mcp_unit}"
 systemctl start "${session_host_unit}"
 node scripts/deploy/wait-session-host.mjs /run/dp-beget-bridge/session-host.sock 15000
 systemctl restart "${agent_unit}" "${mcp_unit}"
+if [[ ${oauth_was_active} == "true" ]]; then
+  oauth_port=$(env_value "${oauth_env}" DP_MCP_PORT)
+  if [[ ! ${oauth_port} =~ ^[0-9]+$ ]]; then
+    echo "Retained OAuth spike has an invalid DP_MCP_PORT" >&2
+    exit 1
+  fi
+  systemctl start "${oauth_unit}"
+  oauth_ready=false
+  for (( attempt=0; attempt<30; attempt+=1 )); do
+    if node -e 'fetch(process.argv[1]).then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))' \
+      "http://127.0.0.1:${oauth_port}/health"; then
+      oauth_ready=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ ${oauth_ready} != "true" ]]; then
+    echo "Retained OAuth spike did not become ready after the core update" >&2
+    exit 1
+  fi
+fi
 
 # Do not report a successful install until every local endpoint and identity is ready.
 node scripts/doctor.mjs

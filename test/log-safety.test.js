@@ -40,6 +40,12 @@ test("request logs use fixed route templates", () => {
   assert.equal(requestRoute("/v1/sessions/private-session/commands"), "/v1/sessions/:sessionId/commands");
   assert.equal(requestRoute("/private/path/value"), "/unmatched");
   assert.equal(requestRoute("/custom-mcp", { mcpPath: "/custom-mcp" }), "/mcp");
+  assert.equal(requestRoute("/oauth/authorize"), "/oauth/authorize");
+  assert.equal(requestRoute("/oauth/token"), "/oauth/token");
+  assert.equal(
+    requestRoute("/.well-known/oauth-protected-resource/custom-mcp", { mcpPath: "/custom-mcp" }),
+    "/.well-known/oauth-protected-resource/:mcpPath",
+  );
 });
 
 test("DP-017: initialize logs only sanitized client name and version", async (context) => {

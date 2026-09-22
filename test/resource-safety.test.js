@@ -115,7 +115,7 @@ test("STR-04: upload admission preserves configured free disk reserve", async (t
 });
 
 test("STR-05: production systemd units define task, fd, memory and swap ceilings", async () => {
-  for (const name of ["agent", "mcp", "session-host"]) {
+  for (const name of ["agent", "mcp", "mcp-oauth-spike", "session-host"]) {
     const unit = await fs.readFile(new URL(`../deploy/systemd/dp-beget-${name}.service`, import.meta.url), "utf8");
     assert.match(unit, /^TasksMax=\d+$/m);
     assert.match(unit, /^LimitNOFILE=\d+$/m);

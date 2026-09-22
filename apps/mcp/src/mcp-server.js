@@ -9,6 +9,25 @@ const destructive = { readOnlyHint: false, destructiveHint: true, idempotentHint
 const shellAccess = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
 const externalDestructive = { ...destructive, openWorldHint: true };
 
+const toolScopes = Object.freeze({
+  get_bridge_status: null,
+  list_terminal_sessions: "terminal:read",
+  open_terminal: "terminal:execute",
+  run_terminal_command: "terminal:execute",
+  get_terminal_operation: "terminal:read",
+  read_terminal: "terminal:read",
+  send_terminal_input: "terminal:input",
+  interrupt_terminal: "terminal:input",
+  close_terminal: "terminal:close",
+  purge_terminal: "terminal:close",
+  list_files: "files:read",
+  upload_files: "files:write",
+  download_file: "files:read",
+  copy_path: "files:write",
+  move_path: "files:write",
+  delete_path: "files:delete",
+});
+
 const openAiFile = z.object({
   download_url: z.string().url(),
   file_id: z.string(),
@@ -53,8 +72,15 @@ function clientImplementationField(value) {
   return normalized;
 }
 
-export function createBridgeMcpServer({ agent, downloads, config, requestSignal, logger }) {
+export function createBridgeMcpServer({ agent, downloads, config, requestSignal, logger, authorization }) {
   const server = new McpServer({ name: "dp-beget-bridge", version: "0.1.0" });
+  const registerTool = server.registerTool.bind(server);
+  server.registerTool = (name, ...args) => {
+    const required = toolScopes[name];
+    const restricted = authorization?.scopes instanceof Set;
+    if (restricted && required && !authorization.scopes.has(required)) return undefined;
+    return registerTool(name, ...args);
+  };
   // Stateless HTTP creates one MCP server per POST, so a later `initialized`
   // notification cannot recover the initialize request's clientInfo.
   const initialize = server.server._oninitialize.bind(server.server);

@@ -1,0 +1,14 @@
+# Dedicated DP-012 staging hostname. Keep the existing Secure MCP Tunnel
+# listener separate on 127.0.0.1:8788.
+bridge-oauth.example.com {
+    log {
+        output discard
+    }
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8789
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+    }
+}
