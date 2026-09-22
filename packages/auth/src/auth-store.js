@@ -3,10 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const AUTH_SCHEMA_VERSION = 1;
+const AUTH_SCHEMA_VERSION = 2;
 const OWNER_ID = /^[a-zA-Z0-9_-]{1,96}$/;
 const OPAQUE_CLIENT_ID = /^[a-zA-Z0-9._~-]{8,256}$/;
 const GRANT_ID = /^[a-zA-Z0-9_-]{8,128}$/;
+const TOKEN_FAMILY_ID = /^[a-zA-Z0-9_-]{8,128}$/;
+const REFRESH_TOKEN = /^[A-Za-z0-9_-]{43,128}$/;
 const SCOPE = /^[a-z][a-z0-9._-]*:[a-z][a-z0-9._-]*$/;
 
 function authError(code, message, status = 400) {
@@ -25,6 +27,11 @@ function isoTime(name, value) {
 
 function hashSecret(secret) {
   return crypto.createHash("sha256").update("DP-013 owner bootstrap v1\0").update(secret).digest("hex");
+}
+
+function hashRefreshToken(token) {
+  if (!REFRESH_TOKEN.test(token || "")) throw authError("invalid_refresh_token", "Refresh token is invalid");
+  return crypto.createHash("sha256").update("DP-014 refresh token v1\0").update(token).digest("hex");
 }
 
 function equalDigest(actual, expected) {
@@ -85,6 +92,23 @@ function grantFromRow(row) {
     grantedAt: row.granted_at,
     expiresAt: row.expires_at,
     status: row.status,
+  };
+}
+
+function tokenFamilyFromRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    grantId: row.grant_id,
+    ownerId: row.owner_id,
+    clientId: row.client_id,
+    resource: row.resource,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    status: row.status,
+    revokedAt: row.revoked_at,
+    revokeReason: row.revoke_reason,
+    currentGeneration: row.current_generation,
   };
 }
 
@@ -216,6 +240,37 @@ export class AuthStore {
             ON authorization_grants(owner_id, client_id, status, expires_at);
         `);
       }
+      if (fromVersion < 2) {
+        this.db.exec(`
+          CREATE TABLE oauth_token_families (
+            id TEXT PRIMARY KEY,
+            grant_id TEXT NOT NULL REFERENCES authorization_grants(id),
+            owner_id TEXT NOT NULL REFERENCES owners(id),
+            client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
+            resource TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('ACTIVE','EXPIRED','REVOKED','COMPROMISED','RESET')),
+            revoked_at TEXT,
+            revoke_reason TEXT,
+            current_generation INTEGER NOT NULL CHECK (current_generation >= 0)
+          ) STRICT;
+          CREATE INDEX oauth_token_families_lookup
+            ON oauth_token_families(owner_id, client_id, grant_id, status, expires_at);
+          CREATE TABLE oauth_refresh_tokens (
+            digest TEXT PRIMARY KEY,
+            family_id TEXT NOT NULL REFERENCES oauth_token_families(id),
+            generation INTEGER NOT NULL CHECK (generation >= 0),
+            issued_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            consumed_at TEXT,
+            status TEXT NOT NULL CHECK (status IN ('ACTIVE','CONSUMED','REVOKED')),
+            UNIQUE(family_id, generation)
+          ) STRICT;
+          CREATE INDEX oauth_refresh_tokens_family
+            ON oauth_refresh_tokens(family_id, generation, status);
+        `);
+      }
       this.db.exec(`PRAGMA user_version = ${AUTH_SCHEMA_VERSION}; COMMIT;`);
       await fs.rm(this.migrationMarkerPath, { force: true });
     } catch (error) {
@@ -293,8 +348,13 @@ export class AuthStore {
     } catch (error) {
       if (String(error.message).includes("UNIQUE")) {
         const existing = this.getClient(normalizedClientId);
-        if (existing?.ownerId === ownerId && existing.redirectUri === callback && existing.status === "ACTIVE") {
-          return existing;
+        if (existing?.ownerId === ownerId && existing.redirectUri === callback) {
+          if (existing.status === "ACTIVE") return existing;
+          const result = this.db.prepare(`
+            UPDATE oauth_clients SET status = 'ACTIVE', created_at = ?
+            WHERE client_id = ? AND owner_id = ? AND redirect_uri = ? AND status = 'DISABLED'
+          `).run(created, normalizedClientId, ownerId, callback);
+          if (result.changes === 1) return this.getClient(normalizedClientId);
         }
         throw authError("client_conflict", "OAuth client registration conflicts with existing state", 409);
       }
@@ -376,6 +436,256 @@ export class AuthStore {
       row = this.db.prepare("SELECT * FROM authorization_grants WHERE id = ?").get(id);
     }
     return grantFromRow(row);
+  }
+
+  createTokenFamily({
+    id = crypto.randomUUID(),
+    grantId,
+    ownerId,
+    clientId,
+    resource,
+    refreshToken,
+    createdAt = new Date().toISOString(),
+    expiresAt,
+  }) {
+    if (!TOKEN_FAMILY_ID.test(id || "")) throw authError("invalid_token_family", "Token family ID is invalid");
+    const created = isoTime("createdAt", createdAt);
+    const expires = isoTime("expiresAt", expiresAt);
+    const normalizedResource = exactHttpsUrl("resource", resource);
+    const refreshDigest = hashRefreshToken(refreshToken);
+    const grant = this.getGrant(grantId, { now: created.value });
+    if (!grant || grant.status !== "ACTIVE"
+      || grant.ownerId !== ownerId || grant.clientId !== clientId || grant.resource !== normalizedResource) {
+      throw authError("invalid_grant", "Token family grant is inactive or does not match");
+    }
+    if (expires.milliseconds <= created.milliseconds || expires.milliseconds > Date.parse(grant.expiresAt)) {
+      throw authError("invalid_token_family", "Token family expiry must be after creation and within grant expiry");
+    }
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      this.db.prepare(`
+        INSERT INTO oauth_token_families (
+          id, grant_id, owner_id, client_id, resource, created_at, expires_at,
+          status, revoked_at, revoke_reason, current_generation
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', NULL, NULL, 0)
+      `).run(id, grantId, ownerId, clientId, normalizedResource, created.value, expires.value);
+      this.db.prepare(`
+        INSERT INTO oauth_refresh_tokens (
+          digest, family_id, generation, issued_at, expires_at, consumed_at, status
+        ) VALUES (?, ?, 0, ?, ?, NULL, 'ACTIVE')
+      `).run(refreshDigest, id, created.value, expires.value);
+      this.db.exec("COMMIT");
+    } catch {
+      try { this.db.exec("ROLLBACK"); } catch {}
+      throw authError("auth_storage_failure", "Token family could not be persisted", 503);
+    }
+    return this.getTokenFamily(id, { now: created.value });
+  }
+
+  getTokenFamily(id, { now = new Date().toISOString() } = {}) {
+    const current = isoTime("now", now);
+    let row = this.db.prepare("SELECT * FROM oauth_token_families WHERE id = ?").get(id);
+    if (!row) return null;
+    if (row.status === "ACTIVE" && Date.parse(row.expires_at) <= current.milliseconds) {
+      try {
+        this.db.exec("BEGIN IMMEDIATE");
+        this.db.prepare(`
+          UPDATE oauth_token_families
+          SET status = 'EXPIRED', revoked_at = ?, revoke_reason = 'expired'
+          WHERE id = ? AND status = 'ACTIVE'
+        `).run(current.value, id);
+        this.db.prepare(`
+          UPDATE oauth_refresh_tokens SET status = 'REVOKED'
+          WHERE family_id = ? AND status = 'ACTIVE'
+        `).run(id);
+        this.db.exec("COMMIT");
+      } catch {
+        try { this.db.exec("ROLLBACK"); } catch {}
+        throw authError("auth_storage_failure", "Token family expiry could not be persisted", 503);
+      }
+      row = this.db.prepare("SELECT * FROM oauth_token_families WHERE id = ?").get(id);
+    }
+    return tokenFamilyFromRow(row);
+  }
+
+  rotateRefreshToken({
+    refreshToken,
+    nextRefreshToken,
+    clientId,
+    resource,
+    now = new Date().toISOString(),
+  }) {
+    const current = isoTime("now", now);
+    const digest = hashRefreshToken(refreshToken);
+    const nextDigest = hashRefreshToken(nextRefreshToken);
+    if (digest === nextDigest) throw authError("invalid_refresh_token", "Refresh rotation must replace the token");
+    const normalizedClientId = clientIdentifier(clientId);
+    const normalizedResource = exactHttpsUrl("resource", resource);
+    let row;
+    let failure = null;
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      row = this.db.prepare(`
+        SELECT tf.*, rt.generation AS token_generation, rt.status AS token_status,
+          rt.expires_at AS token_expires_at, g.status AS grant_status,
+          g.expires_at AS grant_expires_at
+        FROM oauth_refresh_tokens rt
+        JOIN oauth_token_families tf ON tf.id = rt.family_id
+        JOIN authorization_grants g ON g.id = tf.grant_id
+        WHERE rt.digest = ?
+      `).get(digest);
+      if (!row) {
+        failure = ["invalid_refresh_token", "Refresh token is invalid", 400];
+      } else if (row.client_id !== normalizedClientId || row.resource !== normalizedResource) {
+        failure = ["invalid_refresh_token", "Refresh token binding does not match", 400];
+      } else if (row.status !== "ACTIVE" || row.grant_status !== "ACTIVE"
+        || Date.parse(row.expires_at) <= current.milliseconds
+        || Date.parse(row.grant_expires_at) <= current.milliseconds
+        || Date.parse(row.token_expires_at) <= current.milliseconds) {
+        if (row.status === "ACTIVE" && Date.parse(row.expires_at) <= current.milliseconds) {
+          this.db.prepare(`
+            UPDATE oauth_token_families
+            SET status = 'EXPIRED', revoked_at = ?, revoke_reason = 'expired'
+            WHERE id = ? AND status = 'ACTIVE'
+          `).run(current.value, row.id);
+          this.db.prepare(`
+            UPDATE oauth_refresh_tokens SET status = 'REVOKED'
+            WHERE family_id = ? AND status = 'ACTIVE'
+          `).run(row.id);
+        }
+        failure = ["refresh_inactive", "Refresh token family is inactive", 400];
+      } else if (row.token_status !== "ACTIVE" || row.token_generation !== row.current_generation) {
+        this.db.prepare(`
+          UPDATE oauth_token_families
+          SET status = 'COMPROMISED', revoked_at = ?, revoke_reason = 'refresh_reuse'
+          WHERE id = ? AND status = 'ACTIVE'
+        `).run(current.value, row.id);
+        this.db.prepare(`
+          UPDATE oauth_refresh_tokens SET status = 'REVOKED'
+          WHERE family_id = ? AND status = 'ACTIVE'
+        `).run(row.id);
+        failure = ["refresh_reuse_detected", "Refresh token reuse compromised the token family", 400];
+      } else {
+        const consumed = this.db.prepare(`
+          UPDATE oauth_refresh_tokens
+          SET status = 'CONSUMED', consumed_at = ?
+          WHERE digest = ? AND status = 'ACTIVE'
+        `).run(current.value, digest);
+        if (consumed.changes !== 1) throw new Error("refresh token changed during rotation");
+        const nextGeneration = row.current_generation + 1;
+        this.db.prepare(`
+          INSERT INTO oauth_refresh_tokens (
+            digest, family_id, generation, issued_at, expires_at, consumed_at, status
+          ) VALUES (?, ?, ?, ?, ?, NULL, 'ACTIVE')
+        `).run(nextDigest, row.id, nextGeneration, current.value, row.expires_at);
+        this.db.prepare(`
+          UPDATE oauth_token_families SET current_generation = ?
+          WHERE id = ? AND status = 'ACTIVE' AND current_generation = ?
+        `).run(nextGeneration, row.id, row.current_generation);
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch {}
+      if (error?.name === "AuthStoreError") throw error;
+      throw authError("auth_storage_failure", "Refresh rotation state could not be committed", 503);
+    }
+    if (failure) throw authError(...failure);
+    return {
+      family: this.getTokenFamily(row.id, { now: current.value }),
+      grant: this.getGrant(row.grant_id, { now: current.value }),
+    };
+  }
+
+  revokeGrant({ grantId, ownerId, revokedAt = new Date().toISOString(), reason = "owner_revoke" }) {
+    const revoked = isoTime("revokedAt", revokedAt);
+    const grant = this.db.prepare("SELECT * FROM authorization_grants WHERE id = ?").get(grantId);
+    if (!grant || grant.owner_id !== ownerId) throw authError("invalid_grant", "Grant is unavailable", 404);
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      this.db.prepare(`
+        UPDATE authorization_grants SET status = 'REVOKED'
+        WHERE id = ? AND owner_id = ? AND status = 'ACTIVE'
+      `).run(grantId, ownerId);
+      this.db.prepare(`
+        UPDATE oauth_token_families
+        SET status = 'REVOKED', revoked_at = ?, revoke_reason = ?
+        WHERE grant_id = ? AND status IN ('ACTIVE','COMPROMISED')
+      `).run(revoked.value, reason, grantId);
+      this.db.prepare(`
+        UPDATE oauth_refresh_tokens SET status = 'REVOKED'
+        WHERE family_id IN (SELECT id FROM oauth_token_families WHERE grant_id = ?)
+          AND status = 'ACTIVE'
+      `).run(grantId);
+      this.db.exec("COMMIT");
+    } catch {
+      try { this.db.exec("ROLLBACK"); } catch {}
+      throw authError("auth_storage_failure", "Grant revocation could not be committed", 503);
+    }
+    return this.getGrant(grantId, { now: revoked.value });
+  }
+
+  resetOwnerAccess({
+    ownerId,
+    bootstrapSecret,
+    resetAt = new Date().toISOString(),
+    bootstrapExpiresAt,
+  }) {
+    if (typeof bootstrapSecret !== "string" || bootstrapSecret.length < 32) {
+      throw authError("invalid_bootstrap", "Owner bootstrap secret must contain at least 32 characters");
+    }
+    const reset = isoTime("resetAt", resetAt);
+    const expires = isoTime("bootstrapExpiresAt", bootstrapExpiresAt);
+    if (expires.milliseconds <= reset.milliseconds) {
+      throw authError("invalid_bootstrap", "Owner bootstrap expiry must be after reset");
+    }
+    const owner = this.getOwner(ownerId);
+    if (!owner) throw authError("invalid_owner", "Owner is unavailable", 404);
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      this.db.prepare(`
+        UPDATE authorization_grants SET status = 'REVOKED'
+        WHERE owner_id = ? AND status = 'ACTIVE'
+      `).run(ownerId);
+      this.db.prepare(`
+        UPDATE oauth_token_families
+        SET status = 'RESET', revoked_at = ?, revoke_reason = 'owner_reset'
+        WHERE owner_id = ? AND status IN ('ACTIVE','COMPROMISED')
+      `).run(reset.value, ownerId);
+      this.db.prepare(`
+        UPDATE oauth_refresh_tokens SET status = 'REVOKED'
+        WHERE family_id IN (SELECT id FROM oauth_token_families WHERE owner_id = ?)
+          AND status = 'ACTIVE'
+      `).run(ownerId);
+      this.db.prepare("UPDATE oauth_clients SET status = 'DISABLED' WHERE owner_id = ?").run(ownerId);
+      const updated = this.db.prepare(`
+        UPDATE owners
+        SET bootstrap_digest = ?, bootstrap_expires_at = ?, bootstrap_consumed_at = NULL, status = 'ACTIVE'
+        WHERE id = ?
+      `).run(hashSecret(bootstrapSecret), expires.value, ownerId);
+      if (updated.changes !== 1) throw new Error("owner reset lost");
+      this.db.exec("COMMIT");
+    } catch {
+      try { this.db.exec("ROLLBACK"); } catch {}
+      throw authError("auth_storage_failure", "Owner access reset could not be committed", 503);
+    }
+    return this.getOwner(ownerId);
+  }
+
+  ownerAccessSummary(ownerId) {
+    const owner = this.getOwner(ownerId);
+    if (!owner) throw authError("invalid_owner", "Owner is unavailable", 404);
+    const count = (table, status) => Number(this.db.prepare(
+      `SELECT COUNT(*) AS count FROM ${table} WHERE owner_id = ? AND status = ?`,
+    ).get(ownerId, status).count);
+    return {
+      ownerId,
+      ownerStatus: owner.status,
+      bootstrapPending: !owner.bootstrapConsumedAt,
+      activeClients: count("oauth_clients", "ACTIVE"),
+      activeGrants: count("authorization_grants", "ACTIVE"),
+      activeTokenFamilies: count("oauth_token_families", "ACTIVE"),
+      alreadyRunningTaskPolicy: "Revocation blocks new authorized requests; already-running tasks continue until explicitly interrupted or closed.",
+    };
   }
 }
 
