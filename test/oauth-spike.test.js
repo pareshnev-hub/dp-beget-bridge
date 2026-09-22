@@ -186,3 +186,38 @@ test("CIMD metadata streaming is bounded even without Content-Length", async () 
     { name: "OAuthError", code: "invalid_client" },
   );
 });
+
+test("CIMD registry fails closed on a 403 by default", async () => {
+  const cimd = new ChatGptCimdRegistry({
+    fetchImpl: async () => new Response("blocked", { status: 403 }),
+  });
+  await assert.rejects(
+    cimd.validate(oauthDefaults.chatGptClientId, oauthDefaults.chatGptRedirectUri),
+    { name: "OAuthError", code: "invalid_client" },
+  );
+});
+
+test("explicit staging fallback accepts only the pinned ChatGPT client and redirect after a 403", async () => {
+  const cimd = new ChatGptCimdRegistry({
+    allowPinnedChatGptFallback: true,
+    fetchImpl: async () => new Response("blocked", { status: 403 }),
+  });
+  const document = await cimd.validate(oauthDefaults.chatGptClientId, oauthDefaults.chatGptRedirectUri);
+  assert.equal(document.client_id, oauthDefaults.chatGptClientId);
+  assert.deepEqual(document.redirect_uris, [oauthDefaults.chatGptRedirectUri]);
+  await assert.rejects(
+    cimd.validate(oauthDefaults.chatGptClientId, "https://chatgpt.com/not-the-connector-callback"),
+    { name: "OAuthError", code: "invalid_request" },
+  );
+});
+
+test("explicit staging fallback still rejects non-403 metadata failures", async () => {
+  const cimd = new ChatGptCimdRegistry({
+    allowPinnedChatGptFallback: true,
+    fetchImpl: async () => new Response("upstream failure", { status: 500 }),
+  });
+  await assert.rejects(
+    cimd.validate(oauthDefaults.chatGptClientId, oauthDefaults.chatGptRedirectUri),
+    { name: "OAuthError", code: "invalid_client" },
+  );
+});
