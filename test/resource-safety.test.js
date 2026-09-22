@@ -3,7 +3,10 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { Readable } from "node:stream";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { FileManager } from "../apps/agent/src/files.js";
 import { createMcpHttpServer } from "../apps/mcp/src/server.js";
@@ -120,4 +123,19 @@ test("STR-05: production systemd units define task, fd, memory and swap ceilings
     assert.match(unit, /^MemorySwapMax=\d+[MG]$/m);
     assert.match(unit, /^NoNewPrivileges=true$/m);
   }
+});
+
+test("STR-03: capture helper streams immediately and stops at the exact byte ceiling", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-capture-helper-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const output = path.join(root, "terminal.log");
+  const child = spawn(process.execPath, [
+    fileURLToPath(new URL("../scripts/transcript-capture.mjs", import.meta.url)),
+    output,
+    "5",
+  ], { stdio: ["pipe", "ignore", "ignore"] });
+  child.stdin.end("123456789");
+  const [code] = await once(child, "exit");
+  assert.equal(code, 0);
+  assert.equal(await fs.readFile(output, "utf8"), "12345");
 });

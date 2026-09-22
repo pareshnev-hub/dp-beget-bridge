@@ -23,7 +23,10 @@ test("STR-03: new terminal capture pipe has a hard byte ceiling", async (t) => {
 
   const opened = await manager.open({ cwd: ".", label: "bounded" });
   const pipe = calls.find((args) => args[0] === "pipe-pane");
-  assert.match(pipe.at(-1), new RegExp(`^head -c 12345 >> '.*${opened.id}/terminal\\.log'$`));
+  assert.match(
+    pipe.at(-1),
+    new RegExp(`^/usr/bin/env node '.*scripts/transcript-capture\\.mjs' '.*${opened.id}/terminal\\.log' 12345$`),
+  );
 });
 
 test("uses an explicit tmux socket and prepares its persistent directory", async (t) => {

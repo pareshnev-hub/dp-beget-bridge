@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { BridgeError } from "../../../packages/core/src/errors.js";
 import { durationBucket } from "./telemetry.js";
@@ -10,6 +11,10 @@ const execFileAsync = promisify(execFile);
 const SAFE_ID = /^[a-zA-Z0-9_-]{1,80}$/;
 const SAFE_IDEMPOTENCY_KEY = /^[a-zA-Z0-9._:-]{1,128}$/;
 const CURSOR_VERSION = 1;
+const CAPTURE_SCRIPT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../scripts/transcript-capture.mjs",
+);
 
 function encodeCursor(session, offset) {
   return `v${CURSOR_VERSION}:${session.transcriptStreamId}:${session.transcriptEpoch}:${offset}`;
@@ -150,7 +155,7 @@ export class TmuxSessionManager {
       "-o",
       "-t",
       name,
-      `head -c ${Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024))} >> ${shellQuote(this.store.outputPath(id))}`,
+      `/usr/bin/env node ${shellQuote(CAPTURE_SCRIPT)} ${shellQuote(this.store.outputPath(id))} ${Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024))}`,
     ]);
     const saved = await this.store.save(session);
     this.telemetry.trackActivity?.();
