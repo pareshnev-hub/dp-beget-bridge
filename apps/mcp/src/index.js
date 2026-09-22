@@ -4,6 +4,7 @@ import { DownloadTokenStore } from "./download-tokens.js";
 import { createMcpHttpServer } from "./server.js";
 import { createLogger } from "../../../packages/core/src/logger.js";
 import { AttachmentFetcher } from "../../../packages/core/src/attachment-fetch.js";
+import { AuthStore } from "../../../packages/auth/src/auth-store.js";
 import { ChatGptCimdRegistry, OAuthSpike } from "../../../packages/auth/src/oauth-spike.js";
 
 const config = loadMcpConfig();
@@ -21,13 +22,25 @@ const attachmentFetcher = config.attachmentFetchEnabled ? new AttachmentFetcher(
 }) : undefined;
 const agent = new AgentClient({ baseUrl: config.agentUrl, token: config.agentToken, attachmentFetcher });
 const downloads = new DownloadTokenStore({ ttlMs: config.downloadTokenTtlMs });
-const oauth = config.authMode === "oauth" ? new OAuthSpike({
-  ...config.oauth,
-  clientRegistry: new ChatGptCimdRegistry({
-    allowedClientIds: config.oauth.allowedClientIds,
-    timeoutMs: config.oauth.clientMetadataTimeoutMs,
-  }),
-}) : undefined;
+let authStore;
+let oauth;
+if (config.authMode === "oauth") {
+  authStore = new AuthStore(config.oauth.authDataDir, { supportedScopes: config.oauth.scopes });
+  await authStore.init();
+  const owner = authStore.getOwner(config.oauth.ownerId);
+  if (!owner || owner.status !== "ACTIVE" || !owner.bootstrapConsumedAt) {
+    authStore.close();
+    throw new Error("OAuth owner bootstrap is incomplete");
+  }
+  oauth = new OAuthSpike({
+    ...config.oauth,
+    authStore,
+    clientRegistry: new ChatGptCimdRegistry({
+      allowedClientIds: config.oauth.allowedClientIds,
+      timeoutMs: config.oauth.clientMetadataTimeoutMs,
+    }),
+  });
+}
 const server = createMcpHttpServer({ config, agent, downloads, logger, oauth });
 
 server.listen(config.port, config.host, () => {
@@ -36,7 +49,10 @@ server.listen(config.port, config.host, () => {
 
 function shutdown(signal) {
   logger.info("mcp.stopping", { signal });
-  server.close(() => process.exit(0));
+  server.close(() => {
+    authStore?.close();
+    process.exit(0);
+  });
   setTimeout(() => process.exit(1), 10000).unref();
 }
 
