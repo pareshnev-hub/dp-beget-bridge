@@ -190,7 +190,8 @@ export class ChatGptDcrRegistry {
       || document.redirect_uris[0] !== DEFAULT_CHATGPT_REDIRECT_URI
       || (document.token_endpoint_auth_method && document.token_endpoint_auth_method !== "none")
       || (document.grant_types && (!Array.isArray(document.grant_types)
-        || !document.grant_types.includes("authorization_code")))
+        || !document.grant_types.includes("authorization_code")
+        || document.grant_types.some((type) => !["authorization_code", "refresh_token"].includes(type))))
       || (document.response_types && (!Array.isArray(document.response_types)
         || !document.response_types.includes("code")))) {
       throw oauthError("invalid_client_metadata", "Only the ChatGPT public authorization-code client is supported");
@@ -199,7 +200,7 @@ export class ChatGptDcrRegistry {
       client_id: this.clientId,
       redirect_uris: [DEFAULT_CHATGPT_REDIRECT_URI],
       token_endpoint_auth_method: "none",
-      grant_types: ["authorization_code"],
+      grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       scope: "files:read",
     };
@@ -222,6 +223,7 @@ export class OAuthSpike {
     transactionTtlMs = 5 * 60 * 1000,
     codeTtlMs = 2 * 60 * 1000,
     accessTokenTtlMs = 10 * 60 * 1000,
+    refreshTokenTtlMs = 30 * 24 * 60 * 60 * 1000,
     grantTtlMs = 24 * 60 * 60 * 1000,
     maxPendingTransactions = 128,
     authStore,
@@ -252,6 +254,7 @@ export class OAuthSpike {
     this.transactionTtlMs = transactionTtlMs;
     this.codeTtlMs = codeTtlMs;
     this.accessTokenTtlMs = accessTokenTtlMs;
+    this.refreshTokenTtlMs = refreshTokenTtlMs;
     this.grantTtlMs = grantTtlMs;
     this.maxPendingTransactions = maxPendingTransactions;
     this.authStore = authStore || null;
@@ -262,6 +265,9 @@ export class OAuthSpike {
     }
     if (!Number.isFinite(this.grantTtlMs) || this.grantTtlMs < 1) {
       throw new Error("OAuth grant TTL must be a positive number");
+    }
+    if (!Number.isFinite(this.refreshTokenTtlMs) || this.refreshTokenTtlMs < 1) {
+      throw new Error("OAuth refresh token TTL must be a positive number");
     }
     this.now = now;
     this.transactions = new Map();
@@ -284,8 +290,9 @@ export class OAuthSpike {
       issuer: this.issuer,
       authorization_endpoint: `${this.issuer}/oauth/authorize`,
       token_endpoint: `${this.issuer}/oauth/token`,
+      revocation_endpoint: `${this.issuer}/oauth/revoke`,
       response_types_supported: ["code"],
-      grant_types_supported: ["authorization_code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: [...this.scopes],
@@ -400,10 +407,43 @@ export class OAuthSpike {
     return redirect.href;
   }
 
-  exchange(params, { authorizationHeader } = {}) {
-    this.cleanup();
-    if (authorizationHeader) throw oauthError("invalid_client", "Token endpoint client authentication is not supported", 401);
-    assertExact(requireString(params, "grant_type"), "authorization_code", "unsupported_grant_type", "Only authorization_code is supported");
+  issueAccessToken({
+    clientId,
+    resource,
+    scopes,
+    grant,
+    family,
+    issuedAt,
+    refreshToken,
+  }) {
+    const grantExpiresAt = grant?.expiresAt || null;
+    const expiresAt = grantExpiresAt
+      ? Math.min(issuedAt + this.accessTokenTtlMs, Date.parse(grantExpiresAt))
+      : issuedAt + this.accessTokenTtlMs;
+    if (expiresAt <= issuedAt) throw oauthError("invalid_grant", "Authorization grant has expired");
+    const accessToken = randomToken();
+    this.tokens.set(digest(accessToken), {
+      clientId,
+      resource,
+      scopes,
+      grantId: grant?.id || null,
+      ownerId: grant?.ownerId || null,
+      executionProfile: grant?.executionProfile || null,
+      grantExpiresAt,
+      tokenFamilyId: family?.id || null,
+      expiresAt,
+    });
+    const response = {
+      access_token: accessToken,
+      token_type: "Bearer",
+      expires_in: Math.floor((expiresAt - issuedAt) / 1000),
+      scope: scopes.join(" "),
+    };
+    if (refreshToken) response.refresh_token = refreshToken;
+    return response;
+  }
+
+  exchangeAuthorizationCode(params) {
     const code = requireString(params, "code");
     const key = digest(code);
     const grant = this.codes.get(key);
@@ -433,26 +473,124 @@ export class OAuthSpike {
       }
     }
     const issuedAt = this.now();
-    const expiresAt = durableGrant
-      ? Math.min(issuedAt + this.accessTokenTtlMs, Date.parse(durableGrant.expiresAt))
-      : issuedAt + this.accessTokenTtlMs;
-    const token = randomToken();
-    this.tokens.set(digest(token), {
+    let family = null;
+    let refreshToken = null;
+    if (durableGrant) {
+      refreshToken = randomToken();
+      try {
+        family = this.authStore.createTokenFamily({
+          grantId: durableGrant.id,
+          ownerId: durableGrant.ownerId,
+          clientId: durableGrant.clientId,
+          resource: durableGrant.resource,
+          refreshToken,
+          createdAt: new Date(issuedAt).toISOString(),
+          expiresAt: new Date(Math.min(
+            issuedAt + this.refreshTokenTtlMs,
+            Date.parse(durableGrant.expiresAt),
+          )).toISOString(),
+        });
+      } catch {
+        throw oauthError("temporarily_unavailable", "Refresh token state could not be persisted", 503);
+      }
+    }
+    return this.issueAccessToken({
       clientId: grant.clientId,
       resource: grant.resource,
       scopes: grant.scopes,
-      grantId: durableGrant?.id || null,
-      ownerId: durableGrant?.ownerId || null,
-      executionProfile: durableGrant?.executionProfile || null,
-      grantExpiresAt: durableGrant?.expiresAt || null,
-      expiresAt,
+      grant: durableGrant,
+      family,
+      issuedAt,
+      refreshToken,
     });
-    return {
-      access_token: token,
-      token_type: "Bearer",
-      expires_in: Math.floor((expiresAt - issuedAt) / 1000),
-      scope: grant.scopes.join(" "),
-    };
+  }
+
+  exchangeRefreshToken(params) {
+    if (!this.authStore) throw oauthError("unsupported_grant_type", "Durable refresh tokens are unavailable");
+    const refreshToken = requireString(params, "refresh_token");
+    const clientId = requireString(params, "client_id");
+    const resource = requireString(params, "resource");
+    assertExact(resource, this.resource, "invalid_target", "resource does not match this MCP server");
+    const nextRefreshToken = randomToken();
+    let rotated;
+    try {
+      rotated = this.authStore.rotateRefreshToken({
+        refreshToken,
+        nextRefreshToken,
+        clientId,
+        resource,
+        now: new Date(this.now()).toISOString(),
+      });
+    } catch (error) {
+      if (["invalid_refresh_token", "refresh_inactive", "refresh_reuse_detected"].includes(error?.code)) {
+        throw oauthError("invalid_grant", "Refresh token is invalid, expired, revoked or reused");
+      }
+      throw oauthError("temporarily_unavailable", "Refresh token state is unavailable", 503);
+    }
+    if (!rotated.family || rotated.family.status !== "ACTIVE"
+      || !rotated.grant || rotated.grant.status !== "ACTIVE") {
+      throw oauthError("invalid_grant", "Refresh token family is inactive");
+    }
+    const scopes = params.get("scope")
+      ? parseScope(params.get("scope"), this.scopes)
+      : rotated.grant.scopes;
+    if (!sameStrings(scopes, rotated.grant.scopes)) {
+      throw oauthError("invalid_scope", "Refresh cannot change the approved scope set");
+    }
+    return this.issueAccessToken({
+      clientId: rotated.grant.clientId,
+      resource: rotated.grant.resource,
+      scopes: rotated.grant.scopes,
+      grant: rotated.grant,
+      family: rotated.family,
+      issuedAt: this.now(),
+      refreshToken: nextRefreshToken,
+    });
+  }
+
+  exchange(params, { authorizationHeader } = {}) {
+    this.cleanup();
+    if (authorizationHeader) throw oauthError("invalid_client", "Token endpoint client authentication is not supported", 401);
+    const grantType = requireString(params, "grant_type");
+    if (grantType === "authorization_code") return this.exchangeAuthorizationCode(params);
+    if (grantType === "refresh_token") return this.exchangeRefreshToken(params);
+    throw oauthError("unsupported_grant_type", "Only authorization_code and refresh_token are supported");
+  }
+
+  revoke(params) {
+    this.cleanup();
+    const token = requireString(params, "token");
+    const clientId = params.get("client_id") || null;
+    const accessKey = digest(token);
+    const access = this.tokens.get(accessKey);
+    if (access && (!clientId || access.clientId === clientId)) {
+      this.tokens.delete(accessKey);
+      if (this.authStore && access.tokenFamilyId) {
+        try {
+          this.authStore.revokeTokenFamily({
+            familyId: access.tokenFamilyId,
+            ownerId: access.ownerId,
+            reason: "client_revoke",
+            revokedAt: new Date(this.now()).toISOString(),
+          });
+        } catch {
+          throw oauthError("temporarily_unavailable", "Token revocation state is unavailable", 503);
+        }
+      }
+      return;
+    }
+    if (this.authStore) {
+      try {
+        this.authStore.revokeRefreshToken({
+          refreshToken: token,
+          clientId,
+          reason: "client_revoke",
+          revokedAt: new Date(this.now()).toISOString(),
+        });
+      } catch {
+        throw oauthError("temporarily_unavailable", "Token revocation state is unavailable", 503);
+      }
+    }
   }
 
   authenticate(authorizationHeader) {
@@ -475,6 +613,20 @@ export class OAuthSpike {
         || grant.resource !== record.resource
         || grant.executionProfile !== record.executionProfile
         || !sameStrings(grant.scopes, record.scopes)) return null;
+      if (record.tokenFamilyId) {
+        try {
+          const family = this.authStore.getTokenFamily(record.tokenFamilyId, {
+            now: new Date(this.now()).toISOString(),
+          });
+          if (!family || family.status !== "ACTIVE"
+            || family.grantId !== record.grantId
+            || family.ownerId !== record.ownerId
+            || family.clientId !== record.clientId
+            || family.resource !== record.resource) return null;
+        } catch {
+          return null;
+        }
+      }
     }
     return {
       kind: "oauth-spike",
