@@ -70,7 +70,7 @@ export function createMcpHttpServer({ config, agent, downloads, logger }) {
       }
 
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-      const mcp = createBridgeMcpServer({ agent, downloads, config, requestSignal: requestAbort.signal });
+      const mcp = createBridgeMcpServer({ agent, downloads, config, requestSignal: requestAbort.signal, logger });
       await mcp.connect(transport);
       response.on("close", () => {
         transport.close().catch(() => {});

@@ -41,6 +41,50 @@ test("request logs use fixed route templates", () => {
   assert.equal(requestRoute("/custom-mcp", { mcpPath: "/custom-mcp" }), "/mcp");
 });
 
+test("DP-017: initialize logs only sanitized client name and version", async (context) => {
+  const canary = "client-info-secret\nvalue";
+  const { logger, lines } = captureLogger();
+  const server = createMcpHttpServer({
+    config: { accessToken: "valid-access-token-value", path: "/mcp" },
+    agent: {},
+    downloads: { get() { return null; } },
+    logger,
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  const { port } = server.address();
+
+  const initialized = await fetch(`http://127.0.0.1:${port}/mcp`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer valid-access-token-value",
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "ChatGPT", version: canary },
+      },
+    }),
+  });
+  assert.equal(initialized.status, 200);
+
+  const record = lines.map((line) => JSON.parse(line)).find((entry) => entry.event === "mcp.client_initialized");
+  assert.deepEqual(record && { platform: record.platform, version: record.version }, {
+    platform: "ChatGPT",
+    version: "unknown",
+  });
+  assert.doesNotMatch(lines.join(""), /client-info-secret/);
+});
+
 test("LOG-01/02: invalid bearer and download grant never enter MCP logs", async (context) => {
   const bearerCanary = "invalid-bearer-canary-value";
   const grantCanary = "download-grant-canary-value";
