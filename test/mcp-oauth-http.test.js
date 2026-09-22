@@ -56,7 +56,10 @@ test("DP-012 HTTP flow exposes metadata, challenges with RFC9728, and restricts 
 
   const authorizationMetadata = await fetch(`${origin}/.well-known/oauth-authorization-server`);
   assert.equal(authorizationMetadata.status, 200);
-  assert.equal((await authorizationMetadata.json()).code_challenge_methods_supported[0], "S256");
+  const authorizationDocument = await authorizationMetadata.json();
+  assert.equal(authorizationDocument.code_challenge_methods_supported[0], "S256");
+  assert.deepEqual(authorizationDocument.grant_types_supported, ["authorization_code", "refresh_token"]);
+  assert.equal(authorizationDocument.revocation_endpoint, `${config.publicUrl}/oauth/revoke`);
 
   const registration = await fetch(`${origin}/oauth/register`, {
     method: "POST",
@@ -134,6 +137,22 @@ test("DP-012 HTTP flow exposes metadata, challenges with RFC9728, and restricts 
   assert.deepEqual(names, ["download_file", "get_bridge_status", "list_files"]);
   const listed = await client.callTool({ name: "list_files", arguments: { path: "." } });
   assert.deepEqual(listed.structuredContent, { path: ".", entries: [] });
+
+  const revocation = await fetch(`${origin}/oauth/revoke`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      token: token.access_token,
+      token_type_hint: "access_token",
+      client_id: oauthDefaults.chatGptClientId,
+    }),
+  });
+  assert.equal(revocation.status, 200);
+  const revoked = await fetch(`${origin}/mcp`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token.access_token}` },
+  });
+  assert.equal(revoked.status, 401);
 });
 
 test("DP-013 full-shell consent clearly discloses operating-system rights", async (t) => {

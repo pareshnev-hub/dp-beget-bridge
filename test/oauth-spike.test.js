@@ -64,8 +64,9 @@ test("DP-012 metadata binds the protected resource to a local authorization serv
     issuer,
     authorization_endpoint: `${issuer}/oauth/authorize`,
     token_endpoint: `${issuer}/oauth/token`,
+    revocation_endpoint: `${issuer}/oauth/revoke`,
     response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none"],
     scopes_supported: ["files:read"],
@@ -281,6 +282,7 @@ test("M002b binds authorization codes and tokens to a durable owner grant", asyn
     code_verifier: verifier,
   }));
   assert.equal(token.expires_in, 60);
+  assert.match(token.refresh_token, /^[A-Za-z0-9_-]{43}$/);
   const authorization = oauth.authenticate(`Bearer ${token.access_token}`);
   assert.equal(authorization.ownerId, ownerId);
   assert.equal(authorization.executionProfile, "files-read");
@@ -292,6 +294,35 @@ test("M002b binds authorization codes and tokens to a durable owner grant", asyn
   assert.equal(grant.resource, resource);
   assert.deepEqual(grant.scopes, ["files:read"]);
 
-  now += 60_000;
+  now += 1_000;
+  const refreshed = oauth.exchange(new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: token.refresh_token,
+    client_id: oauthDefaults.chatGptClientId,
+    resource,
+  }));
+  assert.notEqual(refreshed.refresh_token, token.refresh_token);
+  assert.ok(oauth.authenticate(`Bearer ${refreshed.access_token}`));
+  assert.throws(
+    () => oauth.exchange(new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: token.refresh_token,
+      client_id: oauthDefaults.chatGptClientId,
+      resource,
+    })),
+    { name: "OAuthError", code: "invalid_grant" },
+  );
+  assert.equal(oauth.authenticate(`Bearer ${refreshed.access_token}`), null);
+  assert.throws(
+    () => oauth.exchange(new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshed.refresh_token,
+      client_id: oauthDefaults.chatGptClientId,
+      resource,
+    })),
+    { name: "OAuthError", code: "invalid_grant" },
+  );
+
+  now += 59_000;
   assert.equal(oauth.authenticate(`Bearer ${token.access_token}`), null);
 });

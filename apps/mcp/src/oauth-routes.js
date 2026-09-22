@@ -188,6 +188,13 @@ export async function handleOAuthRoute({ request, response, url, oauth }) {
       sendJson(response, 200, token);
       return true;
     }
+    if (request.method === "POST" && url.pathname === "/oauth/revoke") {
+      const form = await readForm(request);
+      oauth.revoke(form);
+      response.writeHead(200, { "cache-control": "no-store", pragma: "no-cache" });
+      response.end();
+      return true;
+    }
   } catch (error) {
     sendOAuthError(response, error);
     return true;
