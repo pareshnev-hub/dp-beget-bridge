@@ -20,7 +20,12 @@ const attachmentFetcher = config.attachmentFetchEnabled ? new AttachmentFetcher(
   maxRedirects: config.attachmentMaxRedirects,
   maxConcurrent: config.attachmentMaxConcurrent,
 }) : undefined;
-const agent = new AgentClient({ baseUrl: config.agentUrl, token: config.agentToken, attachmentFetcher });
+const agent = new AgentClient({
+  baseUrl: config.agentUrl,
+  token: config.agentToken,
+  attachmentFetcher,
+  contextSecret: config.agentContextSecret,
+});
 const downloads = new DownloadTokenStore({ ttlMs: config.downloadTokenTtlMs });
 let authStore;
 let oauth;
