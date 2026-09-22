@@ -16,6 +16,10 @@ RestartSec=3
 # tmux owns terminal processes. Restarting this API must not terminate them.
 KillMode=process
 TimeoutStopSec=15
+TasksMax=256
+LimitNOFILE=4096
+MemoryMax=1G
+MemorySwapMax=1G
 RuntimeDirectory=dp-beget-bridge
 RuntimeDirectoryMode=0750
 UMask=0007

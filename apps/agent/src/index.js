@@ -25,7 +25,14 @@ const telemetry = new TelemetryClient({
 });
 const pathPolicy = new PathPolicy(config.allowedRoots);
 const sessions = new SessionHostClient({ socketPath: config.sessionHostSocket });
-const files = new FileManager({ pathPolicy, logger, telemetry, uploadMaxBytes: config.fileUploadMaxBytes });
+const files = new FileManager({
+  pathPolicy,
+  logger,
+  telemetry,
+  uploadMaxBytes: config.fileUploadMaxBytes,
+  storageMinFreeBytes: config.storageMinFreeBytes,
+  maxConcurrent: config.fileTransferMaxConcurrent,
+});
 const server = createAgentServer({ config, sessions, files, logger });
 
 server.listen(config.port, config.host, () => {

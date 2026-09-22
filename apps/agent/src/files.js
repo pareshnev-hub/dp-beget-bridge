@@ -13,13 +13,49 @@ export class FileManager {
     logger,
     telemetry = { track() {} },
     uploadMaxBytes,
+    storageMinFreeBytes = 0,
+    maxConcurrent = 2,
     fileSystem = fsp,
   }) {
     this.pathPolicy = pathPolicy;
     this.logger = logger;
     this.uploadMaxBytes = uploadMaxBytes;
+    this.storageMinFreeBytes = storageMinFreeBytes;
+    this.maxConcurrent = maxConcurrent;
+    this.activeTransfers = 0;
     this.telemetry = telemetry;
     this.fileSystem = fileSystem;
+  }
+
+  acquireTransfer(kind) {
+    if (this.activeTransfers >= this.maxConcurrent) {
+      this.logger.warn("file.transfer_rejected", {
+        reason: "concurrency",
+        kind,
+        active: this.activeTransfers,
+        limit: this.maxConcurrent,
+      });
+      throw new BridgeError("transfer_busy", "File transfer concurrency limit reached", 429);
+    }
+    this.activeTransfers += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.activeTransfers -= 1;
+    };
+  }
+
+  async assertStorageReserve(target, incomingBytes = 0) {
+    const reserve = BigInt(this.storageMinFreeBytes || 0);
+    if (reserve === 0n) return;
+    const stat = await this.fileSystem.statfs(target);
+    const available = BigInt(stat.bavail) * BigInt(stat.bsize);
+    const incoming = BigInt(Math.max(0, Number(incomingBytes) || 0));
+    if (available < reserve + incoming) {
+      this.logger.warn("file.write_rejected", { reason: "storage_reserve" });
+      throw new BridgeError("storage_reserve", "Write rejected to preserve configured free disk space", 507);
+    }
   }
 
   destinationExists(error) {
@@ -63,36 +99,52 @@ export class FileManager {
   }
 
   async upload(request, candidate, overwrite = false) {
-    const destination = this.pathPolicy.mutation(candidate);
-    this.telemetry.trackActivity?.();
-    const pinned = await this.pathPolicy.openMutationParent(destination, { createParents: true });
-    const temporary = path.join(pinned.parentPath, `.dpb-part-${crypto.randomUUID()}`);
-    const hash = crypto.createHash("sha256");
-    let size = 0;
-    const meter = new Transform({
-      transform: (chunk, _encoding, callback) => {
-        size += chunk.length;
-        if (size > this.uploadMaxBytes) {
-          callback(new BridgeError("file_too_large", "Upload exceeds configured limit", 413));
-          return;
-        }
-        hash.update(chunk);
-        callback(null, chunk);
-      },
-    });
+    const release = this.acquireTransfer("upload");
     try {
-      await pipeline(request, meter, fs.createWriteStream(temporary, { mode: 0o600, flags: "wx" }));
-      await this.commitTemporary(temporary, pinned.path, overwrite);
-    } catch (error) {
-      await this.fileSystem.rm(temporary, { force: true }).catch(() => {});
-      throw error;
+      const destination = this.pathPolicy.mutation(candidate);
+      this.telemetry.trackActivity?.();
+      const pinned = await this.pathPolicy.openMutationParent(destination, { createParents: true });
+      const temporary = path.join(pinned.parentPath, `.dpb-part-${crypto.randomUUID()}`);
+      const hash = crypto.createHash("sha256");
+      const declaredLength = Number.parseInt(request.headers?.["content-length"] || "", 10);
+      if (Number.isFinite(declaredLength) && declaredLength > this.uploadMaxBytes) {
+        await pinned.close();
+        throw new BridgeError("file_too_large", "Upload exceeds configured limit", 413);
+      }
+      let size = 0;
+      const meter = new Transform({
+        transform: (chunk, _encoding, callback) => {
+          size += chunk.length;
+          if (size > this.uploadMaxBytes) {
+            callback(new BridgeError("file_too_large", "Upload exceeds configured limit", 413));
+            return;
+          }
+          this.assertStorageReserve(pinned.parentPath, chunk.length).then(() => {
+            hash.update(chunk);
+            callback(null, chunk);
+          }, callback);
+        },
+      });
+      try {
+        await this.assertStorageReserve(
+          pinned.parentPath,
+          Number.isFinite(declaredLength) ? declaredLength : 1,
+        );
+        await pipeline(request, meter, fs.createWriteStream(temporary, { mode: 0o600, flags: "wx" }));
+        await this.commitTemporary(temporary, pinned.path, overwrite);
+      } catch (error) {
+        await this.fileSystem.rm(temporary, { force: true }).catch(() => {});
+        throw error;
+      } finally {
+        await pinned.close();
+      }
+      const sha256 = hash.digest("hex");
+      this.logger.info("file.uploaded", { size });
+      this.telemetry.track("file_transferred", { direction: "upload", sizeBucket: sizeBucket(size) });
+      return { path: destination.displayPath, size, sha256 };
     } finally {
-      await pinned.close();
+      release();
     }
-    const sha256 = hash.digest("hex");
-    this.logger.info("file.uploaded", { size });
-    this.telemetry.track("file_transferred", { direction: "upload", sizeBucket: sizeBucket(size) });
-    return { path: destination.displayPath, size, sha256 };
   }
 
   recordDownload(size) {
@@ -135,10 +187,12 @@ export class FileManager {
         if (error.code === "ELOOP") throw this.unsupportedComplex("Symlink copy is not safely supported");
         throw error;
       }
-      if (!(await sourceHandle.stat()).isFile()) {
+      const sourceStat = await sourceHandle.stat();
+      if (!sourceStat.isFile()) {
         throw this.unsupportedComplex("Recursive or non-regular copy is not safely supported");
       }
       destinationParent = await this.pathPolicy.openMutationParent(to);
+      await this.assertStorageReserve(destinationParent.parentPath, sourceStat.size);
       temporary = path.join(destinationParent.parentPath, `.dpb-copy-${crypto.randomUUID()}`);
       await this.fileSystem.copyFile(
         `/proc/self/fd/${sourceHandle.fd}`,

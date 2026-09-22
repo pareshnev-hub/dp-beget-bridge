@@ -150,7 +150,7 @@ export class TmuxSessionManager {
       "-o",
       "-t",
       name,
-      `cat >> ${shellQuote(this.store.outputPath(id))}`,
+      `head -c ${Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024))} >> ${shellQuote(this.store.outputPath(id))}`,
     ]);
     const saved = await this.store.save(session);
     this.telemetry.trackActivity?.();
@@ -229,6 +229,25 @@ export class TmuxSessionManager {
     return degraded;
   }
 
+  async enforceCaptureCeiling(id, session, alive, range) {
+    const maximum = Number(this.config.sessionOutputMaxBytes || 0);
+    if (
+      !alive
+      || session.transcriptCaptureState !== "ACTIVE"
+      || maximum <= 0
+      || range.physicalSize < maximum
+    ) {
+      return session;
+    }
+    await this.tmux(["pipe-pane", "-t", this.tmuxName(id)]);
+    const degraded = await this.store.updateTranscript(id, {
+      captureState: "DEGRADED",
+      gapReason: "transcript_limit",
+    });
+    this.logger.warn("terminal.capture_degraded", { sessionId: id, reason: "transcript_limit" });
+    return degraded;
+  }
+
   async readOutput(id, cursor = undefined, maxBytes = 64 * 1024) {
     let session = await this.store.get(id);
     if (!session) throw new BridgeError("session_not_found", "Terminal session not found", 404);
@@ -236,6 +255,7 @@ export class TmuxSessionManager {
     session = await this.enforceCaptureReserve(id, session, alive);
     this.telemetry.trackActivity?.();
     const range = await this.outputRange(id, session);
+    session = await this.enforceCaptureCeiling(id, session, alive, range);
     const requested = parseCursor(cursor, session);
     let logicalStart = requested.offset;
     let gap = null;

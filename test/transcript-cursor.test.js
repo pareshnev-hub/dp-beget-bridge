@@ -115,3 +115,18 @@ test("CUR-06: storage reserve stops capture but leaves the terminal controlled",
   assert.deepEqual(tmuxCalls, [["pipe-pane", "-t", `dpb_${session.id}`]]);
   assert.equal((await store.get(session.id)).transcriptCaptureState, "DEGRADED");
 });
+
+test("STR-03: transcript ceiling stops capture but leaves the terminal controlled", async (context) => {
+  const { store, session, manager } = await fixture(context, "12345");
+  manager.config.sessionOutputMaxBytes = 5;
+  manager.isAlive = async () => true;
+  const tmuxCalls = [];
+  manager.tmux = async (args) => tmuxCalls.push(args);
+  const result = await manager.readOutput(session.id);
+  assert.equal(result.alive, true);
+  assert.equal(result.output, "12345");
+  assert.equal(result.capture.state, "DEGRADED");
+  assert.equal(result.capture.reason, "transcript_limit");
+  assert.deepEqual(tmuxCalls, [["pipe-pane", "-t", `dpb_${session.id}`]]);
+  assert.equal((await store.get(session.id)).transcriptCaptureState, "DEGRADED");
+});

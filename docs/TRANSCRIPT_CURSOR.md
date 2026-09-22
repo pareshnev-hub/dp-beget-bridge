@@ -27,6 +27,8 @@ A stale cursor is never silently clamped. The response identifies the gap and su
 
 `purge_terminal` is the separate destructive operation. It is accepted only for a CLOSED session and permanently removes its metadata, operation rows, transcript, and control records.
 
-## Storage reserve
+## Capture ceiling and storage reserve
 
-`DP_STORAGE_MIN_FREE_BYTES` defaults to 256 MiB. If available storage falls below the reserve, Session Host detaches transcript capture from that terminal without killing the terminal process, records `DEGRADED / storage_reserve`, and exposes the uncertain tail through `capture.afterCursor`. Resuming or rotating capture is intentionally deferred to the bounded-retention work in DP-010.
+`DP_SESSION_OUTPUT_MAX_BYTES` defaults to 64 MiB per terminal. The tmux pipe enforces the byte ceiling independently of API readers. When the ceiling is observed, Session Host records `DEGRADED / transcript_limit` and leaves the terminal process running and controllable.
+
+`DP_STORAGE_MIN_FREE_BYTES` defaults to 256 MiB. If available storage falls below the reserve, Session Host detaches transcript capture from that terminal without killing the terminal process, records `DEGRADED / storage_reserve`, and exposes the uncertain tail through `capture.afterCursor`. Capture does not silently resume because that would hide the missing interval; a future segmented-retention design may add an explicit new epoch.
