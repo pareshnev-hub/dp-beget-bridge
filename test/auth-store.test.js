@@ -98,6 +98,21 @@ test("M002a persists client registration independently of bootstrap proof rotati
     }),
     { name: "AuthStoreError", code: "client_conflict" },
   );
+
+  const cimdClientId = "https://bridge.example.test/oauth/client-metadata.json";
+  assert.equal(
+    restarted.registerClient({ clientId: cimdClientId, ownerId, redirectUri, createdAt }).clientId,
+    cimdClientId,
+  );
+  assert.throws(
+    () => restarted.registerClient({
+      clientId: "another_dcr_client_0123456789",
+      ownerId,
+      redirectUri: `${redirectUri}?unexpected=1`,
+      createdAt,
+    }),
+    { name: "AuthStoreError", code: "invalid_auth_record" },
+  );
 });
 
 test("AUTH-08: grants bind owner, client, exact scopes, profile and expiry", async (t) => {
@@ -133,6 +148,19 @@ test("AUTH-08: grants bind owner, client, exact scopes, profile and expiry", asy
       grantedAt: "2026-09-22T20:02:00.000Z",
     }),
     { name: "AuthStoreError", code: "invalid_scope" },
+  );
+
+  assert.throws(
+    () => store.createGrant({
+      id: "grant-query-resource-001",
+      ownerId,
+      clientId,
+      resource: `${resource}?unexpected=1`,
+      scopes: ["files:read"],
+      expiresAt: "2026-09-22T21:02:00.000Z",
+      grantedAt: "2026-09-22T20:02:00.000Z",
+    }),
+    { name: "AuthStoreError", code: "invalid_auth_record" },
   );
 });
 
