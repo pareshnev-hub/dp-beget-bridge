@@ -117,7 +117,7 @@ async function protectedStatus(accessToken) {
   return response.status;
 }
 
-async function runTerminalSmoke(accessToken) {
+async function runTerminalSmoke(accessToken, refreshToken, clientId) {
   const script = fileURLToPath(new URL("./live-mcp-smoke.mjs", import.meta.url));
   await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script], {
@@ -128,6 +128,11 @@ async function runTerminalSmoke(accessToken) {
         DP_MCP_ACCESS_TOKEN: accessToken,
         DP_MCP_SMOKE_RESTART_SYSTEMD: "true",
         DP_MCP_SMOKE_MCP_UNIT: process.env.DP_MCP_SMOKE_MCP_UNIT || "dp-beget-mcp-oauth-spike.service",
+        DP_MCP_SMOKE_OAUTH_REFRESH_TOKEN: refreshToken,
+        DP_MCP_SMOKE_OAUTH_TOKEN_URL: `${localOrigin}/oauth/token`,
+        DP_MCP_SMOKE_OAUTH_REVOKE_URL: `${localOrigin}/oauth/revoke`,
+        DP_MCP_SMOKE_OAUTH_CLIENT_ID: clientId,
+        DP_MCP_SMOKE_OAUTH_RESOURCE: resource,
       },
     });
     child.once("error", reject);
@@ -143,9 +148,7 @@ let token;
 try {
   token = await issueToken(registration.client_id, registration.scope);
   assert.notEqual(await protectedStatus(token.access_token), 401, "Fresh OAuth access was rejected");
-  await runTerminalSmoke(token.access_token);
-  await revoke(registration.client_id, token.refresh_token);
-  assert.equal(await protectedStatus(token.access_token), 401, "Revoked OAuth access remained valid");
+  await runTerminalSmoke(token.access_token, token.refresh_token, registration.client_id);
   token = undefined;
 } finally {
   if (token?.refresh_token) await revoke(registration.client_id, token.refresh_token).catch(() => {});
