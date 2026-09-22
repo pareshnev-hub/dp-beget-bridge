@@ -18,3 +18,4 @@ Accepted ADRs define architecture constraints. Implementation may lag behind the
 - ADR-012 Scaling decisions are driven by measured workload
 - ADR-013 Real-client acceptance may use an outbound-only test tunnel
 - ADR-014 DP-013 owner grants are enforced at MCP and Agent (Proposed)
+- ADR-015 DP-014 refresh families, revocation and re-pair are fail-closed (Proposed)
