@@ -8,7 +8,7 @@ All notable changes are documented here.
 
 - Added a versioned SQLite operation ledger with HMAC-protected request fingerprints, per-session single-writer admission, idempotent retry/conflict semantics and fail-closed `UNKNOWN` reconciliation.
 - Replaced PTY marker parsing with atomic per-operation exit records so forged or truncated terminal output cannot fabricate command completion.
-- Submit the command and completion suffix as one shell input line so sustained PTY output cannot flush the pending status write.
+- Submit the command, completion suffix and terminating Enter in one tmux buffer so sustained PTY output cannot reorder or flush the pending status write.
 - Added descriptor-pinned workspace mutations with atomic no-replace commits, protected roots, overlap denial and fail-closed complex-operation handling.
 - Added fail-closed HTTPS attachment fetching with DNS/IP pinning, redirect revalidation, private-address denial, deadlines, byte/concurrency ceilings and disconnect cancellation.
 - Split MCP, Agent and restricted work execution into distinct UNIX identities and credential files.
@@ -24,6 +24,7 @@ All notable changes are documented here.
 - Added FILE-01, FILE-02, FILE-03 and FILE-09 data-loss regression coverage for DP-001.
 - Made installation wait for local endpoint readiness before reporting success.
 - Made `doctor` retry startup health sequentially and report failures without unhandled promise rejection stacks.
+- Made the live MCP lifecycle wait for Session Host Unix-socket readiness after a systemd restart.
 
 ### Testing
 
@@ -33,6 +34,7 @@ All notable changes are documented here.
 - Added a versioned DP-003 compatibility fixture and MCP descriptor/call assertions for required identity, optional metadata and structured output.
 - Added a real-tmux Agent lifecycle smoke in GitHub Actions covering timeout persistence, Agent restart/reconnect, interactive input and explicit close.
 - Extended the systemd smoke with identity/ACL checks and Session Host restart persistence.
+- Added an installed-runtime TERM-08/09 smoke with bounded failure forensics and optional failed-session preservation.
 - Kept systemd/cgroup persistence explicitly outside this initial smoke; DP-002 remains open until disposable systemd evidence is linked.
 
 ### Documentation / planning

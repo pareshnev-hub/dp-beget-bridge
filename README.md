@@ -10,7 +10,7 @@ DP Beget Bridge keeps terminal sessions on the server instead of inside a single
 
 **0.1.x / RELEASE 0001 is a technical preview. It is not yet the public-ready Direct product.**
 
-A 2026-09-21 architecture/security audit defined the R0002 hardening queue. Current implementation and verification evidence is maintained in `docs/IMPLEMENTATION_STATUS.md`; unresolved work remains around authoritative command completion, transcript/resource controls and the remaining release gates.
+A 2026-09-21 architecture/security audit defined the R0002 hardening queue. Current implementation and verification evidence is maintained in `docs/IMPLEMENTATION_STATUS.md`; unresolved work remains around archived transcript/cursor integrity, resource ceilings and the remaining release gates.
 
 Start here:
 - [Roadmap](docs/ROADMAP.md)
