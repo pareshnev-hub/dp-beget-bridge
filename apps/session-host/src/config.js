@@ -20,6 +20,7 @@ export function loadSessionHostConfig() {
       ? path.resolve(process.env.DP_TMUX_SOCKET)
       : path.join(dataDir, "tmux", "tmux.sock"),
     historyLines: integer("DP_TERMINAL_HISTORY_LINES", 100000),
+    terminalMaxActive: integer("DP_TERMINAL_MAX_ACTIVE", 8),
     commandWaitMs: integer("DP_COMMAND_WAIT_MS", 10000),
     sessionOutputWarnBytes: integer("DP_SESSION_OUTPUT_WARN_BYTES", 50 * 1024 * 1024),
     sessionOutputMaxBytes: integer("DP_SESSION_OUTPUT_MAX_BYTES", 64 * 1024 * 1024),
@@ -27,6 +28,9 @@ export function loadSessionHostConfig() {
   };
   if (config.sessionOutputMaxBytes < 1) {
     throw new Error("DP_SESSION_OUTPUT_MAX_BYTES must be at least 1");
+  }
+  if (config.terminalMaxActive < 1) {
+    throw new Error("DP_TERMINAL_MAX_ACTIVE must be at least 1");
   }
   return config;
 }

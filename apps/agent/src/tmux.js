@@ -86,6 +86,8 @@ export class TmuxSessionManager {
     this.largeOutputWarnings = new Set();
     this.fingerprintKeyPromise = null;
     this.operationMonitors = new Map();
+    this.pendingOpens = 0;
+    this.openAdmission = Promise.resolve();
   }
 
   tmuxName(id) {
@@ -129,39 +131,76 @@ export class TmuxSessionManager {
     }
   }
 
+  async reserveOpenSlot() {
+    let unlock;
+    const previous = this.openAdmission;
+    this.openAdmission = new Promise((resolve) => { unlock = resolve; });
+    await previous;
+    try {
+      const sessions = await this.store.list();
+      const open = sessions.filter((session) => !session.closedAt);
+      const alive = await Promise.all(open.map((session) => this.isAlive(session.id)));
+      const active = alive.filter(Boolean).length;
+      const maximum = Math.max(1, Number(this.config.terminalMaxActive || 8));
+      if (active + this.pendingOpens >= maximum) {
+        throw new BridgeError("session_limit", "Active terminal session limit reached", 429);
+      }
+      this.pendingOpens += 1;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        this.pendingOpens -= 1;
+      };
+    } finally {
+      unlock();
+    }
+  }
+
   async open({ cwd = ".", label = "Terminal" }) {
-    const resolvedCwd = this.pathPolicy.resolve(cwd);
+    const releaseSlot = await this.reserveOpenSlot();
+    let created = false;
     const id = crypto.randomUUID();
     const name = this.tmuxName(id);
-    const session = {
-      id,
-      label: String(label).slice(0, 120),
-      cwd: resolvedCwd,
-      createdAt: new Date().toISOString(),
-      closedAt: null,
-      transcriptStreamId: crypto.randomUUID(),
-      transcriptEpoch: 1,
-      transcriptEarliestOffset: 0,
-      transcriptCaptureState: "ACTIVE",
-      transcriptGapReason: null,
-    };
+    try {
+      const resolvedCwd = this.pathPolicy.resolve(cwd);
+      const session = {
+        id,
+        label: String(label).slice(0, 120),
+        cwd: resolvedCwd,
+        createdAt: new Date().toISOString(),
+        closedAt: null,
+        transcriptStreamId: crypto.randomUUID(),
+        transcriptEpoch: 1,
+        transcriptEarliestOffset: 0,
+        transcriptCaptureState: "ACTIVE",
+        transcriptGapReason: null,
+      };
 
-    await fs.mkdir(this.store.sessionDir(id), { recursive: true, mode: 0o700 });
-    await fs.writeFile(this.store.outputPath(id), "", { mode: 0o600 });
-    await this.tmux(["new-session", "-d", "-s", name, "-c", resolvedCwd, "bash", "--noprofile", "--norc"]);
-    await this.tmux(["set-option", "-t", name, "history-limit", String(this.config.historyLines)]);
-    await this.tmux([
-      "pipe-pane",
-      "-o",
-      "-t",
-      name,
-      `/usr/bin/env node ${shellQuote(CAPTURE_SCRIPT)} ${shellQuote(this.store.outputPath(id))} ${Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024))}`,
-    ]);
-    const saved = await this.store.save(session);
-    this.telemetry.trackActivity?.();
-    this.logger.info("terminal.opened", { sessionId: id });
-    this.telemetry.track("terminal_opened");
-    return { ...saved, alive: true };
+      await fs.mkdir(this.store.sessionDir(id), { recursive: true, mode: 0o700 });
+      await fs.writeFile(this.store.outputPath(id), "", { mode: 0o600 });
+      await this.tmux(["new-session", "-d", "-s", name, "-c", resolvedCwd, "bash", "--noprofile", "--norc"]);
+      created = true;
+      await this.tmux(["set-option", "-t", name, "history-limit", String(this.config.historyLines)]);
+      await this.tmux([
+        "pipe-pane",
+        "-o",
+        "-t",
+        name,
+        `/usr/bin/env node ${shellQuote(CAPTURE_SCRIPT)} ${shellQuote(this.store.outputPath(id))} ${Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024))}`,
+      ]);
+      const saved = await this.store.save(session);
+      this.telemetry.trackActivity?.();
+      this.logger.info("terminal.opened", { sessionId: id });
+      this.telemetry.track("terminal_opened");
+      return { ...saved, alive: true };
+    } catch (error) {
+      if (created) await this.tmux(["kill-session", "-t", name]).catch(() => {});
+      await fs.rm(this.store.sessionDir(id), { recursive: true, force: true }).catch(() => {});
+      throw error;
+    } finally {
+      releaseSlot();
+    }
   }
 
   async list() {

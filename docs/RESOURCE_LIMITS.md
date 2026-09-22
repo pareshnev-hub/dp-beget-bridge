@@ -12,6 +12,7 @@ DP-010 bounds file streaming, transcript capture and the production systemd prof
 
 ## Terminal capture
 
+- `DP_TERMINAL_MAX_ACTIVE` defaults to 8 active tmux sessions. Concurrent opens share one admission gate and excess requests fail with `session_limit` / HTTP 429 without changing existing sessions.
 - `DP_SESSION_OUTPUT_MAX_BYTES` defaults to 64 MiB per terminal transcript.
 - `DP_SESSION_OUTPUT_WARN_BYTES` defaults to 50 MiB and emits one sanitized warning.
 - The tmux capture pipe enforces the byte ceiling without requiring an API reader.
@@ -23,3 +24,7 @@ DP-010 bounds file streaming, transcript capture and the production systemd prof
 The supplied systemd units enforce `TasksMax`, `LimitNOFILE`, `MemoryMax`, `MemorySwapMax` and `NoNewPrivileges`. The Session Host has the larger task/memory allowance because its cgroup owns tmux work. Operators may lower limits after workload measurement; increasing them changes the protection envelope and should be documented.
 
 Resource logs contain only bounded categories and counts. They do not include file names, paths, commands, transcript bytes or credentials.
+
+## Upload failure contract
+
+An interrupted upload or mid-stream filesystem failure removes its temporary file and never commits the final destination. An existing destination is preserved. The current ChatGPT file contract does not expose an expected digest, so FILE-12 is not applicable; the bridge reports a computed SHA-256 but does not claim to verify a caller-provided digest.
