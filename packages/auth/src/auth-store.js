@@ -596,6 +596,57 @@ export class AuthStore {
     };
   }
 
+  revokeTokenFamily({
+    familyId,
+    ownerId,
+    revokedAt = new Date().toISOString(),
+    reason = "client_revoke",
+  }) {
+    const revoked = isoTime("revokedAt", revokedAt);
+    const family = this.db.prepare("SELECT * FROM oauth_token_families WHERE id = ?").get(familyId);
+    if (!family || family.owner_id !== ownerId) return false;
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      this.db.prepare(`
+        UPDATE oauth_token_families
+        SET status = 'REVOKED', revoked_at = ?, revoke_reason = ?
+        WHERE id = ? AND owner_id = ? AND status = 'ACTIVE'
+      `).run(revoked.value, reason, familyId, ownerId);
+      this.db.prepare(`
+        UPDATE oauth_refresh_tokens SET status = 'REVOKED'
+        WHERE family_id = ? AND status = 'ACTIVE'
+      `).run(familyId);
+      this.db.exec("COMMIT");
+    } catch {
+      try { this.db.exec("ROLLBACK"); } catch {}
+      throw authError("auth_storage_failure", "Token family revocation could not be committed", 503);
+    }
+    return true;
+  }
+
+  revokeRefreshToken({
+    refreshToken,
+    clientId = null,
+    revokedAt = new Date().toISOString(),
+    reason = "client_revoke",
+  }) {
+    const revoked = isoTime("revokedAt", revokedAt);
+    const digest = hashRefreshToken(refreshToken);
+    const row = this.db.prepare(`
+      SELECT tf.id, tf.owner_id, tf.client_id
+      FROM oauth_refresh_tokens rt
+      JOIN oauth_token_families tf ON tf.id = rt.family_id
+      WHERE rt.digest = ?
+    `).get(digest);
+    if (!row || (clientId && row.client_id !== clientIdentifier(clientId))) return false;
+    return this.revokeTokenFamily({
+      familyId: row.id,
+      ownerId: row.owner_id,
+      revokedAt: revoked.value,
+      reason,
+    });
+  }
+
   revokeGrant({ grantId, ownerId, revokedAt = new Date().toISOString(), reason = "owner_revoke" }) {
     const revoked = isoTime("revokedAt", revokedAt);
     const grant = this.db.prepare("SELECT * FROM authorization_grants WHERE id = ?").get(grantId);
