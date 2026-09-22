@@ -7,7 +7,7 @@ function positiveInteger(name, fallback) {
   return value;
 }
 
-const dataDir = path.resolve(process.env.DP_AUTH_DATA_DIR || "./runtime/auth");
+const dataDir = path.resolve(process.env.DP_AUTH_DATA_DIR || "/var/lib/dp-beget-bridge-mcp/auth");
 const ownerId = process.env.DP_OWNER_ID || "owner-primary";
 const secret = process.env.DP_OWNER_BOOTSTRAP_SECRET
   || process.env.DP_OAUTH_STAGING_APPROVAL_SECRET
