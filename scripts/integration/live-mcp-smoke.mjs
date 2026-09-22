@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -84,6 +85,30 @@ async function waitForHealth(url) {
   throw new Error(`Health timeout for ${url}: ${lastError?.message || "unknown error"}`);
 }
 
+async function waitForSessionHost() {
+  const socketPath = process.env.DP_SESSION_HOST_SOCKET || "/run/dp-beget-bridge/session-host.sock";
+  const deadline = Date.now() + 15000;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      await new Promise((resolve, reject) => {
+        const request = http.get({ socketPath, path: "/health" }, (response) => {
+          response.resume();
+          response.on("end", () => response.statusCode === 200
+            ? resolve()
+            : reject(new Error(`HTTP ${response.statusCode}`)));
+        });
+        request.on("error", reject);
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      await delay(100);
+    }
+  }
+  throw new Error(`Session Host readiness timeout: ${lastError?.code || lastError?.message || "unknown error"}`);
+}
+
 async function canReadAs(user, file) {
   try {
     await execFileAsync("runuser", ["-u", user, "--", "test", "-r", file]);
@@ -165,6 +190,7 @@ try {
       : "http://127.0.0.1:8787/health");
     await waitForHealth(`${endpoint.origin}/health`);
     await execFileAsync("systemctl", ["restart", "dp-beget-session-host.service"]);
+    await waitForSessionHost();
     identities = await verifySeparatedRuntime();
   } else {
     await delay(reconnectDelayMs);
