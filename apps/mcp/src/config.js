@@ -1,3 +1,5 @@
+import path from "node:path";
+
 function integer(name, fallback) {
   const value = Number.parseInt(process.env[name] || String(fallback), 10);
   if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be a positive integer`);
@@ -38,7 +40,11 @@ export function loadMcpConfig() {
       transactionTtlMs: integer("DP_OAUTH_TRANSACTION_TTL_MS", 5 * 60 * 1000),
       codeTtlMs: integer("DP_OAUTH_CODE_TTL_MS", 2 * 60 * 1000),
       accessTokenTtlMs: integer("DP_OAUTH_ACCESS_TOKEN_TTL_MS", 10 * 60 * 1000),
+      grantTtlMs: integer("DP_OAUTH_GRANT_TTL_MS", 24 * 60 * 60 * 1000),
       clientMetadataTimeoutMs: integer("DP_OAUTH_CLIENT_METADATA_TIMEOUT_MS", 5000),
+      authDataDir: path.resolve(process.env.DP_AUTH_DATA_DIR || "/var/lib/dp-beget-bridge-mcp/auth"),
+      ownerId: process.env.DP_OWNER_ID || "owner-primary",
+      executionProfile: process.env.DP_OAUTH_EXECUTION_PROFILE || "files-read",
     },
   };
   if (config.attachmentFetchTimeoutMs < 1 || config.attachmentMaxBytes < 1 || config.attachmentMaxConcurrent < 1) {
@@ -54,9 +60,16 @@ export function loadMcpConfig() {
       DP_OAUTH_TRANSACTION_TTL_MS: config.oauth.transactionTtlMs,
       DP_OAUTH_CODE_TTL_MS: config.oauth.codeTtlMs,
       DP_OAUTH_ACCESS_TOKEN_TTL_MS: config.oauth.accessTokenTtlMs,
+      DP_OAUTH_GRANT_TTL_MS: config.oauth.grantTtlMs,
       DP_OAUTH_CLIENT_METADATA_TIMEOUT_MS: config.oauth.clientMetadataTimeoutMs,
     })) {
       if (value < 1) throw new Error(`${name} must be a positive integer in OAuth mode`);
+    }
+    if (!/^[a-zA-Z0-9_-]{1,96}$/.test(config.oauth.ownerId)) {
+      throw new Error("DP_OWNER_ID is invalid");
+    }
+    if (!/^[a-z][a-z0-9-]{1,63}$/.test(config.oauth.executionProfile)) {
+      throw new Error("DP_OAUTH_EXECUTION_PROFILE is invalid");
     }
   }
   return config;

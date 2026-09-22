@@ -104,9 +104,11 @@ export class AuthStore {
 
   async init() {
     await fs.mkdir(this.dataDir, { recursive: true, mode: 0o700 });
+    await fs.chmod(this.dataDir, 0o700);
     await this.recoverInterruptedMigration();
     const existed = await fs.stat(this.databasePath).then((entry) => entry.size > 0).catch(() => false);
     this.db = new DatabaseSync(this.databasePath);
+    await fs.chmod(this.databasePath, 0o600);
     this.db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");
     const currentVersion = Number(this.db.prepare("PRAGMA user_version").get().user_version);
     if (currentVersion > AUTH_SCHEMA_VERSION) {
