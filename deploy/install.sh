@@ -22,8 +22,10 @@ session_data_dir=/var/lib/dp-beget-bridge
 session_host_unit=dp-beget-session-host.service
 agent_unit=dp-beget-agent.service
 mcp_unit=dp-beget-mcp.service
+tunnel_unit=dp-beget-tunnel.service
 api_services_stopped=false
 session_host_stopped=false
+tunnel_was_active=false
 
 restore_services_on_error() {
   local status=$?
@@ -34,6 +36,9 @@ restore_services_on_error() {
       systemctl start "${session_host_unit}" 2>/dev/null || true
     fi
     systemctl restart "${agent_unit}" "${mcp_unit}" 2>/dev/null || true
+    if [[ ${tunnel_was_active} == "true" ]]; then
+      systemctl start "${tunnel_unit}" 2>/dev/null || true
+    fi
   fi
   exit "${status}"
 }
@@ -147,6 +152,10 @@ session_host_was_active=false
 if systemctl is-active --quiet "${session_host_unit}"; then
   session_host_was_active=true
 fi
+if systemctl is-active --quiet "${tunnel_unit}"; then
+  tunnel_was_active=true
+  systemctl stop "${tunnel_unit}"
+fi
 systemctl stop "${mcp_unit}" "${agent_unit}" 2>/dev/null || true
 api_services_stopped=true
 if [[ ${session_host_was_active} == "true" ]]; then
@@ -258,6 +267,10 @@ systemctl restart "${agent_unit}" "${mcp_unit}"
 
 # Do not report a successful install until every local endpoint and identity is ready.
 node scripts/doctor.mjs
+if [[ ${tunnel_was_active} == "true" ]]; then
+  systemctl start "${tunnel_unit}"
+  node scripts/tunnel-doctor.mjs
+fi
 
 echo
 echo "DP Beget Bridge services are running and health checks passed."

@@ -1,0 +1,48 @@
+[Unit]
+Description=DP Beget Bridge private acceptance tunnel
+Documentation=https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
+Wants=network-online.target
+After=network-online.target dp-beget-mcp.service
+Requires=dp-beget-mcp.service
+
+[Service]
+Type=simple
+User=dp-tunnel
+Group=dp-tunnel
+WorkingDirectory=/var/lib/dp-beget-tunnel
+ExecStart=/opt/dp-beget-tunnel/current/tunnel-client run --config /etc/dp-beget-tunnel/tunnel-client.yaml
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+StateDirectory=dp-beget-tunnel
+StateDirectoryMode=0700
+RuntimeDirectory=dp-beget-tunnel
+RuntimeDirectoryMode=0700
+TasksMax=64
+LimitNOFILE=1024
+MemoryMax=256M
+MemorySwapMax=256M
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
