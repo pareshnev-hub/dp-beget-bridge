@@ -14,6 +14,7 @@
     "start:telemetry": "node apps/telemetry/src/index.js",
     "test": "node --test",
     "test:integration:live-mcp": "node scripts/integration/live-mcp-smoke.mjs",
+    "test:integration:live-oauth-r0003": "node scripts/integration/live-oauth-r0003-smoke.mjs",
     "test:integration:live-completion": "node scripts/integration/live-completion-smoke.mjs",
     "test:integration:live-session-cap": "node scripts/integration/live-session-cap-smoke.mjs",
     "test:integration:tunnel-doctor": "node scripts/tunnel-doctor.mjs",
