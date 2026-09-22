@@ -305,6 +305,17 @@ export class AuthStore {
     return clientFromRow(this.db.prepare("SELECT * FROM oauth_clients WHERE client_id = ?").get(clientId));
   }
 
+  findActiveClient({ ownerId, redirectUri, clientIdPrefix = "" }) {
+    const callback = exactHttpsUrl("redirectUri", redirectUri);
+    const rows = this.db.prepare(`
+      SELECT * FROM oauth_clients
+      WHERE owner_id = ? AND redirect_uri = ? AND status = 'ACTIVE'
+      ORDER BY created_at, client_id
+    `).all(ownerId, callback);
+    const row = rows.find((candidate) => candidate.client_id.startsWith(clientIdPrefix));
+    return clientFromRow(row);
+  }
+
   createGrant({
     id = crypto.randomUUID(),
     ownerId,
