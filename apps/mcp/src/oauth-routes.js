@@ -47,6 +47,32 @@ async function readForm(request) {
   return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
 }
 
+async function readJson(request) {
+  const type = request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase();
+  if (type !== "application/json") {
+    const error = new Error("JSON encoding is required");
+    error.name = "OAuthError"; error.code = "invalid_request"; error.status = 400;
+    throw error;
+  }
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > FORM_LIMIT) {
+      const error = new Error("Registration request is too large");
+      error.name = "OAuthError"; error.code = "invalid_request"; error.status = 413;
+      throw error;
+    }
+    chunks.push(chunk);
+  }
+  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  catch {
+    const error = new Error("Registration JSON is invalid");
+    error.name = "OAuthError"; error.code = "invalid_request"; error.status = 400;
+    throw error;
+  }
+}
+
 function approvalPage(transaction) {
   const scopes = transaction.scopes.map(escapeHtml).join(", ");
   return `<!doctype html>
@@ -87,6 +113,10 @@ export async function handleOAuthRoute({ request, response, url, oauth }) {
     }
     if (request.method === "GET" && url.pathname === oauth.authorizationMetadataPath) {
       sendJson(response, 200, oauth.authorizationServerMetadata());
+      return true;
+    }
+    if (request.method === "POST" && url.pathname === "/oauth/register") {
+      sendJson(response, 201, oauth.registerClient(await readJson(request)));
       return true;
     }
     if (request.method === "GET" && url.pathname === "/oauth/authorize") {
