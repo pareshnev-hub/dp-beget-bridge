@@ -41,6 +41,8 @@ test("AUTH-04 runtime bootstrap is one-use, durable and idempotent", async (t) =
   assert.match(second.stdout, /^OWNER_ALREADY_BOOTSTRAPPED id=owner-primary\s*$/);
 
   const bytes = await fs.readFile(path.join(dataDir, "auth.sqlite"));
+  assert.equal((await fs.stat(dataDir)).mode & 0o777, 0o700);
+  assert.equal((await fs.stat(path.join(dataDir, "auth.sqlite"))).mode & 0o777, 0o600);
   assert.equal(bytes.includes(Buffer.from(secret)), false);
   assert.equal(first.stdout.includes(secret), false);
   assert.equal(second.stdout.includes(secret), false);
