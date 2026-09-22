@@ -32,6 +32,7 @@ test("LOG-03/04: logger drops exception text and unknown nested fields", () => {
   assert.equal("authorization" in record, false);
   assert.equal("metadata" in record, false);
   assert.deepEqual(sanitizeLogFields({ status: 204, nested: { token: canary } }), { status: 204 });
+  assert.deepEqual(sanitizeLogFields({ tool: "list_files", path: `/srv/${canary}` }), { tool: "list_files" });
 });
 
 test("request logs use fixed route templates", () => {
@@ -83,6 +84,45 @@ test("DP-017: initialize logs only sanitized client name and version", async (co
     version: "unknown",
   });
   assert.doesNotMatch(lines.join(""), /client-info-secret/);
+});
+
+test("DP-017: list_files records only the tool name", async (context) => {
+  const pathCanary = "private-workspace-path-canary";
+  const { logger, lines } = captureLogger();
+  const server = createMcpHttpServer({
+    config: { accessToken: "valid-access-token-value", path: "/mcp" },
+    agent: {
+      async listFiles() { return { path: "/srv/workspace", entries: [] }; },
+    },
+    downloads: { get() { return null; } },
+    logger,
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  context.after(() => new Promise((resolve) => server.close(resolve)));
+  const { port } = server.address();
+
+  const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer valid-access-token-value",
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "list_files", arguments: { path: pathCanary } },
+    }),
+  });
+  assert.equal(response.status, 200);
+
+  const record = lines.map((line) => JSON.parse(line)).find((entry) => entry.event === "mcp.tool_called");
+  assert.equal(record?.tool, "list_files");
+  assert.doesNotMatch(lines.join(""), new RegExp(pathCanary));
 });
 
 test("LOG-01/02: invalid bearer and download grant never enter MCP logs", async (context) => {
