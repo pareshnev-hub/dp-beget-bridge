@@ -356,7 +356,7 @@ export class OAuthSpike {
       state: params.get("state") || "",
       expiresAt: this.now() + this.transactionTtlMs,
     });
-    return { id, clientId, resource, scopes };
+    return { id, clientId, resource, scopes, executionProfile: this.executionProfile };
   }
 
   approve({ transactionId, approvalSecret }) {

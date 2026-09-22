@@ -73,8 +73,47 @@ async function readJson(request) {
   }
 }
 
+function executionProfileDisclosure(profile) {
+  if (profile === "files-read") {
+    return {
+      title: "Read-only files",
+      summary: "Read-only access permits listing and downloading files only inside configured allowed roots. It cannot modify files or run commands.",
+      button: "Authorize read-only access",
+      warning: "",
+      blocked: false,
+    };
+  }
+  if (profile === "full-shell") {
+    return {
+      title: "Full shell access",
+      summary: "Full shell access permits arbitrary command execution with the configured work-account operating-system rights.",
+      button: "Authorize full shell access",
+      warning: "Commands may read, create, modify, move, or delete every file accessible to that account; start or stop processes; access credentials available to that account; and cause irreversible data loss. This does not grant root by itself, but any existing sudo or elevation rights of the work account remain effective.",
+      blocked: false,
+    };
+  }
+  return {
+    title: "Unrecognized execution profile",
+    summary: "Authorization is blocked because this server profile has no explicit operating-system rights disclosure.",
+    button: "",
+    warning: "",
+    blocked: true,
+  };
+}
+
 function approvalPage(transaction) {
   const scopes = transaction.scopes.map(escapeHtml).join(", ");
+  const profile = executionProfileDisclosure(transaction.executionProfile);
+  const warning = profile.warning
+    ? `<p role="alert"><strong>Security warning:</strong> ${escapeHtml(profile.warning)}</p>`
+    : "";
+  const approval = profile.blocked
+    ? `<p role="alert"><strong>Authorization unavailable.</strong> Ask the server owner to configure a recognized execution profile.</p>`
+    : `<form method="post" action="/oauth/authorize" autocomplete="off">
+      <input type="hidden" name="transaction" value="${escapeHtml(transaction.id)}">
+      <label>Staging approval secret <input type="password" name="approval_secret" required minlength="32"></label>
+      <button type="submit">${escapeHtml(profile.button)}</button>
+    </form>`;
   return `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DP Beget Bridge authorization</title></head>
@@ -84,12 +123,10 @@ function approvalPage(transaction) {
     <p>Client: <code>${escapeHtml(transaction.clientId)}</code></p>
     <p>Resource: <code>${escapeHtml(transaction.resource)}</code></p>
     <p>Requested access: <strong>${scopes}</strong></p>
-    <p>This DP-012 compatibility endpoint permits read-only file access only. It is not the final owner onboarding flow.</p>
-    <form method="post" action="/oauth/authorize" autocomplete="off">
-      <input type="hidden" name="transaction" value="${escapeHtml(transaction.id)}">
-      <label>Staging approval secret <input type="password" name="approval_secret" required minlength="32"></label>
-      <button type="submit">Authorize read-only access</button>
-    </form>
+    <p>Execution profile: <strong>${escapeHtml(profile.title)}</strong> (<code>${escapeHtml(transaction.executionProfile)}</code>)</p>
+    <p>${escapeHtml(profile.summary)}</p>
+    ${warning}
+    ${approval}
   </main>
 </body>
 </html>`;
