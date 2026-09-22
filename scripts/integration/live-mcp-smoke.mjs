@@ -10,7 +10,14 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 const execFileAsync = promisify(execFile);
 
 const endpoint = new URL(process.env.DP_MCP_SMOKE_URL || "http://127.0.0.1:8788/mcp");
-const accessToken = process.env.DP_MCP_ACCESS_TOKEN || "";
+let accessToken = process.env.DP_MCP_ACCESS_TOKEN || "";
+let refreshToken = process.env.DP_MCP_SMOKE_OAUTH_REFRESH_TOKEN || "";
+const oauthTokenUrl = process.env.DP_MCP_SMOKE_OAUTH_TOKEN_URL || "";
+const oauthRevokeUrl = process.env.DP_MCP_SMOKE_OAUTH_REVOKE_URL || "";
+const oauthClientId = process.env.DP_MCP_SMOKE_OAUTH_CLIENT_ID || "";
+const oauthResource = process.env.DP_MCP_SMOKE_OAUTH_RESOURCE || "";
+let oauthRefreshPerformed = false;
+let oauthRevocationVerified = false;
 const reconnectDelayMs = Number.parseInt(process.env.DP_MCP_SMOKE_RECONNECT_DELAY_MS || "2500", 10);
 const restartSystemd = /^(1|true|yes)$/i.test(process.env.DP_MCP_SMOKE_RESTART_SYSTEMD || "false");
 const mcpUnit = process.env.DP_MCP_SMOKE_MCP_UNIT || "dp-beget-mcp.service";
@@ -19,6 +26,9 @@ const sessionHostUnit = process.env.DP_MCP_SMOKE_SESSION_HOST_UNIT || "dp-beget-
 
 if (accessToken.length < 32) {
   throw new Error("DP_MCP_ACCESS_TOKEN must be loaded before running the live MCP smoke test");
+}
+if (refreshToken && (!oauthTokenUrl || !oauthRevokeUrl || !oauthClientId || !oauthResource)) {
+  throw new Error("OAuth refresh smoke configuration is incomplete");
 }
 if (restartSystemd && process.getuid?.() !== 0) {
   throw new Error("DP_MCP_SMOKE_RESTART_SYSTEMD requires root");
@@ -41,18 +51,74 @@ async function connect() {
   return nextClient;
 }
 
+async function refreshOAuth() {
+  const response = await fetch(oauthTokenUrl, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: oauthClientId,
+      resource: oauthResource,
+    }),
+  });
+  if (!response.ok) {
+    await response.arrayBuffer();
+    throw new Error(`OAuth refresh failed with HTTP ${response.status}`);
+  }
+  const next = await response.json();
+  assert.match(next.access_token, /^[A-Za-z0-9_-]{43}$/);
+  assert.match(next.refresh_token, /^[A-Za-z0-9_-]{43}$/);
+  accessToken = next.access_token;
+  refreshToken = next.refresh_token;
+  oauthRefreshPerformed = true;
+}
+
 async function connectWithRetry() {
   const deadline = Date.now() + 15000;
   let lastError;
+  let refreshAttempted = false;
   while (Date.now() < deadline) {
     try {
       return await connect();
     } catch (error) {
       lastError = error;
+      const unauthorized = error?.code === 401 || /\b401\b/.test(error?.message || "");
+      if (!refreshAttempted && refreshToken && unauthorized) {
+        await refreshOAuth();
+        refreshAttempted = true;
+        continue;
+      }
       await delay(100);
     }
   }
   throw lastError || new Error("MCP reconnect timed out");
+}
+
+async function revokeOAuth() {
+  const response = await fetch(oauthRevokeUrl, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      token: refreshToken,
+      token_type_hint: "refresh_token",
+      client_id: oauthClientId,
+    }),
+  });
+  assert.equal(response.status, 200, "OAuth revocation failed");
+  const protectedResponse = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+  });
+  await protectedResponse.arrayBuffer();
+  assert.equal(protectedResponse.status, 401, "Revoked OAuth access remained valid");
+  refreshToken = "";
+  oauthRevocationVerified = true;
 }
 
 async function disconnect() {
@@ -277,6 +343,11 @@ try {
   await callTool("purge_terminal", { session_id: guard.id });
   cleanupSessionIds.delete(guard.id);
 
+  if (oauthRevokeUrl && refreshToken) {
+    await disconnect();
+    await revokeOAuth();
+  }
+
   const osRelease = await commandOutput("sh", ["-c", ". /etc/os-release; printf '%s' \"${PRETTY_NAME:-unknown}\""]);
 
   console.log(JSON.stringify({
@@ -297,6 +368,8 @@ try {
       clientDisconnectReconnect: "pass",
       serviceRestartCoveredHere: restartSystemd,
       credentialAcl: restartSystemd ? "pass" : "not-run",
+      oauthRefreshAfterRestart: refreshToken || oauthRefreshPerformed ? (oauthRefreshPerformed ? "pass" : "not-needed") : "not-run",
+      oauthRevocation: oauthRevokeUrl ? (oauthRevocationVerified ? "pass" : "fail") : "not-run",
     },
   }));
 } finally {
@@ -310,4 +383,5 @@ try {
     }
   }
   await disconnect();
+  if (oauthRevokeUrl && refreshToken) await revokeOAuth().catch(() => {});
 }
