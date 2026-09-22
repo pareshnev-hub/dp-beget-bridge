@@ -6,11 +6,13 @@ export class DownloadTokenStore {
     this.tokens = new Map();
   }
 
-  issue(filePath) {
+  issue(filePath, { authorization, expiresAt: maximumExpiry } = {}) {
     this.cleanup();
     const token = crypto.randomBytes(32).toString("base64url");
-    const expiresAt = Date.now() + this.ttlMs;
-    this.tokens.set(token, { filePath, expiresAt });
+    const requestedExpiry = Date.now() + this.ttlMs;
+    const ceiling = Date.parse(maximumExpiry || "");
+    const expiresAt = Number.isFinite(ceiling) ? Math.min(requestedExpiry, ceiling) : requestedExpiry;
+    this.tokens.set(token, { filePath, expiresAt, authorization });
     return { token, expiresAt: new Date(expiresAt).toISOString() };
   }
 
