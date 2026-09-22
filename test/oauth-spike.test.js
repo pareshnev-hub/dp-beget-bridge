@@ -280,6 +280,7 @@ test("M002b binds authorization codes and tokens to a durable owner grant", asyn
     resource,
     code_verifier: verifier,
   }));
+  assert.equal(token.expires_in, 60);
   const authorization = oauth.authenticate(`Bearer ${token.access_token}`);
   assert.equal(authorization.ownerId, ownerId);
   assert.equal(authorization.executionProfile, "files-read");
