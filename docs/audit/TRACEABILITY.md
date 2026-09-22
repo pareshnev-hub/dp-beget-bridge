@@ -19,7 +19,7 @@ This matrix links every audit finding to implementation work, required tests and
 | F10 filesystem TOCTOU boundary | P1 | DP-005 | FILE-04 through FILE-09 | R0002 |
 | F11 shell/service credential isolation | P1 | DP-009 | restricted-runner ACL test, OPS-03 | R0002 |
 | F12 real tmux/systemd lifecycle unproven | P1 | DP-002, DP-009 | TERM-01 through TERM-03, TERM-10 through TERM-12 | R0002 |
-| F13 missing resource ceilings | P1 | DP-008, DP-010 | CUR-06, FILE-11, STR-01 through STR-05 | R0002 |
+| F13 missing resource ceilings | P1 | DP-008, DP-010, DP-016 | CUR-06, FILE-11, STR-01 through STR-05 plus active-session admission | R0002 |
 | F14 URL/exception log leakage | P1 | DP-011 | LOG-01 through LOG-06 | R0002 |
 | F15 telemetry queue can remain rejected | P2 | DP-015 | TEL-03, TEL-07 | R0004 if telemetry ships |
 | F16 startup misclassified as active usage | P2 | DP-015 | TEL-01, TEL-02, TEL-06 | R0004 if telemetry ships |

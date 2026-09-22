@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Readable } from "node:stream";
+import { Readable, Writable } from "node:stream";
 import test from "node:test";
 import { FileManager } from "../apps/agent/src/files.js";
 import { PathPolicy } from "../packages/core/src/path-policy.js";
@@ -42,6 +42,44 @@ test("rejects uploads over the configured size", async (t) => {
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const manager = new FileManager({ pathPolicy: new PathPolicy([root]), logger, uploadMaxBytes: 3 });
   await assert.rejects(manager.upload(Readable.from("hello"), "too-large.txt"), /configured limit/);
+});
+
+test("FILE-10: interrupted upload removes temporary state and never commits", async (t) => {
+  const { root, manager } = await createFixture(t);
+  const interrupted = Readable.from((async function* stream() {
+    yield "partial";
+    throw Object.assign(new Error("client disconnected"), { code: "ECONNRESET" });
+  })());
+
+  await assert.rejects(
+    manager.upload(interrupted, "interrupted.txt"),
+    (error) => error?.code === "ECONNRESET",
+  );
+
+  await assert.rejects(fs.access(path.join(root, "interrupted.txt")), { code: "ENOENT" });
+  assert.deepEqual((await fs.readdir(root)).filter((name) => name.startsWith(".dpb-part-")), []);
+  assert.equal(manager.activeTransfers, 0);
+});
+
+test("FILE-11: mid-stream ENOSPC preserves destination and removes temporary state", async (t) => {
+  const diskFull = Object.assign(new Error("injected disk full"), { code: "ENOSPC" });
+  const createWriteStream = (temporary) => new Writable({
+    write(chunk, _encoding, callback) {
+      fs.writeFile(temporary, chunk).then(() => callback(diskFull), callback);
+    },
+  });
+  const { root, manager } = await createFixture(t, { createWriteStream });
+  const destination = path.join(root, "existing.txt");
+  await fs.writeFile(destination, "original");
+
+  await assert.rejects(
+    manager.upload(Readable.from("replacement"), "existing.txt", true),
+    (error) => error?.code === "ENOSPC",
+  );
+
+  assert.equal(await fs.readFile(destination, "utf8"), "original");
+  assert.deepEqual((await fs.readdir(root)).filter((name) => name.startsWith(".dpb-part-")), []);
+  assert.equal(manager.activeTransfers, 0);
 });
 
 test("FILE-01: moving a path onto itself is a non-destructive no-op", async (t) => {

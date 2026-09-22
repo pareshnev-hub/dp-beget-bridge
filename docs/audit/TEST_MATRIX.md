@@ -50,6 +50,8 @@ This matrix is release evidence guidance. A test is not considered passed until 
 | FILE-11 | disk fills during upload | bounded failure; existing data preserved |
 | FILE-12 | computed digest mismatch when expected digest exists | transfer rejected/not committed |
 
+R0002 does not expose an expected-digest input, so FILE-12 is not applicable to its enabled contract. Returning a computed SHA-256 is not claimed as caller-supplied digest verification.
+
 ## External attachment fetch / SSRF
 
 | ID | Scenario | Expected |

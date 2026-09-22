@@ -16,6 +16,7 @@ export class FileManager {
     storageMinFreeBytes = 0,
     maxConcurrent = 2,
     fileSystem = fsp,
+    createWriteStream = fs.createWriteStream,
   }) {
     this.pathPolicy = pathPolicy;
     this.logger = logger;
@@ -25,6 +26,7 @@ export class FileManager {
     this.activeTransfers = 0;
     this.telemetry = telemetry;
     this.fileSystem = fileSystem;
+    this.createWriteStream = createWriteStream;
   }
 
   acquireTransfer(kind) {
@@ -130,7 +132,7 @@ export class FileManager {
           pinned.parentPath,
           Number.isFinite(declaredLength) ? declaredLength : 1,
         );
-        await pipeline(request, meter, fs.createWriteStream(temporary, { mode: 0o600, flags: "wx" }));
+        await pipeline(request, meter, this.createWriteStream(temporary, { mode: 0o600, flags: "wx" }));
         await this.commitTemporary(temporary, pinned.path, overwrite);
       } catch (error) {
         await this.fileSystem.rm(temporary, { force: true }).catch(() => {});

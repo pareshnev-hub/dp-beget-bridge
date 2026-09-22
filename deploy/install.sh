@@ -218,6 +218,7 @@ chown root:"${mcp_user}" "${mcp_env}"
   printf 'DP_TMUX_SOCKET=/var/lib/dp-beget-bridge/tmux/tmux.sock\n'
   printf 'DP_COMMAND_WAIT_MS=10000\n'
   printf 'DP_TERMINAL_HISTORY_LINES=100000\n'
+  printf 'DP_TERMINAL_MAX_ACTIVE=8\n'
   printf 'DP_SESSION_OUTPUT_WARN_BYTES=52428800\n'
   printf 'DP_SESSION_OUTPUT_MAX_BYTES=67108864\n'
   printf 'DP_STORAGE_MIN_FREE_BYTES=268435456\n'
