@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const AUTH_SCHEMA_VERSION = 1;
 const OWNER_ID = /^[a-zA-Z0-9_-]{1,96}$/;
-const CLIENT_ID = /^[a-zA-Z0-9._~-]{8,256}$/;
+const OPAQUE_CLIENT_ID = /^[a-zA-Z0-9._~-]{8,256}$/;
 const GRANT_ID = /^[a-zA-Z0-9_-]{8,128}$/;
 const SCOPE = /^[a-z][a-z0-9._-]*:[a-z][a-z0-9._-]*$/;
 
@@ -36,10 +36,19 @@ function equalDigest(actual, expected) {
 function exactHttpsUrl(name, value) {
   let url;
   try { url = new URL(value); } catch { throw authError("invalid_auth_record", `${name} must be an HTTPS URL`); }
-  if (url.protocol !== "https:" || url.username || url.password || url.hash) {
-    throw authError("invalid_auth_record", `${name} must be an HTTPS URL without credentials or fragment`);
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+    throw authError("invalid_auth_record", `${name} must be an HTTPS URL without credentials, query or fragment`);
   }
   return url.href;
+}
+
+function clientIdentifier(value) {
+  if (OPAQUE_CLIENT_ID.test(value || "")) return value;
+  try {
+    return exactHttpsUrl("clientId", value);
+  } catch {
+    throw authError("invalid_client", "OAuth client ID is invalid");
+  }
 }
 
 function ownerFromRow(row) {
@@ -108,7 +117,14 @@ export class AuthStore {
         503,
       );
     }
-    if (currentVersion < AUTH_SCHEMA_VERSION) await this.migrate(currentVersion, existed);
+    if (currentVersion < AUTH_SCHEMA_VERSION) {
+      try {
+        await this.migrate(currentVersion, existed);
+      } catch (error) {
+        this.close();
+        throw error;
+      }
+    }
   }
 
   close() {
@@ -124,6 +140,16 @@ export class AuthStore {
     } catch (error) {
       if (error.code === "ENOENT") return;
       throw authError("auth_migration_recovery_failed", "Auth migration marker is invalid", 503);
+    }
+
+    const expectedBackupPath = Number.isInteger(marker.fromVersion)
+      ? path.join(this.dataDir, `auth.sqlite.backup-v${marker.fromVersion}`)
+      : null;
+    if (
+      marker.targetVersion !== AUTH_SCHEMA_VERSION
+      || (marker.backupPath !== null && marker.backupPath !== expectedBackupPath)
+    ) {
+      throw authError("auth_migration_recovery_failed", "Auth migration marker is not trusted", 503);
     }
 
     let completed = false;
@@ -250,7 +276,7 @@ export class AuthStore {
   registerClient({
     clientId, ownerId, redirectUri, createdAt = new Date().toISOString(),
   }) {
-    if (!CLIENT_ID.test(clientId || "")) throw authError("invalid_client", "OAuth client ID is invalid");
+    const normalizedClientId = clientIdentifier(clientId);
     const owner = this.getOwner(ownerId);
     if (!owner || owner.status !== "ACTIVE" || !owner.bootstrapConsumedAt) {
       throw authError("owner_not_bootstrapped", "Owner bootstrap must be completed first", 403);
@@ -261,10 +287,10 @@ export class AuthStore {
       this.db.prepare(`
         INSERT INTO oauth_clients (client_id, owner_id, redirect_uri, created_at, status)
         VALUES (?, ?, ?, ?, 'ACTIVE')
-      `).run(clientId, ownerId, callback, created);
+      `).run(normalizedClientId, ownerId, callback, created);
     } catch (error) {
       if (String(error.message).includes("UNIQUE")) {
-        const existing = this.getClient(clientId);
+        const existing = this.getClient(normalizedClientId);
         if (existing?.ownerId === ownerId && existing.redirectUri === callback && existing.status === "ACTIVE") {
           return existing;
         }
@@ -272,7 +298,7 @@ export class AuthStore {
       }
       throw error;
     }
-    return this.getClient(clientId);
+    return this.getClient(normalizedClientId);
   }
 
   getClient(clientId) {
