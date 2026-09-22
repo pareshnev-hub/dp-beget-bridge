@@ -1,15 +1,22 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const baseUrl = (process.env.DP_AGENT_URL || "http://127.0.0.1:8787").replace(/\/$/, "");
 const token = process.env.DP_AGENT_TOKEN;
 const dataDir = process.env.DP_SESSION_DATA_DIR || "/var/lib/dp-beget-bridge";
 const timeoutMs = Number(process.env.DP_COMPLETION_SMOKE_TIMEOUT_MS || 30000);
+const preserveOnFailure = process.env.DP_COMPLETION_SMOKE_PRESERVE_ON_FAILURE === "true";
 
 if (!token) throw new Error("DP_AGENT_TOKEN is required");
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let sessionId;
+let completed = false;
 
 function sessionPath(suffix = "") {
   return `/v1/sessions/${sessionId}${suffix}`;
@@ -31,6 +38,99 @@ async function request(method, pathname, body = undefined) {
   return payload;
 }
 
+function compactTerminalText(value) {
+  return value
+    .replace(/A{64,}/g, (match) => `<base64-A-run:${match.length}>`)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, (character) => (
+      `<0x${character.charCodeAt(0).toString(16).padStart(2, "0")}>`
+    ));
+}
+
+async function bestEffort(command, args) {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, args, {
+      encoding: "utf8",
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    return { ok: true, stdout: stdout.trim(), stderr: stderr.trim() };
+  } catch (error) {
+    return {
+      ok: false,
+      code: error.code ?? null,
+      stdout: String(error.stdout || "").trim(),
+      stderr: String(error.stderr || error.message || "").trim().slice(0, 2000),
+    };
+  }
+}
+
+async function collectDiagnostics(operationId, operation) {
+  const sessionDir = path.join(dataDir, "sessions", sessionId);
+  const outputPath = path.join(sessionDir, "terminal.log");
+  const operationsDir = path.join(sessionDir, "operations");
+  let terminal = Buffer.alloc(0);
+  try { terminal = await fs.readFile(outputPath); } catch {}
+  let completionFiles = [];
+  try { completionFiles = (await fs.readdir(operationsDir)).sort(); } catch {}
+  const terminalText = terminal.toString("utf8");
+  const operationOffset = terminalText.indexOf(operationId);
+  const controlOffset = terminalText.indexOf("__dpb_exit");
+  const sampleStart = Math.max(0, Math.min(
+    operationOffset === -1 ? terminal.length - 4096 : operationOffset - 1024,
+    terminal.length - 4096,
+  ));
+  const terminalSample = compactTerminalText(terminal.subarray(sampleStart, sampleStart + 8192).toString("utf8"));
+  const tmuxArgs = process.env.DP_TMUX_SOCKET ? ["-S", process.env.DP_TMUX_SOCKET] : [];
+  const tmuxName = `dpb_${sessionId}`;
+  const pane = await bestEffort(process.env.DP_TMUX_BIN || "tmux", [
+    ...tmuxArgs,
+    "list-panes",
+    "-t",
+    tmuxName,
+    "-F",
+    "#{pane_pid}|dead=#{pane_dead}|status=#{pane_dead_status}|command=#{pane_current_command}|history=#{history_bytes}|pipe=#{pane_pipe}",
+  ]);
+  const panePid = pane.ok ? Number.parseInt(pane.stdout.split("|", 1)[0], 10) : null;
+  const processes = Number.isSafeInteger(panePid)
+    ? await bestEffort("ps", ["-eo", "pid=,ppid=,stat=,wchan=,comm=,args="])
+    : { ok: false, code: "pane_pid_unavailable", stdout: "", stderr: "" };
+  const relatedProcesses = processes.ok
+    ? processes.stdout.split("\n").filter((line) => line.includes(String(panePid))).slice(0, 30)
+    : [];
+  const journal = await bestEffort("journalctl", [
+    "-u",
+    "dp-beget-session-host.service",
+    "--since",
+    "-10 minutes",
+    "--no-pager",
+    "-o",
+    "cat",
+  ]);
+  const relatedJournal = journal.ok
+    ? journal.stdout.split("\n").filter((line) => (
+      line.includes(sessionId) || line.includes(operationId)
+    )).slice(-100)
+    : [];
+
+  return {
+    operation,
+    terminalBytes: terminal.length,
+    controlEcho: {
+      operationIdOffset: operationOffset,
+      completionAssignmentOffset: controlOffset,
+      operationIdPresent: operationOffset !== -1,
+      completionAssignmentPresent: controlOffset !== -1,
+    },
+    completionFiles,
+    terminalSampleOffset: sampleStart,
+    terminalSample,
+    pane,
+    relatedProcesses,
+    relatedJournal,
+    sessionDir,
+    preservedOnFailure: preserveOnFailure,
+  };
+}
+
 async function waitFor(operationId, statuses) {
   const expected = new Set(statuses);
   const deadline = Date.now() + timeoutMs;
@@ -40,7 +140,8 @@ async function waitFor(operationId, statuses) {
     if (expected.has(operation.status)) return operation;
     await delay(100);
   }
-  throw new Error(`Operation timeout: ${JSON.stringify(operation)}`);
+  const diagnostics = await collectDiagnostics(operationId, operation);
+  throw new Error(`Operation timeout with diagnostics:\n${JSON.stringify(diagnostics, null, 2)}`);
 }
 
 try {
@@ -83,6 +184,9 @@ try {
     endpoint: baseUrl,
     scenarios: ["TERM-08", "TERM-09", "transcript-removal", "exec-unknown"],
   }));
+  completed = true;
 } finally {
-  if (sessionId) await request("DELETE", sessionPath()).catch(() => {});
+  if (sessionId && (completed || !preserveOnFailure)) {
+    await request("DELETE", sessionPath()).catch(() => {});
+  }
 }
