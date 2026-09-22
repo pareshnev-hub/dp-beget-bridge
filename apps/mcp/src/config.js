@@ -23,6 +23,7 @@ export function loadMcpConfig() {
     siteUrl: process.env.DP_SITE_URL || "https://pareshnev.com/dp-beget-bridge",
     agentUrl: process.env.DP_AGENT_URL || "http://127.0.0.1:8787",
     agentToken: process.env.DP_AGENT_TOKEN || "",
+    agentContextSecret: process.env.DP_AGENT_CONTEXT_SECRET || "",
     accessToken: process.env.DP_MCP_ACCESS_TOKEN || "",
     downloadTokenTtlMs: integer("DP_DOWNLOAD_TOKEN_TTL_MS", 10 * 60 * 1000),
     attachmentFetchTimeoutMs: integer("DP_ATTACHMENT_FETCH_TIMEOUT_MS", 120000),
@@ -55,6 +56,9 @@ export function loadMcpConfig() {
     if (config.accessToken) throw new Error("DP_MCP_ACCESS_TOKEN must be unset in OAuth mode");
     if (config.oauth.approvalSecret.length < 32) {
       throw new Error("DP_OAUTH_STAGING_APPROVAL_SECRET must contain at least 32 characters in OAuth mode");
+    }
+    if (config.agentContextSecret.length < 32) {
+      throw new Error("DP_AGENT_CONTEXT_SECRET must contain at least 32 characters in OAuth mode");
     }
     for (const [name, value] of Object.entries({
       DP_OAUTH_TRANSACTION_TTL_MS: config.oauth.transactionTtlMs,
