@@ -178,9 +178,11 @@ export class ChatGptCimdRegistry {
 }
 
 export class ChatGptDcrRegistry {
-  constructor({ approvalSecret, clientId }) {
+  constructor({ approvalSecret, clientId, scopes = ["files:read"] }) {
     this.clientId = clientId || ("dcr_" + base64url(crypto.createHmac("sha256", approvalSecret)
       .update("DP-012 ChatGPT DCR public client v1").digest()));
+    this.scopes = [...new Set(scopes)];
+    if (this.scopes.length === 0) throw new Error("At least one DCR scope is required");
   }
 
   register(document) {
@@ -202,7 +204,7 @@ export class ChatGptDcrRegistry {
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      scope: "files:read",
+      scope: this.scopes.join(" "),
     };
   }
 
@@ -250,6 +252,7 @@ export class OAuthSpike {
     this.dcrRegistry = new ChatGptDcrRegistry({
       approvalSecret,
       clientId: durableDcrClient?.clientId,
+      scopes: [...this.scopes],
     });
     this.transactionTtlMs = transactionTtlMs;
     this.codeTtlMs = codeTtlMs;
