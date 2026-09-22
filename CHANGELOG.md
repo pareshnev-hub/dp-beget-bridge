@@ -31,6 +31,7 @@ All notable changes are documented here.
 
 ### Testing
 
+- Verified the DP-003 file contract through the actual ChatGPT developer-mode app over the outbound-only OpenAI Secure MCP Tunnel: list, upload and download completed while the Beget MCP listener remained loopback-only.
 - Added TERM-04 through TERM-09 coverage plus legacy import, migration backup, interrupted-migration recovery, forged-output, large-output and transcript-independent completion tests.
 - Added FILE-04 through FILE-09 race, root-protection, symlink-swap, path-overlap and unsupported-operation regression coverage.
 - Added SSRF-01 through SSRF-08 coverage plus DNS-deadline, mixed-answer, credential-isolation and bounded-concurrency assertions.
