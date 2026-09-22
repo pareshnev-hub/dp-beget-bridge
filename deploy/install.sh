@@ -269,6 +269,7 @@ systemctl restart "${agent_unit}" "${mcp_unit}"
 node scripts/doctor.mjs
 if [[ ${tunnel_was_active} == "true" ]]; then
   systemctl start "${tunnel_unit}"
+  node scripts/deploy/wait-tunnel-ready.mjs 15000
   node scripts/tunnel-doctor.mjs
 fi
 
