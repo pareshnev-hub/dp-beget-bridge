@@ -31,6 +31,7 @@ test("Agent delegates terminal lifecycle over a Unix socket", async (context) =>
     async sendInput(id, input, enter) { calls.push(["input", id, input, enter]); return { accepted: true }; },
     async interrupt(id) { calls.push(["interrupt", id]); return { interrupted: true }; },
     async close(id, keepOutput) { calls.push(["close", id, keepOutput]); return { closed: true }; },
+    async purge(id) { calls.push(["purge", id]); return { purged: true }; },
   };
   const server = createSessionHostServer({ sessions, logger });
   await new Promise((resolve, reject) => {
@@ -47,7 +48,8 @@ test("Agent delegates terminal lifecycle over a Unix socket", async (context) =>
   assert.equal((await client.readOutput("one", 0, 100)).output, "test");
   assert.equal((await client.sendInput("one", "yes", true)).accepted, true);
   assert.equal((await client.interrupt("one")).interrupted, true);
-  assert.equal((await client.close("one", false)).closed, true);
+  assert.equal((await client.close("one")).closed, true);
+  assert.equal((await client.purge("one")).purged, true);
   assert.deepEqual(calls, [
     ["list"],
     ["open", { cwd: ".", label: "test" }],
@@ -55,7 +57,8 @@ test("Agent delegates terminal lifecycle over a Unix socket", async (context) =>
     ["read", "one", "0", "100"],
     ["input", "one", "yes", true],
     ["interrupt", "one"],
-    ["close", "one", false],
+    ["close", "one", undefined],
+    ["purge", "one"],
   ]);
 });
 

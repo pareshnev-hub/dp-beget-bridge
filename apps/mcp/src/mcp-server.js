@@ -106,7 +106,7 @@ export function createBridgeMcpServer({ agent, downloads, config, requestSignal 
     description: "Read terminal output from a byte cursor without consuming or losing it.",
     inputSchema: {
       session_id: z.string(),
-      cursor: z.number().int().min(0).optional(),
+      cursor: z.union([z.number().int().min(0), z.string()]).optional(),
       max_bytes: z.number().int().min(1).max(262144).optional(),
     },
     annotations: readOnly,
@@ -134,10 +134,17 @@ export function createBridgeMcpServer({ agent, downloads, config, requestSignal 
 
   server.registerTool("close_terminal", {
     title: "Close persistent terminal",
-    description: "Explicitly terminate a persistent terminal session.",
-    inputSchema: { session_id: z.string(), keep_output: z.boolean().optional().default(false) },
+    description: "Explicitly terminate a persistent terminal session while retaining its metadata and transcript.",
+    inputSchema: { session_id: z.string() },
     annotations: destructive,
-  }, async ({ session_id, keep_output }) => textResult(await agent.closeTerminal(session_id, keep_output)));
+  }, async ({ session_id }) => textResult(await agent.closeTerminal(session_id)));
+
+  server.registerTool("purge_terminal", {
+    title: "Purge closed terminal",
+    description: "Explicitly and permanently delete a closed terminal transcript and its metadata.",
+    inputSchema: { session_id: z.string() },
+    annotations: destructive,
+  }, async ({ session_id }) => textResult(await agent.purgeTerminal(session_id)));
 
   server.registerTool("list_files", {
     title: "List server files",

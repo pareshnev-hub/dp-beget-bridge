@@ -67,14 +67,14 @@ export class SessionHostClient {
     );
   }
   readOutput(id, cursor, maxBytes) {
-    const query = new URLSearchParams({ cursor: String(cursor || 0), maxBytes: String(maxBytes || 65536) });
+    const query = new URLSearchParams({ maxBytes: String(maxBytes || 65536) });
+    if (cursor !== undefined && cursor !== null) query.set("cursor", String(cursor));
     return this.request(`/v1/sessions/${encodeURIComponent(id)}/output?${query}`);
   }
   sendInput(id, input, enter) {
     return this.request(`/v1/sessions/${encodeURIComponent(id)}/input`, "POST", { input, enter });
   }
   interrupt(id) { return this.request(`/v1/sessions/${encodeURIComponent(id)}/interrupt`, "POST"); }
-  close(id, keepOutput) {
-    return this.request(`/v1/sessions/${encodeURIComponent(id)}?keepOutput=${Boolean(keepOutput)}`, "DELETE");
-  }
+  close(id) { return this.request(`/v1/sessions/${encodeURIComponent(id)}`, "DELETE"); }
+  purge(id) { return this.request(`/v1/sessions/${encodeURIComponent(id)}/purge`, "DELETE"); }
 }

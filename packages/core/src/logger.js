@@ -16,6 +16,8 @@ const SAFE_FIELDS = new Set([
   "platform",
   "port",
   "recursive",
+  "reason",
+  "retained",
   "route",
   "sessionId",
   "signal",
@@ -59,7 +61,7 @@ export function requestRoute(pathname, { mcpPath = "/mcp" } = {}) {
   if (pathname.startsWith("/download/")) return "/download/:grant";
   if (pathname === "/v1/capabilities") return "/v1/capabilities";
   if (pathname === "/v1/sessions") return "/v1/sessions";
-  if (/^\/v1\/sessions\/[^/]+(?:\/(commands|output|input|interrupt))?$/.test(pathname)) {
+  if (/^\/v1\/sessions\/[^/]+(?:\/(commands|output|input|interrupt|purge))?$/.test(pathname)) {
     return pathname.replace(/^\/v1\/sessions\/[^/]+/, "/v1/sessions/:sessionId");
   }
   if (/^\/v1\/sessions\/[^/]+\/operations\/[^/]+$/.test(pathname)) {

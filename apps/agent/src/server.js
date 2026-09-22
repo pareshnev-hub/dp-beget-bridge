@@ -6,7 +6,7 @@ import { readJson, requireBearer, sendError, sendJson } from "../../../packages/
 import { requestRoute } from "../../../packages/core/src/logger.js";
 
 function routeSession(pathname) {
-  const match = pathname.match(/^\/v1\/sessions\/([a-zA-Z0-9_-]+)(?:\/(commands|output|input|interrupt))?$/);
+  const match = pathname.match(/^\/v1\/sessions\/([a-zA-Z0-9_-]+)(?:\/(commands|output|input|interrupt|purge))?$/);
   return match ? { id: match[1], action: match[2] || "session" } : null;
 }
 
@@ -82,7 +82,11 @@ export function createAgentServer({ config, sessions, files, logger }) {
           return;
         }
         if (request.method === "DELETE" && action === "session") {
-          sendJson(response, 200, await sessions.close(id, url.searchParams.get("keepOutput") === "true"));
+          sendJson(response, 200, await sessions.close(id));
+          return;
+        }
+        if (request.method === "DELETE" && action === "purge") {
+          sendJson(response, 200, await sessions.purge(id));
           return;
         }
       }

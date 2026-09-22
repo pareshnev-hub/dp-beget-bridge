@@ -1,5 +1,9 @@
 # Migration and continuity
 
+## State schema v1 to v2
+
+DP-008 adds transcript stream identity, epoch, earliest retained offset and capture state to session metadata. Migration creates `state.sqlite.backup-v1`, assigns a stable stream identity to every existing session and leaves every `terminal.log` byte unchanged. Schema v2 is not downgrade-compatible with a schema-v1 Session Host; rollback must restore both the previous code and the migration backup. Closing a terminal no longer purges it: retained CLOSED data is removed only through the explicit purge operation.
+
 ## Single-user preview to separated runtime identities
 
 DP-009 changes the production layout from one shared runtime user/configuration to:

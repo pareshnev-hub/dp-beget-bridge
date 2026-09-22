@@ -9,6 +9,59 @@ import { durationBucket } from "./telemetry.js";
 const execFileAsync = promisify(execFile);
 const SAFE_ID = /^[a-zA-Z0-9_-]{1,80}$/;
 const SAFE_IDEMPOTENCY_KEY = /^[a-zA-Z0-9._:-]{1,128}$/;
+const CURSOR_VERSION = 1;
+
+function encodeCursor(session, offset) {
+  return `v${CURSOR_VERSION}:${session.transcriptStreamId}:${session.transcriptEpoch}:${offset}`;
+}
+
+function parseCursor(value, session) {
+  if (value === undefined || value === null || value === "") return { offset: session.transcriptEarliestOffset };
+  if (typeof value === "number" || /^\d+$/.test(String(value))) {
+    const offset = Number(value);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new BridgeError("invalid_cursor", "Invalid transcript cursor");
+    return { offset };
+  }
+  const match = String(value).match(/^v(\d+):([a-zA-Z0-9_-]{1,80}):(\d+):(\d+)$/);
+  if (!match) throw new BridgeError("invalid_cursor", "Invalid transcript cursor");
+  const [, version, streamId, epoch, offset] = match;
+  const parsedEpoch = Number(epoch);
+  const parsedOffset = Number(offset);
+  if (
+    Number(version) !== CURSOR_VERSION
+    || !Number.isSafeInteger(parsedEpoch)
+    || parsedEpoch < 1
+    || !Number.isSafeInteger(parsedOffset)
+  ) {
+    throw new BridgeError("invalid_cursor", "Unsupported transcript cursor");
+  }
+  return {
+    offset: parsedOffset,
+    mismatch: streamId !== session.transcriptStreamId || parsedEpoch !== session.transcriptEpoch,
+  };
+}
+
+function utf8SequenceLength(byte) {
+  if ((byte & 0x80) === 0) return 1;
+  if ((byte & 0xe0) === 0xc0) return 2;
+  if ((byte & 0xf0) === 0xe0) return 3;
+  if ((byte & 0xf8) === 0xf0) return 4;
+  return 1;
+}
+
+function utf8SafePrefixLength(buffer, preferredLength) {
+  let length = Math.min(preferredLength, buffer.length);
+  if (length === 0) return 0;
+  let lead = length - 1;
+  while (lead > 0 && (buffer[lead] & 0xc0) === 0x80) lead -= 1;
+  const expected = utf8SequenceLength(buffer[lead]);
+  if (lead + expected > length) length = lead;
+  if (length === 0 && buffer.length > 0) {
+    const firstLength = utf8SequenceLength(buffer[0]);
+    if (firstLength <= buffer.length) return firstLength;
+  }
+  return length;
+}
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -81,6 +134,11 @@ export class TmuxSessionManager {
       cwd: resolvedCwd,
       createdAt: new Date().toISOString(),
       closedAt: null,
+      transcriptStreamId: crypto.randomUUID(),
+      transcriptEpoch: 1,
+      transcriptEarliestOffset: 0,
+      transcriptCaptureState: "ACTIVE",
+      transcriptGapReason: null,
     };
 
     await fs.mkdir(this.store.sessionDir(id), { recursive: true, mode: 0o700 });
@@ -94,11 +152,11 @@ export class TmuxSessionManager {
       name,
       `cat >> ${shellQuote(this.store.outputPath(id))}`,
     ]);
-    await this.store.save(session);
+    const saved = await this.store.save(session);
     this.telemetry.trackActivity?.();
     this.logger.info("terminal.opened", { sessionId: id });
     this.telemetry.track("terminal_opened");
-    return { ...session, alive: true };
+    return { ...saved, alive: true };
   }
 
   async list() {
@@ -109,46 +167,141 @@ export class TmuxSessionManager {
   async requireSession(id) {
     const session = await this.store.get(id);
     if (!session) throw new BridgeError("session_not_found", "Terminal session not found", 404);
+    if (session.closedAt) throw new BridgeError("session_not_running", "Terminal session is closed", 409);
     if (!(await this.isAlive(id))) {
       throw new BridgeError("session_not_running", "Terminal session is not running", 409);
     }
     return session;
   }
 
-  async outputSize(id) {
+  async outputRange(id, session = undefined) {
+    const current = session || await this.store.get(id);
+    if (!current) throw new BridgeError("session_not_found", "Terminal session not found", 404);
     try {
       const size = (await fs.stat(this.store.outputPath(id))).size;
       if (size >= this.config.sessionOutputWarnBytes && !this.largeOutputWarnings.has(id)) {
         this.largeOutputWarnings.add(id);
         this.logger.warn("terminal.output_retention_warning", { sessionId: id, size });
       }
-      return size;
+      return {
+        earliest: current.transcriptEarliestOffset,
+        end: current.transcriptEarliestOffset + size,
+        physicalSize: size,
+      };
     } catch (error) {
-      if (error.code === "ENOENT") return 0;
+      if (error.code === "ENOENT") {
+        if (current.transcriptCaptureState !== "DEGRADED") {
+          Object.assign(current, await this.store.updateTranscript(id, {
+            captureState: "DEGRADED",
+            gapReason: "transcript_missing",
+          }));
+        }
+        return {
+          earliest: current.transcriptEarliestOffset,
+          end: current.transcriptEarliestOffset,
+          physicalSize: 0,
+        };
+      }
       throw error;
     }
   }
 
-  async readOutput(id, cursor = 0, maxBytes = 64 * 1024) {
-    const session = await this.store.get(id);
+  async outputSize(id) {
+    return (await this.outputRange(id)).end;
+  }
+
+  async availableStorageBytes() {
+    const stat = await fs.statfs(this.store.dataDir);
+    return Number(BigInt(stat.bavail) * BigInt(stat.bsize));
+  }
+
+  async enforceCaptureReserve(id, session, alive) {
+    const minimum = Number(this.config.storageMinFreeBytes || 0);
+    if (!alive || session.transcriptCaptureState !== "ACTIVE" || minimum <= 0) return session;
+    const available = await this.availableStorageBytes();
+    if (available >= minimum) return session;
+    await this.tmux(["pipe-pane", "-t", this.tmuxName(id)]);
+    const degraded = await this.store.updateTranscript(id, {
+      captureState: "DEGRADED",
+      gapReason: "storage_reserve",
+    });
+    this.logger.warn("terminal.capture_degraded", { sessionId: id, reason: "storage_reserve" });
+    return degraded;
+  }
+
+  async readOutput(id, cursor = undefined, maxBytes = 64 * 1024) {
+    let session = await this.store.get(id);
     if (!session) throw new BridgeError("session_not_found", "Terminal session not found", 404);
     const alive = await this.isAlive(id);
+    session = await this.enforceCaptureReserve(id, session, alive);
     this.telemetry.trackActivity?.();
-    const size = await this.outputSize(id);
-    const safeCursor = Math.max(0, Math.min(Number(cursor) || 0, size));
-    const length = Math.max(0, Math.min(Number(maxBytes) || 64 * 1024, 256 * 1024, size - safeCursor));
-    if (length === 0) return { sessionId: id, alive, cursor: size, output: "", truncated: false };
-
-    const handle = await fs.open(this.store.outputPath(id), "r");
-    try {
-      const buffer = Buffer.alloc(length);
-      const { bytesRead } = await handle.read(buffer, 0, length, safeCursor);
+    const range = await this.outputRange(id, session);
+    const requested = parseCursor(cursor, session);
+    let logicalStart = requested.offset;
+    let gap = null;
+    if (requested.mismatch) {
+      gap = { reason: "stream_changed", requestedOffset: requested.offset, earliestOffset: range.earliest };
+      logicalStart = range.earliest;
+    } else if (logicalStart < range.earliest) {
+      gap = { reason: "retention", requestedOffset: logicalStart, earliestOffset: range.earliest };
+      logicalStart = range.earliest;
+    } else if (logicalStart > range.end) {
+      gap = { reason: "cursor_ahead", requestedOffset: logicalStart, earliestOffset: range.earliest };
+      logicalStart = range.end;
+    }
+    const requestedMax = Math.max(1, Math.min(Number(maxBytes) || 64 * 1024, 256 * 1024));
+    let physicalStart = logicalStart - range.earliest;
+    const available = range.end - logicalStart;
+    if (available === 0) {
       return {
         sessionId: id,
         alive,
-        cursor: safeCursor + bytesRead,
-        output: buffer.subarray(0, bytesRead).toString("utf8"),
-        truncated: safeCursor + bytesRead < size,
+        state: session.state,
+        cursor: encodeCursor(session, logicalStart),
+        earliestCursor: encodeCursor(session, range.earliest),
+        output: "",
+        hasMore: false,
+        truncated: false,
+        gap,
+        capture: {
+          state: session.transcriptCaptureState,
+          reason: session.transcriptGapReason,
+          afterCursor: session.transcriptCaptureState === "DEGRADED" ? encodeCursor(session, range.end) : null,
+        },
+      };
+    }
+
+    const handle = await fs.open(this.store.outputPath(id), "r");
+    try {
+      const first = Buffer.alloc(Math.min(4, range.physicalSize - physicalStart));
+      await handle.read(first, 0, first.length, physicalStart);
+      let skipped = 0;
+      while (skipped < first.length && (first[skipped] & 0xc0) === 0x80) skipped += 1;
+      if (skipped > 0) {
+        gap ||= { reason: "utf8_boundary", requestedOffset: logicalStart, earliestOffset: range.earliest };
+        logicalStart += skipped;
+        physicalStart += skipped;
+      }
+      const readable = range.end - logicalStart;
+      const buffer = Buffer.alloc(Math.min(readable, requestedMax + 3));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, physicalStart);
+      const safeLength = utf8SafePrefixLength(buffer.subarray(0, bytesRead), Math.min(requestedMax, bytesRead));
+      const nextOffset = logicalStart + safeLength;
+      return {
+        sessionId: id,
+        alive,
+        state: session.state,
+        cursor: encodeCursor(session, nextOffset),
+        earliestCursor: encodeCursor(session, range.earliest),
+        output: buffer.subarray(0, safeLength).toString("utf8"),
+        hasMore: nextOffset < range.end,
+        truncated: nextOffset < range.end,
+        gap,
+        capture: {
+          state: session.transcriptCaptureState,
+          reason: session.transcriptGapReason,
+          afterCursor: session.transcriptCaptureState === "DEGRADED" ? encodeCursor(session, range.end) : null,
+        },
       };
     } finally {
       await handle.close();
@@ -398,15 +551,23 @@ export class TmuxSessionManager {
     return { sessionId: id, interrupted: true, operation: this.publicOperation(operation) };
   }
 
-  async close(id, keepOutput = false) {
+  async close(id) {
     const session = await this.store.get(id);
     if (!session) throw new BridgeError("session_not_found", "Terminal session not found", 404);
     if (await this.isAlive(id)) await this.tmux(["kill-session", "-t", this.tmuxName(id)]);
-    await this.store.remove(id, Boolean(keepOutput));
-    this.logger.warn("terminal.closed", { sessionId: id, keepOutput: Boolean(keepOutput) });
+    const closed = await this.store.closeSession(id);
+    this.logger.warn("terminal.closed", { sessionId: id, retained: true });
     this.telemetry.track("terminal_closed", {
       durationBucket: durationBucket(Date.now() - new Date(session.createdAt).getTime()),
     });
-    return { sessionId: id, closed: true };
+    return { sessionId: id, closed: true, retained: true, closedAt: closed.closedAt };
+  }
+
+  async purge(id) {
+    const result = await this.store.purge(id);
+    this.logger.warn("terminal.purged", { sessionId: id });
+    return result;
   }
 }
+
+export { encodeCursor, parseCursor, utf8SafePrefixLength };

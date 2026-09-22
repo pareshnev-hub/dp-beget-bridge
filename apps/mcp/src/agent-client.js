@@ -50,14 +50,14 @@ export class AgentClient {
     );
   }
   readOutput(id, cursor, maxBytes) {
-    const query = new URLSearchParams({ cursor: String(cursor || 0), maxBytes: String(maxBytes || 65536) });
+    const query = new URLSearchParams({ maxBytes: String(maxBytes || 65536) });
+    if (cursor !== undefined && cursor !== null) query.set("cursor", String(cursor));
     return this.json(`/v1/sessions/${encodeURIComponent(id)}/output?${query}`);
   }
   sendInput(id, input) { return this.json(`/v1/sessions/${encodeURIComponent(id)}/input`, "POST", input); }
   interrupt(id) { return this.json(`/v1/sessions/${encodeURIComponent(id)}/interrupt`, "POST"); }
-  closeTerminal(id, keepOutput) {
-    return this.json(`/v1/sessions/${encodeURIComponent(id)}?keepOutput=${Boolean(keepOutput)}`, "DELETE");
-  }
+  closeTerminal(id) { return this.json(`/v1/sessions/${encodeURIComponent(id)}`, "DELETE"); }
+  purgeTerminal(id) { return this.json(`/v1/sessions/${encodeURIComponent(id)}/purge`, "DELETE"); }
   listFiles(candidate) { return this.json(`/v1/files?path=${encodeURIComponent(candidate)}`); }
   copyPath(input) { return this.json("/v1/files/copy", "POST", input); }
   movePath(input) { return this.json("/v1/files/move", "POST", input); }

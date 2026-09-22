@@ -1,9 +1,10 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { BridgeError } from "../../../packages/core/src/errors.js";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function operationFromRow(row) {
   if (!row) return null;
@@ -30,6 +31,12 @@ function sessionFromRow(row) {
     cwd: row.cwd,
     createdAt: row.created_at,
     closedAt: row.closed_at,
+    state: row.closed_at ? "CLOSED" : "OPEN",
+    transcriptStreamId: row.transcript_stream_id,
+    transcriptEpoch: row.transcript_epoch,
+    transcriptEarliestOffset: row.transcript_earliest_offset,
+    transcriptCaptureState: row.transcript_capture_state,
+    transcriptGapReason: row.transcript_gap_reason,
   };
 }
 
@@ -110,8 +117,9 @@ export class StateStore {
     })}\n`, { mode: 0o600 });
 
     try {
-      this.db.exec(`
-        BEGIN IMMEDIATE;
+      this.db.exec("BEGIN IMMEDIATE");
+      if (fromVersion < 1) {
+        this.db.exec(`
         CREATE TABLE IF NOT EXISTS sessions (
           id TEXT PRIMARY KEY,
           label TEXT NOT NULL,
@@ -136,9 +144,24 @@ export class StateStore {
         CREATE UNIQUE INDEX IF NOT EXISTS operations_one_writer
           ON operations(session_id)
           WHERE status IN ('ACCEPTED','RUNNING','UNKNOWN');
-        PRAGMA user_version = ${SCHEMA_VERSION};
-        COMMIT;
-      `);
+        `);
+      }
+      if (fromVersion < 2) {
+        this.db.exec(`
+          ALTER TABLE sessions ADD COLUMN transcript_stream_id TEXT NOT NULL DEFAULT '';
+          ALTER TABLE sessions ADD COLUMN transcript_epoch INTEGER NOT NULL DEFAULT 1;
+          ALTER TABLE sessions ADD COLUMN transcript_earliest_offset INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE sessions ADD COLUMN transcript_capture_state TEXT NOT NULL DEFAULT 'ACTIVE';
+          ALTER TABLE sessions ADD COLUMN transcript_gap_reason TEXT;
+          UPDATE sessions
+          SET transcript_stream_id = lower(hex(randomblob(16)))
+          WHERE transcript_stream_id = '';
+          UPDATE sessions
+          SET transcript_capture_state = 'STOPPED'
+          WHERE closed_at IS NOT NULL;
+        `);
+      }
+      this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}; COMMIT;`);
       await fs.rm(this.migrationMarkerPath, { force: true });
     } catch (error) {
       try { this.db.exec("ROLLBACK"); } catch {}
@@ -158,8 +181,10 @@ export class StateStore {
       throw error;
     }
     const insert = this.db.prepare(`
-      INSERT OR IGNORE INTO sessions (id, label, cwd, created_at, closed_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO sessions (
+        id, label, cwd, created_at, closed_at, transcript_stream_id,
+        transcript_epoch, transcript_earliest_offset, transcript_capture_state, transcript_gap_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?, NULL)
     `);
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -173,6 +198,8 @@ export class StateStore {
             String(legacy.cwd || "."),
             legacy.createdAt,
             legacy.closedAt ?? null,
+            legacy.transcriptStreamId || crypto.randomUUID(),
+            legacy.closedAt ? "STOPPED" : "ACTIVE",
           );
         } catch (error) {
           if (error.code !== "ENOENT") throw error;
@@ -270,19 +297,48 @@ export class StateStore {
   async save(session) {
     const dir = this.sessionDir(session.id);
     await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+    const existing = await this.get(session.id);
+    const normalized = {
+      ...session,
+      state: session.closedAt ? "CLOSED" : "OPEN",
+      transcriptStreamId: session.transcriptStreamId || existing?.transcriptStreamId || crypto.randomUUID(),
+      transcriptEpoch: session.transcriptEpoch || existing?.transcriptEpoch || 1,
+      transcriptEarliestOffset: session.transcriptEarliestOffset ?? existing?.transcriptEarliestOffset ?? 0,
+      transcriptCaptureState: session.transcriptCaptureState || existing?.transcriptCaptureState || "ACTIVE",
+      transcriptGapReason: session.transcriptGapReason ?? existing?.transcriptGapReason ?? null,
+    };
     this.db.prepare(`
-      INSERT INTO sessions (id, label, cwd, created_at, closed_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO sessions (
+        id, label, cwd, created_at, closed_at, transcript_stream_id,
+        transcript_epoch, transcript_earliest_offset, transcript_capture_state, transcript_gap_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         label = excluded.label,
         cwd = excluded.cwd,
         created_at = excluded.created_at,
-        closed_at = excluded.closed_at
-    `).run(session.id, session.label || "Terminal", session.cwd || ".", session.createdAt, session.closedAt ?? null);
+        closed_at = excluded.closed_at,
+        transcript_stream_id = excluded.transcript_stream_id,
+        transcript_epoch = excluded.transcript_epoch,
+        transcript_earliest_offset = excluded.transcript_earliest_offset,
+        transcript_capture_state = excluded.transcript_capture_state,
+        transcript_gap_reason = excluded.transcript_gap_reason
+    `).run(
+      normalized.id,
+      normalized.label || "Terminal",
+      normalized.cwd || ".",
+      normalized.createdAt,
+      normalized.closedAt ?? null,
+      normalized.transcriptStreamId,
+      normalized.transcriptEpoch,
+      normalized.transcriptEarliestOffset,
+      normalized.transcriptCaptureState,
+      normalized.transcriptGapReason,
+    );
     const destination = this.metadataPath(session.id);
     const temporary = `${destination}.part`;
-    await fs.writeFile(temporary, `${JSON.stringify(session, null, 2)}\n`, { mode: 0o600 });
+    await fs.writeFile(temporary, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 });
     await fs.rename(temporary, destination);
+    return normalized;
   }
 
   async get(id) {
@@ -293,13 +349,35 @@ export class StateStore {
     return this.db.prepare("SELECT * FROM sessions ORDER BY created_at").all().map(sessionFromRow);
   }
 
-  async remove(id, keepOutput = false) {
+  async closeSession(id) {
+    const session = await this.get(id);
+    if (!session) throw new BridgeError("session_not_found", "Terminal session not found", 404);
+    return this.save({
+      ...session,
+      closedAt: session.closedAt || new Date().toISOString(),
+      transcriptCaptureState: session.transcriptCaptureState === "DEGRADED" ? "DEGRADED" : "STOPPED",
+    });
+  }
+
+  async updateTranscript(id, fields) {
+    const session = await this.get(id);
+    if (!session) throw new BridgeError("session_not_found", "Terminal session not found", 404);
+    return this.save({
+      ...session,
+      transcriptEpoch: fields.epoch ?? session.transcriptEpoch,
+      transcriptEarliestOffset: fields.earliestOffset ?? session.transcriptEarliestOffset,
+      transcriptCaptureState: fields.captureState ?? session.transcriptCaptureState,
+      transcriptGapReason: fields.gapReason === undefined ? session.transcriptGapReason : fields.gapReason,
+    });
+  }
+
+  async purge(id) {
+    const session = await this.get(id);
+    if (!session) throw new BridgeError("session_not_found", "Terminal session not found", 404);
+    if (!session.closedAt) throw new BridgeError("session_not_closed", "Close the terminal before purging it", 409);
     this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
-    if (keepOutput) {
-      await fs.rm(this.metadataPath(id), { force: true });
-      return;
-    }
     await fs.rm(this.sessionDir(id), { recursive: true, force: true });
+    return { sessionId: id, purged: true };
   }
 
   admitOperation(operation) {
