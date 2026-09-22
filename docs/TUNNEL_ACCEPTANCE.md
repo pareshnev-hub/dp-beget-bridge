@@ -39,9 +39,14 @@ Never record runtime keys, bearers, cookies, authorization headers, attachment g
 - Platform tunnel: `tunnel_6ab24ccf943481919a95e9ed3fd8c404`; ChatGPT developer-mode app: `DP Beget Bridge R0002`.
 - The first real ChatGPT read-only call invoked `list_files` and reported an empty `/srv/dp-preview-workspace`.
 - The real ChatGPT attachment round trip uploaded the 144-byte `dp017-chatgpt-roundtrip.txt` with `overwrite=false`, observed it through `list_files`, invoked `download_file`, and reported matching SHA-256 `a64605eb0b73b65107816c5a2aaa1ea1950122161f1c3bc5be8b82fb5daf2746` plus the expected text prefix.
+- After explicit approval, the same ChatGPT app deleted only that canary with `recursive=false`; a final `list_files` reported the allowed root empty and no other path changed.
 - Sanitized MCP evidence recorded `mcp.client_initialized` with `platform=tunnel-client` and the pinned version, followed by `mcp.tool_called` for `list_files`; no arguments, paths, bodies, grants or credentials were logged.
 - Core and tunnel doctors passed; all four services were `active/running` with zero restarts; only loopback listeners `127.0.0.1:8787`, `:8788` and `:8790` existed.
 - No DNS, Traefik, firewall or public-port change was made. This proves R0002 compatibility only and does not satisfy the R0003 production HTTPS/OAuth gate.
+
+## Operational disposition
+
+On 2026-09-22 the owner explicitly elected to retain the healthy private tunnel as the working MVP connection while R0003 is developed. The teardown procedure below remains the required revocation path, but was intentionally not executed after acceptance because it would remove the only working ChatGPT connection. Retention does not authorize production reliance on the tunnel or weaken the R0003 HTTPS/OAuth gate.
 
 ## Teardown
 
