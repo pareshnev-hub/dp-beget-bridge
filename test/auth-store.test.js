@@ -13,6 +13,9 @@ const redirectUri = "https://chatgpt.com/connector_platform_oauth_redirect";
 const resource = "https://bridge.example.test/mcp";
 const createdAt = "2026-09-22T20:00:00.000Z";
 const bootstrapExpiresAt = "2026-09-22T20:10:00.000Z";
+const refreshToken0 = "A".repeat(43);
+const refreshToken1 = "B".repeat(43);
+const refreshToken2 = "C".repeat(43);
 
 async function temporaryStore(t, options = {}) {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-auth-store-"));
@@ -162,6 +165,142 @@ test("AUTH-08: grants bind owner, client, exact scopes, profile and expiry", asy
     }),
     { name: "AuthStoreError", code: "invalid_auth_record" },
   );
+});
+
+test("AUTH-05/06/07: token families rotate atomically and revoke or compromise fail closed", async (t) => {
+  const { dataDir, store } = await temporaryStore(t, { supportedScopes: ["files:read"] });
+  bootstrap(store);
+  store.registerClient({ clientId, ownerId, redirectUri, createdAt });
+  const grant = store.createGrant({
+    id: "grant-refresh-family-001",
+    ownerId,
+    clientId,
+    resource,
+    scopes: ["files:read"],
+    executionProfile: "files-read",
+    grantedAt: "2026-09-22T20:02:00.000Z",
+    expiresAt: "2026-09-23T20:02:00.000Z",
+  });
+  const family = store.createTokenFamily({
+    id: "family-refresh-001",
+    grantId: grant.id,
+    ownerId,
+    clientId,
+    resource,
+    refreshToken: refreshToken0,
+    createdAt: "2026-09-22T20:03:00.000Z",
+    expiresAt: "2026-09-23T20:02:00.000Z",
+  });
+  assert.equal(family.currentGeneration, 0);
+  assert.equal((await fs.readFile(path.join(dataDir, "auth.sqlite"))).includes(Buffer.from(refreshToken0)), false);
+
+  const rotated = store.rotateRefreshToken({
+    refreshToken: refreshToken0,
+    nextRefreshToken: refreshToken1,
+    clientId,
+    resource,
+    now: "2026-09-22T20:04:00.000Z",
+  });
+  assert.equal(rotated.family.currentGeneration, 1);
+  assert.equal(rotated.family.status, "ACTIVE");
+
+  assert.throws(
+    () => store.rotateRefreshToken({
+      refreshToken: refreshToken0,
+      nextRefreshToken: refreshToken2,
+      clientId,
+      resource,
+      now: "2026-09-22T20:05:00.000Z",
+    }),
+    { name: "AuthStoreError", code: "refresh_reuse_detected" },
+  );
+  assert.equal(store.getTokenFamily(family.id, { now: "2026-09-22T20:05:00.000Z" }).status, "COMPROMISED");
+  assert.throws(
+    () => store.rotateRefreshToken({
+      refreshToken: refreshToken1,
+      nextRefreshToken: refreshToken2,
+      clientId,
+      resource,
+      now: "2026-09-22T20:06:00.000Z",
+    }),
+    { name: "AuthStoreError", code: "refresh_inactive" },
+  );
+
+  const secondGrant = store.createGrant({
+    id: "grant-revoke-001",
+    ownerId,
+    clientId,
+    resource,
+    scopes: ["files:read"],
+    grantedAt: "2026-09-22T20:07:00.000Z",
+    expiresAt: "2026-09-23T20:02:00.000Z",
+  });
+  const secondFamily = store.createTokenFamily({
+    id: "family-revoke-001",
+    grantId: secondGrant.id,
+    ownerId,
+    clientId,
+    resource,
+    refreshToken: refreshToken2,
+    createdAt: "2026-09-22T20:08:00.000Z",
+    expiresAt: "2026-09-23T20:02:00.000Z",
+  });
+  assert.equal(store.revokeGrant({
+    grantId: secondGrant.id,
+    ownerId,
+    revokedAt: "2026-09-22T20:09:00.000Z",
+  }).status, "REVOKED");
+  assert.equal(store.getTokenFamily(secondFamily.id, { now: "2026-09-22T20:09:00.000Z" }).status, "REVOKED");
+  assert.match(store.ownerAccessSummary(ownerId).alreadyRunningTaskPolicy, /already-running tasks continue/);
+});
+
+test("AUTH-10: owner reset revokes credentials and retains transcript state for re-pair", async (t) => {
+  const { store } = await temporaryStore(t, { supportedScopes: ["files:read"] });
+  const transcriptDir = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-transcript-retained-"));
+  t.after(() => fs.rm(transcriptDir, { recursive: true, force: true }));
+  const transcript = path.join(transcriptDir, "session-output.log");
+  await fs.writeFile(transcript, "retained transcript sentinel");
+  bootstrap(store);
+  store.registerClient({ clientId, ownerId, redirectUri, createdAt });
+  const grant = store.createGrant({
+    id: "grant-reset-001",
+    ownerId,
+    clientId,
+    resource,
+    scopes: ["files:read"],
+    grantedAt: "2026-09-22T20:02:00.000Z",
+    expiresAt: "2026-09-23T20:02:00.000Z",
+  });
+  store.createTokenFamily({
+    id: "family-reset-001",
+    grantId: grant.id,
+    ownerId,
+    clientId,
+    resource,
+    refreshToken: refreshToken0,
+    createdAt: "2026-09-22T20:03:00.000Z",
+    expiresAt: "2026-09-23T20:02:00.000Z",
+  });
+
+  const resetSecret = "replacement-owner-bootstrap-secret-0001";
+  const resetOwner = store.resetOwnerAccess({
+    ownerId,
+    bootstrapSecret: resetSecret,
+    resetAt: "2026-09-22T20:04:00.000Z",
+    bootstrapExpiresAt: "2026-09-22T20:14:00.000Z",
+  });
+  assert.equal(resetOwner.bootstrapConsumedAt, null);
+  assert.equal(store.getGrant(grant.id, { now: "2026-09-22T20:05:00.000Z" }).status, "REVOKED");
+  assert.equal(await fs.readFile(transcript, "utf8"), "retained transcript sentinel");
+  store.consumeOwnerBootstrap({ secret: resetSecret, now: "2026-09-22T20:05:00.000Z" });
+  const repaired = store.registerClient({
+    clientId,
+    ownerId,
+    redirectUri,
+    createdAt: "2026-09-22T20:06:00.000Z",
+  });
+  assert.equal(repaired.status, "ACTIVE");
+  assert.equal(store.ownerAccessSummary(ownerId).bootstrapPending, false);
 });
 
 test("M002a fails closed for a newer schema and recovers an interrupted first migration", async (t) => {
