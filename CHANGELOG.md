@@ -25,6 +25,7 @@ All notable changes are documented here.
 - Made installation wait for local endpoint readiness before reporting success.
 - Made `doctor` retry startup health sequentially and report failures without unhandled promise rejection stacks.
 - Made the live MCP lifecycle wait for Session Host Unix-socket readiness after a systemd restart.
+- Made updates activate the newly installed Session Host code: API admission is frozen, active operations fail closed, idle tmux sessions are preserved, and Unix-socket readiness is required before Agent/MCP restart.
 
 ### Testing
 
