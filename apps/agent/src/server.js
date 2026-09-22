@@ -29,12 +29,20 @@ function authenticateAgentRequest(request, config, requestPath) {
   if (!match) throw new BridgeError("unauthorized", "Invalid Agent credential", 401);
   if (equalToken(match[1], config.token)) return { kind: "static", scopes: null };
   if (config.oauthToken && equalToken(match[1], config.oauthToken)) {
-    return verifyAgentContext({
-      secret: config.contextSecret,
-      value: request.headers[AGENT_CONTEXT_HEADER],
-      method: request.method,
-      path: requestPath,
-    });
+    try {
+      return verifyAgentContext({
+        secret: config.contextSecret,
+        value: request.headers[AGENT_CONTEXT_HEADER],
+        method: request.method,
+        path: requestPath,
+      });
+    } catch (error) {
+      throw new BridgeError(
+        error?.code || "invalid_agent_context",
+        "OAuth Agent authorization context was not accepted",
+        Number.isInteger(error?.status) ? error.status : 401,
+      );
+    }
   }
   throw new BridgeError("unauthorized", "Invalid Agent credential", 401);
 }
