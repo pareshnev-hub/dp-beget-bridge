@@ -449,7 +449,7 @@ export class OAuthSpike {
     return {
       access_token: token,
       token_type: "Bearer",
-      expires_in: Math.floor(this.accessTokenTtlMs / 1000),
+      expires_in: Math.floor((expiresAt - issuedAt) / 1000),
       scope: grant.scopes.join(" "),
     };
   }
