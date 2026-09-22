@@ -1,0 +1,26 @@
+config_version: 1
+control_plane:
+  base_url: https://api.openai.com
+  tunnel_id: __TUNNEL_ID__
+  api_key: file:/etc/dp-beget-tunnel/runtime-key
+  max_inflight_requests: 4
+  poll_timeout: 30000ms
+log:
+  level: info
+  format: json
+health:
+  listen_addr: 127.0.0.1:8790
+admin_ui:
+  open_browser: false
+  log_buffer_events: 200
+mcp:
+  server_urls:
+    - channel: main
+      url: http://127.0.0.1:8788/mcp
+  extra_headers:
+    Authorization: file:/etc/dp-beget-tunnel/mcp-authorization
+  discovery_extra_headers:
+    Authorization: file:/etc/dp-beget-tunnel/mcp-authorization
+  startup_wait_timeout: 30s
+  connection_max_ttl: 10m
+  max_concurrent_requests: 2
