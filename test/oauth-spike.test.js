@@ -226,6 +226,29 @@ test("DCR registers only the fixed ChatGPT callback and survives process restart
   );
 });
 
+test("DP-018 DCR advertises the configured private-beta scopes", async () => {
+  const scopes = [
+    "terminal:read",
+    "terminal:execute",
+    "terminal:input",
+    "terminal:close",
+    "files:read",
+    "files:write",
+  ];
+  const oauth = createOauth({ scopes, executionProfile: "full-shell" });
+  const registration = oauth.registerClient({
+    redirect_uris: [oauthDefaults.chatGptRedirectUri],
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+  });
+  assert.equal(registration.scope, scopes.join(" "));
+  assert.deepEqual(oauth.protectedResourceMetadata().scopes_supported, scopes);
+  const transaction = await oauth.beginAuthorization(authorizationParams({ scope: scopes.join(" ") }));
+  assert.deepEqual(transaction.scopes, scopes);
+  assert.equal(transaction.executionProfile, "full-shell");
+});
+
 test("M002b binds authorization codes and tokens to a durable owner grant", async (t) => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-oauth-grant-"));
   t.after(() => fs.rm(dataDir, { recursive: true, force: true }));
