@@ -66,6 +66,7 @@ test("DP-012 metadata binds the protected resource to a local authorization serv
     token_endpoint_auth_methods_supported: ["none"],
     scopes_supported: ["files:read"],
     client_id_metadata_document_supported: true,
+    registration_endpoint: `${issuer}/oauth/register`,
     authorization_response_iss_parameter_supported: true,
   });
   assert.match(oauth.challenge(), /resource_metadata="https:\/\/bridge\.example\.test\/\.well-known\/oauth-protected-resource"/);
@@ -184,5 +185,38 @@ test("CIMD metadata streaming is bounded even without Content-Length", async () 
   await assert.rejects(
     cimd.validate(oauthDefaults.chatGptClientId, oauthDefaults.chatGptRedirectUri),
     { name: "OAuthError", code: "invalid_client" },
+  );
+});
+
+test("DCR registers only the fixed ChatGPT callback and survives process restart", async () => {
+  const metadata = {
+    redirect_uris: [oauthDefaults.chatGptRedirectUri],
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code"],
+    response_types: ["code"],
+  };
+  const first = createOauth();
+  const registration = first.registerClient(metadata);
+  assert.match(registration.client_id, /^dcr_[A-Za-z0-9_-]+$/);
+  assert.equal(createOauth().registerClient(metadata).client_id, registration.client_id);
+  await assert.rejects(
+    first.beginAuthorization(authorizationParams({
+      client_id: registration.client_id, redirect_uri: "https://attacker.example/callback",
+    })),
+    { name: "OAuthError", code: "invalid_client" },
+  );
+  const restarted = createOauth();
+  const transaction = await restarted.beginAuthorization(authorizationParams({ client_id: registration.client_id }));
+  const redirect = new URL(restarted.approve({ transactionId: transaction.id, approvalSecret }));
+  const { verifier } = verifierAndChallenge();
+  const token = restarted.exchange(new URLSearchParams({
+    grant_type: "authorization_code", code: redirect.searchParams.get("code"),
+    client_id: registration.client_id, redirect_uri: oauthDefaults.chatGptRedirectUri,
+    resource, code_verifier: verifier,
+  }));
+  assert.deepEqual([...restarted.authenticate(`Bearer ${token.access_token}`).scopes], ["files:read"]);
+  assert.throws(
+    () => first.registerClient({ ...metadata, redirect_uris: ["https://attacker.example/callback"] }),
+    { name: "OAuthError", code: "invalid_client_metadata" },
   );
 });
