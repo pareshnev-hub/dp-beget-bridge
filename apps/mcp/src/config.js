@@ -39,6 +39,9 @@ export function loadMcpConfig() {
       codeTtlMs: integer("DP_OAUTH_CODE_TTL_MS", 2 * 60 * 1000),
       accessTokenTtlMs: integer("DP_OAUTH_ACCESS_TOKEN_TTL_MS", 10 * 60 * 1000),
       clientMetadataTimeoutMs: integer("DP_OAUTH_CLIENT_METADATA_TIMEOUT_MS", 5000),
+      allowPinnedChatGptFallback: /^(1|true|yes)$/i.test(
+        process.env.DP_OAUTH_ALLOW_PINNED_CHATGPT_CIMD_FALLBACK || "false",
+      ),
     },
   };
   if (config.attachmentFetchTimeoutMs < 1 || config.attachmentMaxBytes < 1 || config.attachmentMaxConcurrent < 1) {
