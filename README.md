@@ -10,7 +10,7 @@ DP Beget Bridge keeps terminal sessions on the server instead of inside a single
 
 **0.1.x / RELEASE 0001 is a technical preview. It is not yet the public-ready Direct product.**
 
-A 2026-09-21 architecture/security audit defined the R0002 hardening queue. Current implementation and verification evidence is maintained in `docs/IMPLEMENTATION_STATUS.md`; unresolved work remains around archived transcript/cursor integrity, resource ceilings and the remaining release gates.
+A 2026-09-21 architecture/security audit defined the R0002 hardening queue. Current implementation and verification evidence is maintained in `docs/IMPLEMENTATION_STATUS.md`; unresolved work remains around resource ceilings and the remaining release gates.
 
 Start here:
 - [Roadmap](docs/ROADMAP.md)
@@ -114,6 +114,8 @@ npm run start:mcp
 Do not expose an unauthenticated MCP or Agent endpoint to the public internet.
 
 Production installs use three distinct non-root identities. The installer writes separate MCP and Agent credential files and a credential-free Session Host configuration. A first migration from the shared-identity preview refuses to proceed while legacy tmux sessions are alive, because those processes may still contain the former shared environment.
+
+Terminal reads use versioned, independent UTF-8-safe cursors. Closing a terminal retains its CLOSED metadata and transcript; permanent removal requires the separate `purge_terminal` tool. See [TRANSCRIPT_CURSOR.md](docs/TRANSCRIPT_CURSOR.md).
 
 ## Privacy
 

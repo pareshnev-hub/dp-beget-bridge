@@ -22,5 +22,6 @@ export function loadSessionHostConfig() {
     historyLines: integer("DP_TERMINAL_HISTORY_LINES", 100000),
     commandWaitMs: integer("DP_COMMAND_WAIT_MS", 10000),
     sessionOutputWarnBytes: integer("DP_SESSION_OUTPUT_WARN_BYTES", 50 * 1024 * 1024),
+    storageMinFreeBytes: integer("DP_STORAGE_MIN_FREE_BYTES", 256 * 1024 * 1024),
   };
 }

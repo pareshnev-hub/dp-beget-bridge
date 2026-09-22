@@ -43,6 +43,7 @@ const sessionHostEnvironment = {
   DP_COMMAND_WAIT_MS: "50",
   DP_TERMINAL_HISTORY_LINES: "10000",
   DP_SESSION_OUTPUT_WARN_BYTES: String(4 * 1024 * 1024),
+  DP_STORAGE_MIN_FREE_BYTES: String(1024 * 1024),
   DP_LOG_LEVEL: "info",
 };
 

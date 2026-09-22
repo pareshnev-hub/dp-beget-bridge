@@ -245,21 +245,33 @@ try {
   });
   assert.equal(usableAfterInterrupt.state, "completed");
 
-  await callTool("close_terminal", { session_id: sessionId, keep_output: false });
-  cleanupSessionIds.delete(sessionId);
+  await callTool("close_terminal", { session_id: sessionId });
   const afterClose = await callTool("list_terminal_sessions");
   assert.equal(
     afterClose.sessions.find((session) => session.id === guard.id)?.alive,
     true,
     "closing the selected terminal must not close another live session",
   );
-  assert.equal(
-    afterClose.sessions.some((session) => session.id === sessionId),
-    false,
-    "the selected terminal must be removed after explicit close",
-  );
+  const retained = afterClose.sessions.find((session) => session.id === sessionId);
+  assert.equal(retained?.state, "CLOSED");
+  assert.equal(retained?.alive, false);
+  if (restartSystemd) {
+    await execFileAsync("systemctl", ["restart", "dp-beget-session-host.service"]);
+    await waitForSessionHost();
+    const archived = await callTool("read_terminal", {
+      session_id: sessionId,
+      cursor: 0,
+      max_bytes: 262144,
+    });
+    assert.equal(archived.state, "CLOSED");
+    assert.match(archived.output, /beget-post-interrupt-ok/);
+    assert.match(archived.cursor, /^v1:/);
+  }
+  await callTool("purge_terminal", { session_id: sessionId });
+  cleanupSessionIds.delete(sessionId);
   sessionId = undefined;
-  await callTool("close_terminal", { session_id: guard.id, keep_output: false });
+  await callTool("close_terminal", { session_id: guard.id });
+  await callTool("purge_terminal", { session_id: guard.id });
   cleanupSessionIds.delete(guard.id);
 
   const osRelease = await commandOutput("sh", ["-c", ". /etc/os-release; printf '%s' \"${PRETTY_NAME:-unknown}\""]);
@@ -277,7 +289,7 @@ try {
       telemetryEnabled: /^(1|true|yes)$/i.test(process.env.DP_TELEMETRY_ENABLED || "false"),
       identities,
     },
-    scenarios: ["TERM-01", "TERM-10", "TERM-11", "TERM-12", ...(restartSystemd ? ["TERM-02", "TERM-03", "TERM-07"] : [])],
+    scenarios: ["TERM-01", "TERM-10", "TERM-11", "TERM-12", ...(restartSystemd ? ["TERM-02", "TERM-03", "TERM-07", "CUR-03"] : [])],
     supplemental: {
       clientDisconnectReconnect: "pass",
       serviceRestartCoveredHere: restartSystemd,
@@ -289,7 +301,8 @@ try {
     if (!client) client = await connect().catch(() => undefined);
     if (client) {
       for (const id of cleanupSessionIds) {
-        await callTool("close_terminal", { session_id: id, keep_output: false }).catch(() => {});
+        await callTool("close_terminal", { session_id: id }).catch(() => {});
+        await callTool("purge_terminal", { session_id: id }).catch(() => {});
       }
     }
   }

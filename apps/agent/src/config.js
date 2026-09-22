@@ -25,6 +25,7 @@ export function loadConfig() {
     historyLines: integer("DP_TERMINAL_HISTORY_LINES", 100000),
     commandWaitMs: integer("DP_COMMAND_WAIT_MS", 10000),
     sessionOutputWarnBytes: integer("DP_SESSION_OUTPUT_WARN_BYTES", 50 * 1024 * 1024),
+    storageMinFreeBytes: integer("DP_STORAGE_MIN_FREE_BYTES", 256 * 1024 * 1024),
     fileUploadMaxBytes: integer("DP_FILE_UPLOAD_MAX_BYTES", 512 * 1024 * 1024),
     telemetryEnabled: /^(1|true|yes)$/i.test(process.env.DP_TELEMETRY_ENABLED || "false"),
     telemetryUrl: process.env.DP_TELEMETRY_URL || "https://pareshnev.com/api/dp-beget-bridge/events",

@@ -301,6 +301,7 @@ try {
     "DP_COMMAND_WAIT_MS=50",
     "DP_TERMINAL_HISTORY_LINES=10000",
     `DP_SESSION_OUTPUT_WARN_BYTES=${4 * 1024 * 1024}`,
+    "DP_STORAGE_MIN_FREE_BYTES=1048576",
     "DP_LOG_LEVEL=info",
     "",
   ].join("\n"), { mode: 0o640 });
@@ -493,12 +494,15 @@ try {
   });
   assert.equal(afterInterrupt.state, "completed", "the interrupted terminal must remain usable");
 
-  await callTool("close_terminal", { session_id: sessionId, keep_output: false });
+  await callTool("close_terminal", { session_id: sessionId });
   listed = await callTool("list_terminal_sessions");
-  assert.equal(listed.sessions.some((session) => session.id === sessionId), false);
+  assert.equal(listed.sessions.find((session) => session.id === sessionId)?.state, "CLOSED");
+  assert.equal(listed.sessions.find((session) => session.id === sessionId)?.alive, false);
   assert.equal(listed.sessions.find((session) => session.id === guardSessionId)?.alive, true);
+  await callTool("purge_terminal", { session_id: sessionId });
   sessionId = undefined;
-  await callTool("close_terminal", { session_id: guardSessionId, keep_output: false });
+  await callTool("close_terminal", { session_id: guardSessionId });
+  await callTool("purge_terminal", { session_id: guardSessionId });
   guardSessionId = undefined;
 
   const osRelease = await fs.readFile("/etc/os-release", "utf8");

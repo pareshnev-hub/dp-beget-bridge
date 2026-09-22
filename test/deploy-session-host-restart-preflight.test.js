@@ -19,11 +19,11 @@ async function fixture() {
   };
 }
 
-function createDatabase(databasePath, statuses = []) {
+function createDatabase(databasePath, statuses = [], schemaVersion = 1) {
   const database = new DatabaseSync(databasePath);
   database.exec(`
     CREATE TABLE operations (status TEXT NOT NULL) STRICT;
-    PRAGMA user_version = 1;
+    PRAGMA user_version = ${schemaVersion};
   `);
   const insert = database.prepare("INSERT INTO operations (status) VALUES (?)");
   for (const status of statuses) insert.run(status);
@@ -59,9 +59,9 @@ test("restart preflight rejects accepted and running operations", async () => {
 test("restart preflight permits only terminal operation states", async () => {
   const state = await fixture();
   try {
-    createDatabase(state.databasePath, ["SUCCEEDED", "FAILED", "INTERRUPTED", "UNKNOWN"]);
+    createDatabase(state.databasePath, ["SUCCEEDED", "FAILED", "INTERRUPTED", "UNKNOWN"], 2);
     assert.deepEqual(assertSessionHostRestartSafe(state.databasePath), {
-      schemaVersion: 1,
+      schemaVersion: 2,
       activeOperationCount: 0,
     });
   } finally {

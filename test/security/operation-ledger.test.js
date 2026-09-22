@@ -262,7 +262,8 @@ test("state migration imports legacy sessions, keeps a backup, and recovers an i
 
   const store = new StateStore(dataDir);
   await store.init();
-  assert.deepEqual(await store.get(session.id), session);
+  assert.equal((await store.get(session.id)).id, session.id);
+  assert.match((await store.get(session.id)).transcriptStreamId, /^[a-zA-Z0-9_-]+$/);
   assert.equal(await fs.stat(path.join(dataDir, "state.sqlite.backup-v0")).then(() => true), true);
   store.close();
 
@@ -271,13 +272,13 @@ test("state migration imports legacy sessions, keeps a backup, and recovers an i
   await fs.writeFile(path.join(dataDir, "state.sqlite"), "interrupted");
   await fs.writeFile(path.join(dataDir, "state.sqlite.migrating"), JSON.stringify({
     fromVersion: 0,
-    targetVersion: 1,
+    targetVersion: 2,
     backupPath,
   }));
 
   const recovered = new StateStore(dataDir);
   await recovered.init();
   t.after(() => recovered.close());
-  assert.deepEqual(await recovered.get(session.id), session);
-  assert.equal(new DatabaseSync(path.join(dataDir, "state.sqlite")).prepare("PRAGMA user_version").get().user_version, 1);
+  assert.equal((await recovered.get(session.id)).id, session.id);
+  assert.equal(new DatabaseSync(path.join(dataDir, "state.sqlite")).prepare("PRAGMA user_version").get().user_version, 2);
 });

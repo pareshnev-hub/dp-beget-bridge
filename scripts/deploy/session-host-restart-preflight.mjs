@@ -3,7 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
-const SUPPORTED_SCHEMA_VERSION = 1;
+const SUPPORTED_SCHEMA_VERSIONS = new Set([1, 2]);
 
 export function inspectSessionHostRestart(databasePath) {
   if (!fs.existsSync(databasePath)) {
@@ -13,7 +13,7 @@ export function inspectSessionHostRestart(databasePath) {
   const database = new DatabaseSync(databasePath, { readOnly: true });
   try {
     const schemaVersion = Number(database.prepare("PRAGMA user_version").get().user_version);
-    if (schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+    if (!SUPPORTED_SCHEMA_VERSIONS.has(schemaVersion)) {
       throw new Error(`unsupported state schema ${schemaVersion}`);
     }
 

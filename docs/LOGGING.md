@@ -22,17 +22,19 @@ default. Debug mode is opt-in and uses the same field allowlist.
 
 ## Terminal continuity log
 
-Each terminal has a local append-only output file on the user's VPS. A byte
-cursor lets a later tool call or chat retrieve only output not seen before.
+Each terminal has a local append-only output file on the user's VPS. A versioned
+stream/epoch/absolute-byte cursor lets each reader independently retrieve later
+output without consuming it for another reader. See `TRANSCRIPT_CURSOR.md`.
 The output is not sent to the DP website or telemetry collector. Direct mode
 has no central command service.
 
 Rotating or truncating old output does not terminate the `tmux` session. Log
 retention and live process lifetime are deliberately independent.
 
-RELEASE 0001 emits a warning when a transcript reaches
-`DP_SESSION_OUTPUT_WARN_BYTES`; it does not delete data automatically. Safe
-segmented retention is planned for RELEASE 0002.
+`DP_SESSION_OUTPUT_WARN_BYTES` emits a size warning without deleting data.
+`DP_STORAGE_MIN_FREE_BYTES` reserves local disk space: below the threshold,
+capture becomes explicitly `DEGRADED` while the tmux process remains under
+control. Segmented quotas and capture resumption are completed under DP-010.
 
 ## Development and release records
 

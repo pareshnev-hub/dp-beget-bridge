@@ -217,6 +217,7 @@ chown root:"${mcp_user}" "${mcp_env}"
   printf 'DP_COMMAND_WAIT_MS=10000\n'
   printf 'DP_TERMINAL_HISTORY_LINES=100000\n'
   printf 'DP_SESSION_OUTPUT_WARN_BYTES=52428800\n'
+  printf 'DP_STORAGE_MIN_FREE_BYTES=268435456\n'
   printf 'DP_LOG_LEVEL=info\n'
 } > "${session_host_env}"
 chmod 0640 "${session_host_env}"
