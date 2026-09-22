@@ -170,6 +170,41 @@ export class ChatGptCimdRegistry {
   }
 }
 
+export class ChatGptDcrRegistry {
+  constructor({ approvalSecret }) {
+    this.clientId = "dcr_" + base64url(crypto.createHmac("sha256", approvalSecret)
+      .update("DP-012 ChatGPT DCR public client v1").digest());
+  }
+
+  register(document) {
+    if (!document || typeof document !== "object" || Array.isArray(document)
+      || !Array.isArray(document.redirect_uris)
+      || document.redirect_uris.length !== 1
+      || document.redirect_uris[0] !== DEFAULT_CHATGPT_REDIRECT_URI
+      || (document.token_endpoint_auth_method && document.token_endpoint_auth_method !== "none")
+      || (document.grant_types && (!Array.isArray(document.grant_types)
+        || !document.grant_types.includes("authorization_code")))
+      || (document.response_types && (!Array.isArray(document.response_types)
+        || !document.response_types.includes("code")))) {
+      throw oauthError("invalid_client_metadata", "Only the ChatGPT public authorization-code client is supported");
+    }
+    return {
+      client_id: this.clientId,
+      redirect_uris: [DEFAULT_CHATGPT_REDIRECT_URI],
+      token_endpoint_auth_method: "none",
+      grant_types: ["authorization_code"],
+      response_types: ["code"],
+      scope: "files:read",
+    };
+  }
+
+  validate(clientId, redirectUri) {
+    if (clientId !== this.clientId || redirectUri !== DEFAULT_CHATGPT_REDIRECT_URI) {
+      throw oauthError("invalid_client", "Registered client or redirect URI is invalid");
+    }
+  }
+}
+
 export class OAuthSpike {
   constructor({
     issuer,
@@ -192,6 +227,7 @@ export class OAuthSpike {
     this.scopes = new Set(scopes);
     if (this.scopes.size === 0) throw new Error("At least one OAuth scope is required");
     this.clientRegistry = clientRegistry;
+    this.dcrRegistry = new ChatGptDcrRegistry({ approvalSecret });
     this.transactionTtlMs = transactionTtlMs;
     this.codeTtlMs = codeTtlMs;
     this.accessTokenTtlMs = accessTokenTtlMs;
@@ -223,8 +259,13 @@ export class OAuthSpike {
       token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: [...this.scopes],
       client_id_metadata_document_supported: true,
+      registration_endpoint: `${this.issuer}/oauth/register`,
       authorization_response_iss_parameter_supported: true,
     };
+  }
+
+  registerClient(document) {
+    return this.dcrRegistry.register(document);
   }
 
   challenge(scope = [...this.scopes].join(" ")) {
@@ -251,7 +292,8 @@ export class OAuthSpike {
     if (!/^[A-Za-z0-9_-]{43}$/.test(codeChallenge)) {
       throw oauthError("invalid_request", "code_challenge is not a valid S256 challenge");
     }
-    await this.clientRegistry.validate(clientId, redirectUri);
+    if (clientId.startsWith("dcr_")) this.dcrRegistry.validate(clientId, redirectUri);
+    else await this.clientRegistry.validate(clientId, redirectUri);
     const scopes = parseScope(params.get("scope"), this.scopes);
     if (this.transactions.size >= this.maxPendingTransactions) {
       throw oauthError("temporarily_unavailable", "Too many pending authorization transactions", 503);

@@ -58,6 +58,20 @@ test("DP-012 HTTP flow exposes metadata, challenges with RFC9728, and restricts 
   assert.equal(authorizationMetadata.status, 200);
   assert.equal((await authorizationMetadata.json()).code_challenge_methods_supported[0], "S256");
 
+  const registration = await fetch(`${origin}/oauth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ redirect_uris: [oauthDefaults.chatGptRedirectUri], token_endpoint_auth_method: "none" }),
+  });
+  assert.equal(registration.status, 201);
+  assert.match((await registration.json()).client_id, /^dcr_/);
+  const rejectedRegistration = await fetch(`${origin}/oauth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ redirect_uris: ["https://attacker.example/callback"] }),
+  });
+  assert.equal(rejectedRegistration.status, 400);
+
   const denied = await fetch(`${origin}/mcp`, { method: "POST" });
   assert.equal(denied.status, 401);
   assert.match(denied.headers.get("www-authenticate"), /resource_metadata=/);
