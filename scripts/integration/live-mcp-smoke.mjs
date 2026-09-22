@@ -13,6 +13,9 @@ const endpoint = new URL(process.env.DP_MCP_SMOKE_URL || "http://127.0.0.1:8788/
 const accessToken = process.env.DP_MCP_ACCESS_TOKEN || "";
 const reconnectDelayMs = Number.parseInt(process.env.DP_MCP_SMOKE_RECONNECT_DELAY_MS || "2500", 10);
 const restartSystemd = /^(1|true|yes)$/i.test(process.env.DP_MCP_SMOKE_RESTART_SYSTEMD || "false");
+const mcpUnit = process.env.DP_MCP_SMOKE_MCP_UNIT || "dp-beget-mcp.service";
+const agentUnit = process.env.DP_MCP_SMOKE_AGENT_UNIT || "dp-beget-agent.service";
+const sessionHostUnit = process.env.DP_MCP_SMOKE_SESSION_HOST_UNIT || "dp-beget-session-host.service";
 
 if (accessToken.length < 32) {
   throw new Error("DP_MCP_ACCESS_TOKEN must be loaded before running the live MCP smoke test");
@@ -120,9 +123,9 @@ async function canReadAs(user, file) {
 
 async function verifySeparatedRuntime() {
   const units = {
-    mcp: "dp-beget-mcp.service",
-    agent: "dp-beget-agent.service",
-    work: "dp-beget-session-host.service",
+    mcp: mcpUnit,
+    agent: agentUnit,
+    work: sessionHostUnit,
   };
   const identities = {};
   for (const [role, unit] of Object.entries(units)) {
@@ -182,14 +185,14 @@ try {
   await disconnect();
   let identities;
   if (restartSystemd) {
-    await execFileAsync("systemctl", ["restart", "dp-beget-mcp.service"]);
+    await execFileAsync("systemctl", ["restart", mcpUnit]);
     await waitForHealth(`${endpoint.origin}/health`);
-    await execFileAsync("systemctl", ["restart", "dp-beget-agent.service"]);
+    await execFileAsync("systemctl", ["restart", agentUnit]);
     await waitForHealth(process.env.DP_AGENT_URL
       ? `${process.env.DP_AGENT_URL.replace(/\/$/, "")}/health`
       : "http://127.0.0.1:8787/health");
     await waitForHealth(`${endpoint.origin}/health`);
-    await execFileAsync("systemctl", ["restart", "dp-beget-session-host.service"]);
+    await execFileAsync("systemctl", ["restart", sessionHostUnit]);
     await waitForSessionHost();
     identities = await verifySeparatedRuntime();
   } else {
@@ -256,7 +259,7 @@ try {
   assert.equal(retained?.state, "CLOSED");
   assert.equal(retained?.alive, false);
   if (restartSystemd) {
-    await execFileAsync("systemctl", ["restart", "dp-beget-session-host.service"]);
+    await execFileAsync("systemctl", ["restart", sessionHostUnit]);
     await waitForSessionHost();
     const archived = await callTool("read_terminal", {
       session_id: sessionId,
