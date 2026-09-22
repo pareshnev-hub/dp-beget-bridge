@@ -8,7 +8,9 @@ DP-009 changes the production layout from one shared runtime user/configuration 
 - `dp-agent` for local policy and file capability enforcement;
 - the explicitly selected `--user` / `--work-user` for Session Host, tmux and shell processes.
 
-The installer defaults to `--live-session-policy preserve`. It stops and restarts Agent/MCP, but does not stop an already-running separated Session Host or tmux server. On the first migration, legacy tmux cannot be preserved safely because its process environment may contain the former shared credentials. If any legacy tmux session is alive, migration fails before mutation and requires an explicit owner close. With no live legacy session, the stale server is stopped, while `/var/lib/dp-beget-bridge` metadata/transcripts remain in place for the new Session Host.
+The installer defaults to `--live-session-policy preserve`. During an update it first stops Agent/MCP admission, checks the durable ledger, and refuses the update if any operation is still `ACCEPTED` or `RUNNING`. A missing, incompatible or unreadable ledger also fails closed. When the preflight passes, the installer stops and starts Session Host so the newly installed JavaScript is actually loaded, waits for its Unix-socket health endpoint, and only then restarts Agent/MCP. The Session Host unit uses `KillMode=process`, so its managed tmux server and idle terminal sessions remain alive across this activation. `UNKNOWN` is a terminal ledger outcome and does not prevent activation; it is never replayed.
+
+On the first migration, legacy tmux cannot be preserved safely because its process environment may contain the former shared credentials. If any legacy tmux session is alive, migration fails before mutation and requires an explicit owner close. With no live legacy session, the stale server is stopped, while `/var/lib/dp-beget-bridge` metadata/transcripts remain in place for the new Session Host. If an update fails after API admission is stopped, the installer makes a best-effort local service restoration and still returns failure.
 
 Credentials are split into root-owned files:
 
