@@ -40,4 +40,12 @@ systemd-run --quiet --wait --pipe --collect -p EnvironmentFile=/etc/dp-beget-bri
 systemctl restart dp-beget-mcp-oauth-spike.service
 ```
 
+## Live acceptance smoke
+
+Run the smoke only on an isolated private-beta owner installation. It creates two bounded test grants, compromises one test refresh family by intentional reuse and revokes the other. It never prints token material:
+
+```bash
+systemd-run --quiet --wait --pipe --collect -p EnvironmentFile=/etc/dp-beget-bridge/mcp-oauth-spike.env /usr/bin/node /opt/dp-beget-bridge/scripts/integration/live-oauth-lifecycle-smoke.mjs
+```
+
 A rollback to code that cannot interpret the auth schema must stop and require re-pair. It must never reconstruct or reactivate revoked credentials.
