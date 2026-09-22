@@ -482,6 +482,9 @@ export class OAuthSpike {
       ownerId: record.ownerId,
       grantId: record.grantId,
       executionProfile: record.executionProfile,
+      grantExpiresAt: this.authStore
+        ? this.authStore.getGrant(record.grantId, { now: new Date(this.now()).toISOString() })?.expiresAt
+        : null,
     };
   }
 }
