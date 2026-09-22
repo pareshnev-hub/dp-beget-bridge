@@ -41,6 +41,7 @@ export function loadMcpConfig() {
       transactionTtlMs: integer("DP_OAUTH_TRANSACTION_TTL_MS", 5 * 60 * 1000),
       codeTtlMs: integer("DP_OAUTH_CODE_TTL_MS", 2 * 60 * 1000),
       accessTokenTtlMs: integer("DP_OAUTH_ACCESS_TOKEN_TTL_MS", 10 * 60 * 1000),
+      refreshTokenTtlMs: integer("DP_OAUTH_REFRESH_TOKEN_TTL_MS", 30 * 24 * 60 * 60 * 1000),
       grantTtlMs: integer("DP_OAUTH_GRANT_TTL_MS", 24 * 60 * 60 * 1000),
       clientMetadataTimeoutMs: integer("DP_OAUTH_CLIENT_METADATA_TIMEOUT_MS", 5000),
       authDataDir: path.resolve(process.env.DP_AUTH_DATA_DIR || "/var/lib/dp-beget-bridge-mcp/auth"),
@@ -64,6 +65,7 @@ export function loadMcpConfig() {
       DP_OAUTH_TRANSACTION_TTL_MS: config.oauth.transactionTtlMs,
       DP_OAUTH_CODE_TTL_MS: config.oauth.codeTtlMs,
       DP_OAUTH_ACCESS_TOKEN_TTL_MS: config.oauth.accessTokenTtlMs,
+      DP_OAUTH_REFRESH_TOKEN_TTL_MS: config.oauth.refreshTokenTtlMs,
       DP_OAUTH_GRANT_TTL_MS: config.oauth.grantTtlMs,
       DP_OAUTH_CLIENT_METADATA_TIMEOUT_MS: config.oauth.clientMetadataTimeoutMs,
     })) {
