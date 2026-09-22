@@ -14,6 +14,8 @@ export function loadConfig() {
     host: process.env.DP_AGENT_HOST || "127.0.0.1",
     port: integer("DP_AGENT_PORT", 8787),
     token: process.env.DP_AGENT_TOKEN || "",
+    oauthToken: process.env.DP_AGENT_OAUTH_TOKEN || "",
+    contextSecret: process.env.DP_AGENT_CONTEXT_SECRET || "",
     dataDir,
     sessionHostSocket: path.resolve(process.env.DP_SESSION_HOST_SOCKET || "/run/dp-beget-bridge/session-host.sock"),
     allowedRoots: (process.env.DP_ALLOWED_ROOTS || process.cwd())
@@ -32,6 +34,18 @@ export function loadConfig() {
     telemetryEnabled: /^(1|true|yes)$/i.test(process.env.DP_TELEMETRY_ENABLED || "false"),
     telemetryUrl: process.env.DP_TELEMETRY_URL || "https://pareshnev.com/api/dp-beget-bridge/events",
   };
+  if (Boolean(config.oauthToken) !== Boolean(config.contextSecret)) {
+    throw new Error("DP_AGENT_OAUTH_TOKEN and DP_AGENT_CONTEXT_SECRET must be configured together");
+  }
+  if (config.oauthToken && config.oauthToken.length < 32) {
+    throw new Error("DP_AGENT_OAUTH_TOKEN must contain at least 32 characters");
+  }
+  if (config.contextSecret && config.contextSecret.length < 32) {
+    throw new Error("DP_AGENT_CONTEXT_SECRET must contain at least 32 characters");
+  }
+  if (config.oauthToken && config.oauthToken === config.token) {
+    throw new Error("DP_AGENT_OAUTH_TOKEN must differ from DP_AGENT_TOKEN");
+  }
   if (config.fileTransferMaxConcurrent < 1) {
     throw new Error("DP_FILE_TRANSFER_MAX_CONCURRENT must be at least 1");
   }

@@ -45,7 +45,10 @@ export function createMcpHttpServer({ config, agent, downloads, logger, oauth })
           sendJson(response, 404, { error: { code: "download_not_found", message: "Download link is invalid or expired" } });
           return;
         }
-        const upstream = await agent.downloadPath(entry.filePath, { signal: requestAbort.signal });
+        const downloadAgent = entry.authorization && agent.withAuthorization
+          ? agent.withAuthorization(entry.authorization)
+          : agent;
+        const upstream = await downloadAgent.downloadPath(entry.filePath, { signal: requestAbort.signal });
         const headers = {
           "content-type": upstream.headers.get("content-type") || "application/octet-stream",
           "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(entry.filePath))}`,
@@ -75,8 +78,9 @@ export function createMcpHttpServer({ config, agent, downloads, logger, oauth })
       }
 
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+      const requestAgent = agent.withAuthorization ? agent.withAuthorization(authorization) : agent;
       const mcp = createBridgeMcpServer({
-        agent,
+        agent: requestAgent,
         downloads,
         config,
         requestSignal: requestAbort.signal,

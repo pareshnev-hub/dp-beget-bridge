@@ -444,6 +444,7 @@ export class OAuthSpike {
       grantId: durableGrant?.id || null,
       ownerId: durableGrant?.ownerId || null,
       executionProfile: durableGrant?.executionProfile || null,
+      grantExpiresAt: durableGrant?.expiresAt || null,
       expiresAt,
     });
     return {
@@ -482,6 +483,7 @@ export class OAuthSpike {
       ownerId: record.ownerId,
       grantId: record.grantId,
       executionProfile: record.executionProfile,
+      grantExpiresAt: record.grantExpiresAt,
     };
   }
 }
