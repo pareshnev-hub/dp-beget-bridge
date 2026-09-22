@@ -89,6 +89,8 @@ export function createAgentServer({ config, sessions, files, logger }) {
 
       const operationRoute = routeOperation(url.pathname);
       if (request.method === "GET" && operationRoute) {
+        requireScope(authorization, "terminal:read");
+        requireSessionOwner(authorization, sessionOwners, operationRoute.sessionId);
         sendJson(response, 200, await sessions.getOperation(
           operationRoute.sessionId,
           operationRoute.operationId,
@@ -99,7 +101,9 @@ export function createAgentServer({ config, sessions, files, logger }) {
       const sessionRoute = routeSession(url.pathname);
       if (sessionRoute) {
         const { id, action } = sessionRoute;
+        requireSessionOwner(authorization, sessionOwners, id);
         if (request.method === "POST" && action === "commands") {
+          requireScope(authorization, "terminal:execute");
           const body = await readJson(request);
           sendJson(response, 200, await sessions.runCommand(
             id,
@@ -110,6 +114,7 @@ export function createAgentServer({ config, sessions, files, logger }) {
           return;
         }
         if (request.method === "GET" && action === "output") {
+          requireScope(authorization, "terminal:read");
           sendJson(
             response,
             200,
@@ -118,29 +123,36 @@ export function createAgentServer({ config, sessions, files, logger }) {
           return;
         }
         if (request.method === "POST" && action === "input") {
+          requireScope(authorization, "terminal:input");
           const body = await readJson(request);
           sendJson(response, 200, await sessions.sendInput(id, body.input, body.enter));
           return;
         }
         if (request.method === "POST" && action === "interrupt") {
+          requireScope(authorization, "terminal:input");
           sendJson(response, 200, await sessions.interrupt(id));
           return;
         }
         if (request.method === "DELETE" && action === "session") {
+          requireScope(authorization, "terminal:close");
           sendJson(response, 200, await sessions.close(id));
           return;
         }
         if (request.method === "DELETE" && action === "purge") {
+          requireScope(authorization, "terminal:close");
           sendJson(response, 200, await sessions.purge(id));
+          if (authorization.kind === "oauth") sessionOwners.delete(id);
           return;
         }
       }
 
       if (request.method === "GET" && url.pathname === "/v1/files") {
+        requireScope(authorization, "files:read");
         sendJson(response, 200, await files.list(url.searchParams.get("path")));
         return;
       }
       if (request.method === "PUT" && url.pathname === "/v1/files/content") {
+        requireScope(authorization, "files:write");
         const result = await files.upload(
           request,
           url.searchParams.get("path"),
@@ -150,6 +162,7 @@ export function createAgentServer({ config, sessions, files, logger }) {
         return;
       }
       if (request.method === "GET" && url.pathname === "/v1/files/content") {
+        requireScope(authorization, "files:read");
         const release = files.acquireTransfer("download");
         const downloadAbort = new AbortController();
         const abortDownload = () => {
@@ -177,16 +190,19 @@ export function createAgentServer({ config, sessions, files, logger }) {
         return;
       }
       if (request.method === "POST" && url.pathname === "/v1/files/copy") {
+        requireScope(authorization, "files:write");
         const body = await readJson(request);
         sendJson(response, 200, await files.copy(body.source, body.destination, body.overwrite));
         return;
       }
       if (request.method === "POST" && url.pathname === "/v1/files/move") {
+        requireScope(authorization, "files:write");
         const body = await readJson(request);
         sendJson(response, 200, await files.move(body.source, body.destination, body.overwrite));
         return;
       }
       if (request.method === "DELETE" && url.pathname === "/v1/files") {
+        requireScope(authorization, "files:delete");
         sendJson(
           response,
           200,
