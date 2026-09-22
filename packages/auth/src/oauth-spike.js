@@ -178,9 +178,9 @@ export class ChatGptCimdRegistry {
 }
 
 export class ChatGptDcrRegistry {
-  constructor({ approvalSecret }) {
-    this.clientId = "dcr_" + base64url(crypto.createHmac("sha256", approvalSecret)
-      .update("DP-012 ChatGPT DCR public client v1").digest());
+  constructor({ approvalSecret, clientId }) {
+    this.clientId = clientId || ("dcr_" + base64url(crypto.createHmac("sha256", approvalSecret)
+      .update("DP-012 ChatGPT DCR public client v1").digest()));
   }
 
   register(document) {
@@ -238,7 +238,17 @@ export class OAuthSpike {
     this.scopes = new Set(scopes);
     if (this.scopes.size === 0) throw new Error("At least one OAuth scope is required");
     this.clientRegistry = clientRegistry;
-    this.dcrRegistry = new ChatGptDcrRegistry({ approvalSecret });
+    const durableDcrClient = authStore && ownerId
+      ? authStore.findActiveClient({
+        ownerId,
+        redirectUri: DEFAULT_CHATGPT_REDIRECT_URI,
+        clientIdPrefix: "dcr_",
+      })
+      : null;
+    this.dcrRegistry = new ChatGptDcrRegistry({
+      approvalSecret,
+      clientId: durableDcrClient?.clientId,
+    });
     this.transactionTtlMs = transactionTtlMs;
     this.codeTtlMs = codeTtlMs;
     this.accessTokenTtlMs = accessTokenTtlMs;
