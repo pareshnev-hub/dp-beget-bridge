@@ -192,6 +192,14 @@ fi
 agent_token=$(env_value "${agent_env}" DP_AGENT_TOKEN)
 [[ -n ${agent_token} ]] || agent_token=$(env_value "${legacy_env}" DP_AGENT_TOKEN)
 [[ -n ${agent_token} ]] || agent_token=$(openssl rand -hex 32)
+agent_oauth_token=$(env_value "${agent_env}" DP_AGENT_OAUTH_TOKEN)
+[[ -n ${agent_oauth_token} ]] || agent_oauth_token=$(openssl rand -hex 32)
+agent_context_secret=$(env_value "${agent_env}" DP_AGENT_CONTEXT_SECRET)
+[[ -n ${agent_context_secret} ]] || agent_context_secret=$(openssl rand -hex 32)
+if [[ ${agent_oauth_token} == "${agent_token}" ]]; then
+  echo "DP_AGENT_OAUTH_TOKEN must differ from DP_AGENT_TOKEN" >&2
+  exit 1
+fi
 mcp_token=$(env_value "${mcp_env}" DP_MCP_ACCESS_TOKEN)
 [[ -n ${mcp_token} ]] || mcp_token=$(env_value "${legacy_env}" DP_MCP_ACCESS_TOKEN)
 [[ -n ${mcp_token} ]] || mcp_token=$(openssl rand -hex 32)
@@ -200,6 +208,8 @@ mcp_token=$(env_value "${mcp_env}" DP_MCP_ACCESS_TOKEN)
   printf 'DP_AGENT_HOST=127.0.0.1\n'
   printf 'DP_AGENT_PORT=8787\n'
   printf 'DP_AGENT_TOKEN=%s\n' "${agent_token}"
+  printf 'DP_AGENT_OAUTH_TOKEN=%s\n' "${agent_oauth_token}"
+  printf 'DP_AGENT_CONTEXT_SECRET=%s\n' "${agent_context_secret}"
   printf 'DP_SESSION_HOST_SOCKET=/run/dp-beget-bridge/session-host.sock\n'
   printf 'DP_DATA_DIR=/var/lib/dp-beget-bridge-agent\n'
   printf 'DP_ALLOWED_ROOTS=%s\n' "${allowed_root}"
