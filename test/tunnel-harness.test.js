@@ -53,5 +53,6 @@ test("core updates preserve and revalidate an active tunnel harness", () => {
   assert.match(coreInstaller, /tunnel_was_active=false/);
   assert.match(coreInstaller, /systemctl stop "\$\{tunnel_unit\}"/);
   assert.match(coreInstaller, /systemctl start "\$\{tunnel_unit\}"/);
+  assert.match(coreInstaller, /node scripts\/deploy\/wait-tunnel-ready\.mjs 15000/);
   assert.match(coreInstaller, /node scripts\/tunnel-doctor\.mjs/);
 });
