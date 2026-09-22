@@ -22,7 +22,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 |---|---|---|
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
 | R0002 Core Safety & Persistent Runtime | VERIFIED | All included DP items verified; exact Beget runtime and actual ChatGPT file-contract evidence recorded for `41db306` through the outbound-only private acceptance tunnel; no public listener or Traefik change |
-| R0003 Working Direct / Private Beta | IN PROGRESS | DP-012 DCR OAuth discovery and read-only ChatGPT call verified; DP-013 durable consent/grants and DP-014 refresh/revocation are pending |
+| R0003 Working Direct / Private Beta | IN PROGRESS | DP-012 and DP-013 verified; DP-014 refresh/revocation code is implemented through M003b, with owner CLI and live lifecycle evidence pending |
 | R0004 Public Direct 1.0 | PLANNED | requires verified R0003, reproducible lifecycle and independent security gate |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
 | R0006 Optional Catalog Transport Pilot | PLANNED | requires dated feasibility decision; Relay not yet authorized by roadmap |
@@ -46,8 +46,8 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | DP-016 Residual R0002 file/session gates | #54 | P1 | R0002 | VERIFIED | `cc25961`; PRs #55–#56; FILE-10/11 deterministic cleanup/preservation; FILE-12 explicitly N/A; CI run 35703730372; exact-commit Beget 8+1 concurrent admission, `session_limit`, cleanup, lifecycle, doctor and loopback evidence |
 | DP-017 Private real-client compatibility tunnel | #58 | P1 | R0002 | VERIFIED | `41db306`; PRs #59–#62; actual ChatGPT `list_files`, upload and download calls; sanitized immediate `tunnel-client` identity; core/tunnel doctors and loopback-only Beget evidence; no Traefik change |
 | DP-012 OAuth discovery/registration spike | #12 | P1 | R0003 | VERIFIED | `35ec4d8`; PR #66; CI 35768749994; real ChatGPT DCR consent and `list_files`; three read tools only; staging constraints in `docs/OAUTH_SPIKE.md` |
-| DP-013 Owner consent/grants | #13 | P1 | R0003 | PLANNED | AUTH-04/08/09 |
-| DP-014 Refresh/revoke/re-pair | #14 | P1 | R0003 | PLANNED | AUTH-05…07/10 |
+| DP-013 Owner consent/grants | #13 | P1 | R0003 | VERIFIED | `0625a79`; PRs #68–#73; AUTH-04/08/09; live OAuth `list_files` and signed Agent context |
+| DP-014 Refresh/revoke/re-pair | #14 | P1 | R0003 | IN PROGRESS | ADR-015 and PRs #74–#76 merged; auth schema v2 and AUTH-05…07/10 automated coverage; owner CLI/live evidence pending |
 | DP-015 Analytics correctness/recovery | #15 | P2 | R0004 | PLANNED | TEL-01…07; runtime unaffected while OFF |
 
 ## Updating this file
