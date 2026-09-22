@@ -231,7 +231,10 @@ export function createBridgeMcpServer({ agent, downloads, config, requestSignal,
     outputSchema: { uri: z.string().url(), expiresAt: z.string() },
     annotations: readOnly,
   }, async ({ path: candidate }) => {
-    const { token, expiresAt } = downloads.issue(candidate);
+    const { token, expiresAt } = downloads.issue(candidate, {
+      authorization,
+      expiresAt: authorization?.grantExpiresAt,
+    });
     const uri = `${config.publicUrl.replace(/\/$/, "")}/download/${token}`;
     return {
       content: [
