@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { loadConfig } from "./config.js";
 import { FileManager } from "./files.js";
 import { SessionHostClient } from "./session-host-client.js";
+import { SessionOwnerStore } from "./session-owner-store.js";
 import { createAgentServer } from "./server.js";
 import { PathPolicy } from "../../../packages/core/src/path-policy.js";
 import { createLogger } from "../../../packages/core/src/logger.js";
@@ -25,6 +26,8 @@ const telemetry = new TelemetryClient({
 });
 const pathPolicy = new PathPolicy(config.allowedRoots);
 const sessions = new SessionHostClient({ socketPath: config.sessionHostSocket });
+const sessionOwners = new SessionOwnerStore(config.dataDir);
+await sessionOwners.init();
 const files = new FileManager({
   pathPolicy,
   logger,
@@ -33,7 +36,7 @@ const files = new FileManager({
   storageMinFreeBytes: config.storageMinFreeBytes,
   maxConcurrent: config.fileTransferMaxConcurrent,
 });
-const server = createAgentServer({ config, sessions, files, logger });
+const server = createAgentServer({ config, sessions, files, logger, sessionOwners });
 
 server.listen(config.port, config.host, () => {
   logger.info("agent.started", {
@@ -45,7 +48,10 @@ server.listen(config.port, config.host, () => {
 
 function shutdown(signal) {
   logger.info("agent.stopping", { signal });
-  server.close(() => process.exit(0));
+  server.close(() => {
+    sessionOwners.close();
+    process.exit(0);
+  });
   setTimeout(() => process.exit(1), 5000).unref();
 }
 
