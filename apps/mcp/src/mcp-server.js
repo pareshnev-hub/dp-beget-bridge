@@ -171,7 +171,10 @@ export function createBridgeMcpServer({ agent, downloads, config, requestSignal,
     inputSchema: { path: z.string().optional().default(".") },
     outputSchema: { path: z.string(), entries: z.array(fileEntry) },
     annotations: readOnly,
-  }, async ({ path: candidate }) => textResult(await agent.listFiles(candidate)));
+  }, async ({ path: candidate }) => {
+    logger?.info("mcp.tool_called", { tool: "list_files" });
+    return textResult(await agent.listFiles(candidate));
+  });
 
   server.registerTool("upload_files", {
     title: "Upload files to server",
