@@ -2,6 +2,13 @@ import crypto from "node:crypto";
 
 const DEFAULT_CHATGPT_CLIENT_ID = "https://chatgpt.com/oauth/client.json";
 const DEFAULT_CHATGPT_REDIRECT_URI = "https://chatgpt.com/connector_platform_oauth_redirect";
+const PINNED_CHATGPT_CLIENT_DOCUMENT = Object.freeze({
+  client_id: DEFAULT_CHATGPT_CLIENT_ID,
+  redirect_uris: Object.freeze([DEFAULT_CHATGPT_REDIRECT_URI]),
+  token_endpoint_auth_methods_supported: Object.freeze(["none"]),
+  grant_types: Object.freeze(["authorization_code"]),
+  response_types: Object.freeze(["code"]),
+});
 const PKCE_VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/;
 
 function base64url(buffer) {
@@ -101,6 +108,7 @@ export class ChatGptCimdRegistry {
     timeoutMs = 5000,
     maxBytes = 64 * 1024,
     cacheTtlMs = 5 * 60 * 1000,
+    allowPinnedChatGptFallback = false,
     now = () => Date.now(),
   } = {}) {
     this.fetchImpl = fetchImpl;
@@ -108,6 +116,7 @@ export class ChatGptCimdRegistry {
     this.timeoutMs = timeoutMs;
     this.maxBytes = maxBytes;
     this.cacheTtlMs = cacheTtlMs;
+    this.allowPinnedChatGptFallback = allowPinnedChatGptFallback;
     this.now = now;
     this.cache = new Map();
   }
@@ -134,15 +143,25 @@ export class ChatGptCimdRegistry {
         headers: { accept: "application/json" },
         signal,
       });
-      if (!response.ok) throw oauthError("invalid_client", "OAuth client metadata could not be verified", 400);
-      const declaredLength = Number.parseInt(response.headers.get("content-length") || "0", 10);
-      if (declaredLength > this.maxBytes) throw oauthError("invalid_client", "OAuth client metadata is too large", 400);
-      const bytes = await readBoundedBody(response, this.maxBytes);
       let document;
-      try {
-        document = JSON.parse(bytes.toString("utf8"));
-      } catch {
-        throw oauthError("invalid_client", "OAuth client metadata is not valid JSON", 400);
+      if (!response.ok) {
+        if (this.allowPinnedChatGptFallback
+          && clientId === DEFAULT_CHATGPT_CLIENT_ID
+          && response.status === 403) {
+          await response.body?.cancel().catch(() => {});
+          document = PINNED_CHATGPT_CLIENT_DOCUMENT;
+        } else {
+          throw oauthError("invalid_client", "OAuth client metadata could not be verified", 400);
+        }
+      } else {
+        const declaredLength = Number.parseInt(response.headers.get("content-length") || "0", 10);
+        if (declaredLength > this.maxBytes) throw oauthError("invalid_client", "OAuth client metadata is too large", 400);
+        const bytes = await readBoundedBody(response, this.maxBytes);
+        try {
+          document = JSON.parse(bytes.toString("utf8"));
+        } catch {
+          throw oauthError("invalid_client", "OAuth client metadata is not valid JSON", 400);
+        }
       }
       if (document.client_id !== clientId
         || !Array.isArray(document.redirect_uris)
