@@ -20,6 +20,8 @@ The local OAuth discovery endpoint reported issuer `https://bridge-oauth.pareshn
 
 These checks validate the **current R0003 OAuth route**, not a completed R0004 install or an approved 1.0 hostname. The R0004 host-preflight module itself was not executed on Beget, because R0004 code is not installed there.
 
+The dedicated `dp-beget-oauth-proxy.socket` was also loaded and active on `172.18.0.1:8791`; it triggers `dp-beget-oauth-proxy.service`, which forwards to `127.0.0.1:8789`. The exact Traefik target for the hostname was not readable from the work identity and must be verified before treating this socket as the exclusive public ingress gate. See `docs/R0004_MIGRATION_TRANSACTION.md`.
+
 ## First-migration consequences
 
 1. Preserve the four existing unit fragments, the OAuth drop-in, both old code roots, split environment files and service-owned state before changing the systemd working directories.
