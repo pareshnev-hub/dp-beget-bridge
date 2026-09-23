@@ -6,7 +6,8 @@ import path from "node:path";
 import { backupSystemdUnits } from "../scripts/release/backup-systemd-units.mjs";
 
 const UNITS = ["dp-beget-session-host.service", "dp-beget-agent.service",
-  "dp-beget-mcp.service", "dp-beget-mcp-oauth-spike.service"];
+  "dp-beget-mcp.service", "dp-beget-mcp-oauth-spike.service",
+  "dp-beget-oauth-proxy.socket", "dp-beget-oauth-proxy.service", "dp-beget-tunnel.service"];
 
 async function fixture(t) {
   const base = await mkdtemp(path.join(os.tmpdir(), "dp-unit-backup-"));
@@ -25,26 +26,51 @@ function show(unitDirectory, dropin, override = {}) {
     const fields = { LoadState: "loaded", FragmentPath: path.join(unitDirectory, unit),
       DropInPaths: unit === "dp-beget-mcp-oauth-spike.service" ? dropin : "",
       WorkingDirectory: unit === "dp-beget-mcp-oauth-spike.service"
-        ? "/opt/dp-beget-bridge-dp012-dcr" : "/opt/dp-beget-bridge",
-      User: unit.includes("session-host") ? "dp-preview" : unit.includes("agent") ? "dp-agent" : "dp-mcp",
+        ? "/opt/dp-beget-bridge-dp012-dcr" : unit === "dp-beget-tunnel.service"
+          ? "/var/lib/dp-beget-tunnel" : unit.startsWith("dp-beget-oauth-proxy.")
+            ? "" : "/opt/dp-beget-bridge",
+      User: unit === "dp-beget-oauth-proxy.socket" ? ""
+        : unit === "dp-beget-oauth-proxy.service" ? "dp-beget-oauth-proxy"
+          : unit === "dp-beget-tunnel.service" ? "dp-tunnel"
+            : unit.includes("session-host") ? "dp-preview" : unit.includes("agent") ? "dp-agent" : "dp-mcp",
       ...override[unit] };
     return Object.entries(fields).map(([key, value]) => `${key}=${value}`).join("\n") + "\n";
   };
 }
 
-test("OPS-07: first-migration snapshot preserves core units and the separate OAuth drop-in privately", {
+test("OPS-07: first-migration snapshot preserves app, dedicated ingress units and OAuth drop-in privately", {
   skip: process.getuid?.() !== 0
 }, async t => {
   const { base, unitDirectory, dropin } = await fixture(t);
   const outputDir = path.join(base, "snapshot");
   const manifest = await backupSystemdUnits({ outputDir, unitDirectory, inspectUnit: show(unitDirectory, dropin) });
-  assert.equal(manifest.files.length, 5);
+  assert.equal(manifest.files.length, 8);
+  assert.deepEqual(manifest.files.filter(item => item.path.endsWith(".socket")).map(item => item.path),
+    ["dp-beget-oauth-proxy.socket"]);
+  assert.equal(manifest.files.filter(item => item.path === "dp-beget-oauth-proxy.service").length, 1);
+  assert.equal(manifest.files.filter(item => item.path === "dp-beget-tunnel.service").length, 1);
   assert.equal(manifest.files.filter(item => item.path.endsWith("10-dp012-dcr.conf")).length, 1);
   assert.doesNotMatch(JSON.stringify(manifest), /CANARY=private/);
   assert.equal((await stat(outputDir)).mode & 0o777, 0o700);
   assert.equal((await stat(path.join(outputDir, "files", "dp-beget-agent.service"))).mode & 0o777, 0o600);
   assert.match(await readFile(path.join(outputDir, "files", "dp-beget-agent.service"), "utf8"), /CANARY=private/);
   await assert.rejects(backupSystemdUnits({ outputDir, unitDirectory, inspectUnit: show(unitDirectory, dropin) }), /EEXIST/);
+});
+
+test("OPS-07: unexpected ingress user or working directory fails before writing backup", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const { base, unitDirectory, dropin } = await fixture(t);
+  const outputDir = path.join(base, "rejected-ingress");
+  const inspectUnit = show(unitDirectory, dropin,
+    { "dp-beget-oauth-proxy.socket": { User: "root" } });
+  await assert.rejects(backupSystemdUnits({ outputDir, unitDirectory, inspectUnit }), /supported migration layout/);
+  await assert.rejects(stat(outputDir), /ENOENT/);
+  const unexpectedTunnel = show(unitDirectory, dropin,
+    { "dp-beget-tunnel.service": { WorkingDirectory: "/opt/other-tunnel" } });
+  await assert.rejects(backupSystemdUnits({ outputDir, unitDirectory, inspectUnit: unexpectedTunnel }),
+    /supported migration layout/);
+  await assert.rejects(stat(outputDir), /ENOENT/);
 });
 
 test("OPS-07: unexpected OAuth drop-in path fails before writing backup", {

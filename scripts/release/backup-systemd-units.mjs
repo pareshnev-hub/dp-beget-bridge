@@ -8,8 +8,11 @@ import { fileURLToPath } from "node:url";
 import { readRegularFile } from "./verify-artifact.mjs";
 
 const exec = promisify(execFile);
+// The socket and tunnel are independent ingress boundaries during the first R0004 migration.
+// Preserve their original fragments and drop-ins before installing a boot guard.
 const UNITS = ["dp-beget-session-host.service", "dp-beget-agent.service",
-  "dp-beget-mcp.service", "dp-beget-mcp-oauth-spike.service"];
+  "dp-beget-mcp.service", "dp-beget-mcp-oauth-spike.service",
+  "dp-beget-oauth-proxy.socket", "dp-beget-oauth-proxy.service", "dp-beget-tunnel.service"];
 const DEFAULT_UNIT_DIR = "/etc/systemd/system";
 const MAX_UNIT_BYTES = 64 * 1024;
 
@@ -50,8 +53,14 @@ export async function backupSystemdUnits({ outputDir, unitDirectory = DEFAULT_UN
   for (const unit of UNITS) {
     const value = fields(await inspectUnit(unit));
     const expectedWorkdir = unit === "dp-beget-mcp-oauth-spike.service"
-      ? "/opt/dp-beget-bridge-dp012-dcr" : "/opt/dp-beget-bridge";
-    if (value.LoadState !== "loaded" || !value.User || value.User === "root" ||
+      ? "/opt/dp-beget-bridge-dp012-dcr"
+      : unit === "dp-beget-tunnel.service" ? "/var/lib/dp-beget-tunnel"
+      : unit.startsWith("dp-beget-oauth-proxy.") ? "" : "/opt/dp-beget-bridge";
+    const expectedUser = unit === "dp-beget-oauth-proxy.socket" ? ""
+      : unit === "dp-beget-oauth-proxy.service" ? "dp-beget-oauth-proxy"
+      : unit === "dp-beget-tunnel.service" ? "dp-tunnel" : null;
+    if (value.LoadState !== "loaded" ||
+        (expectedUser === null ? (!value.User || value.User === "root") : value.User !== expectedUser) ||
         value.FragmentPath !== path.join(root, unit) ||
         typeof value.DropInPaths !== "string" || value.WorkingDirectory !== expectedWorkdir) {
       throw new Error(`${unit} does not match the supported migration layout`);
