@@ -71,8 +71,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Persistent admission gate | `adb01e1` (#104) | MCP, Agent and Session Host refuse non-health requests under root-owned flag; no updater resume wiring yet |
 | Read-only admission drain | `b5ea60f` (#105) | Health exposes paused state and in-flight count; bounded local probe rejects incomplete drain; durable operation preflight still separate |
 | Legacy systemd-unit snapshot | `f1a9b55` (#106) | Exact R0003 unit fragments and OAuth drop-in; no live unit replacement or first-migration rollback |
+| Dedicated ingress-unit snapshot | this slice | Includes OAuth proxy socket/service and tunnel fragments with layout checks; no live guard installation or service change |
 
-The seventeen slices above are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+The previous seventeen slices are merged code; the ingress snapshot is in review. This is **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
