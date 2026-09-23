@@ -154,6 +154,24 @@ export class FileManager {
     this.telemetry.track("file_transferred", { direction: "download", sizeBucket: sizeBucket(size) });
   }
 
+  async metadata(candidate) {
+    const release = this.acquireTransfer("metadata");
+    try {
+      this.telemetry.trackActivity?.();
+      const stat = await this.stat(candidate);
+      const file = this.createReadStream(candidate);
+      const hash = crypto.createHash("sha256");
+      for await (const chunk of file.stream) hash.update(chunk);
+      return {
+        size: stat.size,
+        modifiedAt: stat.modifiedAt,
+        sha256: hash.digest("hex"),
+      };
+    } finally {
+      release();
+    }
+  }
+
   async stat(candidate) {
     const resolved = this.pathPolicy.resolve(candidate);
     const stat = await fsp.stat(resolved);
