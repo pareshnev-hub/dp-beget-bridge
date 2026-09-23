@@ -1,7 +1,7 @@
 # DP Beget Bridge — Implementation Status
 
 Date: 2026-09-23
-Baseline: `ff9b7ca5d3e2dca23b4e73a81401a46bf32a493c`
+Baseline: `74b1e7200af0f9b528c9a5654eadf64e6f32f160`
 
 This is the live implementation index. Architecture documents describe targets; this file records what has implementation and verification evidence.
 
@@ -23,7 +23,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
 | R0002 Core Safety & Persistent Runtime | VERIFIED | All included DP items verified; exact Beget runtime and actual ChatGPT file-contract evidence recorded for `41db306` through the outbound-only private acceptance tunnel; no public listener or Traefik change |
 | R0003 Working Direct / Private Beta | IN PROGRESS (formal gate) | DP-012, DP-013 and DP-014 verified; #80 records the real-client OAuth terminal/file acceptance at `971d67a`. Link the release-wide AUTO-01…04 and N/N-1 evidence before changing this row to VERIFIED. |
-| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; #88–#97 merged as standalone artifact, preflight, staging, extraction, pointer and backup/restore primitives. No public install/update/rollback gate is yet accepted. |
+| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; #88–#98 merged as standalone artifact, trust-key, preflight, staging, extraction, pointer and backup/restore primitives. No public install/update/rollback gate is yet accepted. |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
 | R0006 Optional Catalog Transport Pilot | PLANNED | requires dated feasibility decision; Relay not yet authorized by roadmap |
 | R0007 Catalog Submission & Measured Scale | PLANNED | requires verified pilot and current official submission review |
@@ -63,8 +63,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | SQLite migration backup | `a5c1f92` (#94) | WAL snapshot and integrity tests; no multi-store freeze/restore wiring |
 | Private configuration backup | `b770256` (#95) | Secret-preserving file copy; no restore wiring |
 | Private backup restore | `ff9b7ca` (#97) | Manifest inventory/hash checks; standalone SQLite copies; new-directory restore only, no service rollback wiring |
+| Root trust anchor and quarantine preparation | `74b1e72` (#98) | Independent key fingerprint, root-only no-replace pin, signed staged/extracted bytes; production key custody, installer and service activation pending |
 
-The nine slices above are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+The ten slices above are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
