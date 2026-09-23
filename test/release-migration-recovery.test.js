@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { inspectMigrationRecovery } from "../scripts/release/inspect-migration-recovery.mjs";
 import { advanceMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
-import { unitBackupFixture } from "./fixtures/unit-backup.js";
+import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
 test("recovery inspection fails closed on interrupted and missing-marker phases", { skip: process.getuid?.() !== 0 }, async t => {
   const base = await mkdtemp(path.join(os.tmpdir(), "dp-recovery-"));
@@ -16,7 +16,7 @@ test("recovery inspection fails closed on interrupted and missing-marker phases"
   assert.deepEqual(await inspectMigrationRecovery({ journalPath, marker }),
     { state: "no-transaction", ingressMayOpen: false });
   await startMigrationJournal(journalPath, { oldCommit: "a".repeat(40), newCommit: "b".repeat(40),
-    artifactSha256: "c".repeat(64), unitBackupDir: backupDir });
+    artifactSha256: "c".repeat(64), unitBackupDir: backupDir, inspectServices: legacyActivityFixture });
   await advanceMigrationJournal(journalPath, "prepared", "guarded");
   await advanceMigrationJournal(journalPath, "guarded", "ingress-closed");
   assert.equal((await inspectMigrationRecovery({ journalPath, marker })).state, "missing-guard-marker");
