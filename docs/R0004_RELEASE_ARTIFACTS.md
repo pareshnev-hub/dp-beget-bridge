@@ -46,3 +46,11 @@ node scripts/release/stage-verified-artifact.mjs --artifact /candidate/dp-beget-
 **Trust boundary:** the public key must be obtained through a separate authenticated channel and pinned by a future installer; placing an untrusted key beside the archive proves nothing. The future installer must consume **only** the verified staged bytes, validate the archive extraction layout, preflight migrations and switch versions without destroying live Session Host state. Verification and staging alone never execute archive content or alter the running service.
 
 Next slices: approved release-key custody and rotation policy; pinned-key bootstrap; atomic staged install/update with migration backups, health-gated activation and rollback; clean-host and failed-update integration evidence. OPS-05 is only partially implemented until the installer enforces verification before any execution or mutation and tests rejection of a bad signature/checksum.
+
+The read-only R0004 host preflight is separate from the existing technical-preview installer. It currently supports **Ubuntu 24.04 LTS with a preconfigured HTTPS reverse proxy and a single public A record**. It checks a non-root work identity, an absolute real allowed-root directory, Node 22+, host dependencies, exact DNS→VPS IPv4 mapping and a certificate validated for the hostname using SNI. It does not mutate system configuration or install software:
+
+```bash
+node scripts/release/host-preflight.mjs --domain bridge.example.com --expected-ip 1.1.1.1 --work-user dp-preview --allowed-root /srv/dp-preview-workspace
+```
+
+The IP and hostname above are examples. A setup wizard must make these prerequisites actionable and choose the supported proxy coexistence path before OPS-01…04 can be accepted. The first-time bootstrap may need a different order for DNS/TLS provisioning; this preflight defines the already-routed profile only.
