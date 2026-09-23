@@ -50,6 +50,8 @@ The version-pointer primitive now syncs the release directory around link creati
 
 The grouped snapshot now uses private manifest format v2: it records the normalized real source directory for configuration and the explicit original path of every named SQLite store. The outer manifest digest remains bound to the migration journal. Staging returns that mapping only after verifying the bundle and restores; an eventual live rollback must check the current destination ownership and topology again before using it. No v1 grouped snapshot was installed on Beget.
 
+The SQLite child snapshot now also records each source database's UID, GID and mode in its private manifest v2. Backup rechecks source identity and ownership after the online copy; a restore validates the metadata and applies it only to the checked copy in the private staging directory. The future live replacement must separately handle WAL/SHM sidecars and destination directory ownership. No v1 SQLite backup was installed as an R0004 migration snapshot.
+
 The systemd-unit snapshot syncs its files, directories and parent before returning. `scripts/release/verify-systemd-unit-backup.mjs` checks its complete private inventory and returns the manifest SHA-256 bound into the new journal. The installer must verify it again before restoring any unit.
 
 ## Failure and rollback invariants

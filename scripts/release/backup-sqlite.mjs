@@ -24,6 +24,7 @@ export async function backupSqliteSet({ databases, outputDir, minFreeBytes = DEF
   if ((await realpath(parent)) !== parent) throw new Error("Backup parent must be a real directory");
   const names = new Set();
   const sources = new Set();
+  const sourceMetadata = new Map();
   let estimated = 0;
   for (const item of databases) {
     if (!item || typeof item.name !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(item.name) ||
@@ -33,7 +34,8 @@ export async function backupSqliteSet({ databases, outputDir, minFreeBytes = DEF
     names.add(item.name);
     sources.add(path.resolve(item.source));
     const info = await lstat(item.source);
-    if (!info.isFile()) throw new Error("Database source must be a regular file");
+    if (!info.isFile() || info.nlink !== 1) throw new Error("Database source must be a regular single-link file");
+    sourceMetadata.set(item.name, info);
     estimated += info.size;
   }
   const available = await statfs(parent);
@@ -63,10 +65,18 @@ export async function backupSqliteSet({ databases, outputDir, minFreeBytes = DEF
           throw new Error("Backup SQLite integrity or schema check failed");
         }
       } finally { copy.close(); }
+      const initial = sourceMetadata.get(name);
+      const current = await lstat(source);
+      if (!current.isFile() || current.nlink !== 1 || current.dev !== initial.dev ||
+          current.ino !== initial.ino || current.uid !== initial.uid ||
+          current.gid !== initial.gid || (current.mode & 0o777) !== (initial.mode & 0o777)) {
+        throw new Error("Database source identity or ownership changed during backup");
+      }
       records.push({ name, schemaVersion: sourceVersion, size: (await stat(destination)).size,
-        sha256: await digestFile(destination) });
+        sha256: await digestFile(destination), uid: initial.uid, gid: initial.gid,
+        mode: initial.mode & 0o777 });
     }
-    const manifest = { format: "dp-beget-bridge-sqlite-backup-v1", createdAt: new Date().toISOString(), databases: records };
+    const manifest = { format: "dp-beget-bridge-sqlite-backup-v2", createdAt: new Date().toISOString(), databases: records };
     await writeFile(path.join(output, "backup-manifest.json"), JSON.stringify(manifest, null, 2) + "\n", { flag: "wx", mode: 0o600 });
     return manifest;
   } catch (error) {
