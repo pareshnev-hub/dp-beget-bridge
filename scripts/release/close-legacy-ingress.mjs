@@ -5,6 +5,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { guardContent, PERSISTENT_MARKER } from "./ingress-boot-guard.mjs";
 import { inspectInstalledIngressGuard } from "./installed-ingress-guard-preflight.mjs";
+import { inspectInstalledWriterGuards } from "./installed-writer-guard-preflight.mjs";
+import { WRITER_START_PERMIT } from "./writer-boot-guard.mjs";
 import { inspectLegacyServiceActivity, LEGACY_UNITS, validateLegacyServiceActivity } from "./legacy-service-activity.mjs";
 import { advanceMigrationJournal, readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
 import { verifyMarker } from "./quiesce-legacy-writers.mjs";
@@ -51,13 +53,17 @@ export async function removePersistentMarker(marker) {
 // No CLI entry point: the route-target proof and migration installer must invoke this
 // only after the unit snapshot, guard install and daemon-reload have been verified.
 export async function closeLegacyIngress({ journalPath, unitDirectory, marker = PERSISTENT_MARKER,
-  inspectGuard = inspectInstalledIngressGuard, inspectServices = inspectLegacyServiceActivity,
+  permit = WRITER_START_PERMIT, inspectGuard = inspectInstalledIngressGuard,
+  inspectWriterGuards = inspectInstalledWriterGuards, inspectServices = inspectLegacyServiceActivity,
   stopUnit = systemctlStop, getState = systemctlState } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to close legacy ingress");
   const journal = await readMigrationJournal(journalPath);
   if (journal.phase !== "guarded") throw new Error("Migration must have verified the installed guard");
   await verifyJournalUnitBackup(journal);
   await inspectGuard({ unitDirectory, marker });
+  await inspectWriterGuards({ unitDirectory, marker, permit });
+  try { await lstat(permit); throw new Error("Writer start permit remains active before closure"); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
   const now = validateLegacyServiceActivity(await inspectServices());
   if (LEGACY_UNITS.some(unit => now[unit] !== journal.serviceActivity[unit])) {
     throw new Error("Legacy service activity changed since migration inventory");
