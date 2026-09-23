@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { advanceMigrationJournal, readMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
+import { unitBackupFixture } from "./fixtures/unit-backup.js";
 
 const oldCommit = "a".repeat(40);
 const newCommit = "b".repeat(40);
@@ -15,9 +16,12 @@ test("journal is durable, private, ordered and leaves no success phase on reject
   const base = await mkdtemp(path.join(os.tmpdir(), "dp-migration-journal-"));
   t.after(() => rm(base, { recursive: true, force: true }));
   const journal = path.join(base, "journal.json");
-  const initial = await startMigrationJournal(journal, { oldCommit, newCommit, artifactSha256 });
+  const { backupDir } = await unitBackupFixture(t);
+  const initial = await startMigrationJournal(journal, { oldCommit, newCommit, artifactSha256, unitBackupDir: backupDir });
   assert.equal(initial.phase, "prepared");
-  await assert.rejects(startMigrationJournal(journal, { oldCommit, newCommit, artifactSha256 }), /EEXIST/);
+  assert.match(initial.unitBackup.manifestSha256, /^[0-9a-f]{64}$/);
+  await assert.rejects(startMigrationJournal(journal, { oldCommit, newCommit, artifactSha256,
+    unitBackupDir: backupDir }), /EEXIST/);
   await assert.rejects(advanceMigrationJournal(journal, "prepared", "snapshotted"), /rejected/);
   assert.equal((await readMigrationJournal(journal)).phase, "prepared");
   await advanceMigrationJournal(journal, "prepared", "guarded");
@@ -42,4 +46,13 @@ test("journal rejects malformed previous state before any transition", { skip: p
   const journal = path.join(base, "journal.json");
   await writeFile(journal, '{"phase":"completed"}\n', { mode: 0o600 });
   await assert.rejects(advanceMigrationJournal(journal, "completed", "prepared"), /Invalid migration journal/);
+});
+
+test("journal cannot start from an unverified unit snapshot", { skip: process.getuid?.() !== 0 }, async t => {
+  const { root, backupDir } = await unitBackupFixture(t);
+  const journal = path.join(root, "not-created.json");
+  await writeFile(path.join(backupDir, "files", "dp-beget-agent.service"), "changed\n");
+  await assert.rejects(startMigrationJournal(journal, { oldCommit, newCommit, artifactSha256,
+    unitBackupDir: backupDir }), /backup file|digest mismatch/);
+  await assert.rejects(readFile(journal), /ENOENT/);
 });
