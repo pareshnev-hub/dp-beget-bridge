@@ -67,6 +67,10 @@ test("DP-003: file descriptors and results match the captured ChatGPT contract",
     accessToken: "b".repeat(32),
   };
   const contractAgent = {
+    async fileMetadata(candidate) {
+      assert.match(candidate, /^\/workspace\/incoming\/attachment-[a-f0-9]{16}$/);
+      return { size: 7, modifiedAt: "2026-09-23T00:00:00.000Z", sha256 };
+    },
     async uploadFromUrl(file, destination, overwrite) {
       uploaded.push({ file, destination, overwrite });
       return { path: `/workspace/${destination}`, size: 7, sha256 };
@@ -129,6 +133,16 @@ test("DP-003: file descriptors and results match the captured ChatGPT contract",
   assert.equal(uploaded[0].file.file_name, undefined);
   assert.equal(uploaded[0].file.mime_type, undefined);
   assert.equal(uploaded[0].overwrite, false);
+
+  const download = await client.callTool({
+    name: "download_file",
+    arguments: { path: result.structuredContent.uploaded[0].path },
+  });
+  assert.equal(download.isError, undefined);
+  assert.equal(download.structuredContent.size, 7);
+  assert.equal(download.structuredContent.sha256, sha256);
+  assert.match(download.structuredContent.uri, /^https:\/\/bridge\.example\.test\/download\//);
+  assert.ok(download.content.some((item) => item.type === "resource_link"));
 
   let rejectedMissingIdentity = false;
   try {
