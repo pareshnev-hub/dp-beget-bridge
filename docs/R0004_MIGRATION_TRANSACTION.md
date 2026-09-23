@@ -46,6 +46,8 @@ The version-pointer primitive now syncs the release directory around link creati
 
 `scripts/release/inspect-migration-recovery.mjs` gives a read-only fail-closed classification for an interrupted transition, orphaned marker, missing marker, or incomplete journal. It re-verifies the referenced unit snapshot against its stored digest and never grants permission to open ingress. The installer still needs to verify actual systemd state against the recorded activity before any recovery action.
 
+`scripts/release/stage-pre-exposure-recovery.mjs` now prepares a fully checked grouped restore in a **new** private directory only for `snapshotted`, `switched` or `locally-healthy`. It requires an intact journal-bound unit and state backup, no transition lock, the trusted marker and loaded guards, all dedicated ingress units inactive, and an explicit exclusive public route proof. It checks those boundaries again after restoring and removes the staged copy if they change. An `ingress-open` journal refuses staging even if the marker was later recreated. This does not stop candidate services or replace live files: a separately journaled controller must repeat the checks, stop writers and safely switch all live state and units before reopening ingress.
+
 The systemd-unit snapshot syncs its files, directories and parent before returning. `scripts/release/verify-systemd-unit-backup.mjs` checks its complete private inventory and returns the manifest SHA-256 bound into the new journal. The installer must verify it again before restoring any unit.
 
 ## Failure and rollback invariants
