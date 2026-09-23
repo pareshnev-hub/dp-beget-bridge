@@ -6,6 +6,7 @@ import path from "node:path";
 import { inspectInstalledManagedUnits } from "../scripts/release/installed-managed-unit-preflight.mjs";
 import { MANAGED_APP_UNITS, MANAGED_DROP_IN, stageManagedUnitOverrides } from
   "../scripts/release/stage-managed-unit-overrides.mjs";
+import { WRITER_GUARD_DROP_IN, writerGuardContent } from "../scripts/release/writer-boot-guard.mjs";
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "dp-managed-preflight-"));
@@ -16,11 +17,14 @@ async function fixture(t) {
   await stageManagedUnitOverrides({ outputDir: unitDirectory, releaseRoot });
   for (const unit of MANAGED_APP_UNITS) {
     await writeFile(path.join(unitDirectory, unit), `[Service]\nUser=dp-${unit}\n`);
+    await writeFile(path.join(unitDirectory, `${unit}.d`, WRITER_GUARD_DROP_IN), writerGuardContent());
   }
   const show = async unit => {
     const managed = path.join(unitDirectory, `${unit}.d`, MANAGED_DROP_IN);
+    const guard = path.join(unitDirectory, `${unit}.d`, WRITER_GUARD_DROP_IN);
     const dropins = unit === "dp-beget-mcp-oauth-spike.service"
-      ? `${path.join(unitDirectory, `${unit}.d`, "10-dp012-dcr.conf")} ${managed}` : managed;
+      ? `${path.join(unitDirectory, `${unit}.d`, "10-dp012-dcr.conf")} ${guard} ${managed}`
+      : `${guard} ${managed}`;
     return `LoadState=loaded\nFragmentPath=${path.join(unitDirectory, unit)}\n` +
       `DropInPaths=${dropins}\nWorkingDirectory=${releaseRoot}/current\nUser=dp-service\n` +
       `KillMode=${unit === "dp-beget-session-host.service" ? "process" : "control-group"}\n`;
@@ -47,4 +51,7 @@ test("OPS-07: missing reload or extra override refuses managed service switch", 
       : options.show(unit);
     await assert.rejects(inspectInstalledManagedUnits({ ...options, showUnit }), /managed service binding/);
   }
+  await writeFile(path.join(options.unitDirectory, "dp-beget-agent.service.d", WRITER_GUARD_DROP_IN),
+    "[Unit]\nConditionPathExists=!/wrong\n");
+  await assert.rejects(inspectInstalledManagedUnits({ ...options, showUnit: options.show }), /Changed writer guard/);
 });

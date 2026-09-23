@@ -6,12 +6,14 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { assertBridgeWritersStopped } from "./backup-state-bundle.mjs";
 import { inspectInstalledManagedUnits } from "./installed-managed-unit-preflight.mjs";
+import { inspectInstalledWriterGuards } from "./installed-writer-guard-preflight.mjs";
 import { PERSISTENT_MARKER } from "./ingress-boot-guard.mjs";
 import { advanceMigrationJournal, readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
 import { verifyMarker } from "./quiesce-legacy-writers.mjs";
 import { verifyJournalStateBundle } from "./snapshot-legacy-state.mjs";
 import { MANAGED_APP_UNITS, MANAGED_DROP_IN, managedUnitContent } from "./stage-managed-unit-overrides.mjs";
 import { readRegularFile } from "./verify-artifact.mjs";
+import { WRITER_GUARD_DROP_IN, WRITER_START_PERMIT } from "./writer-boot-guard.mjs";
 
 const exec = promisify(execFile);
 const INGRESS = ["dp-beget-oauth-proxy.socket", "dp-beget-oauth-proxy.service", "dp-beget-tunnel.service"];
@@ -48,9 +50,10 @@ async function assertOriginalAppUnits(journal, unitDirectory) {
 
 // Without a journaled rollback controller this has no CLI entry point.
 export async function installManagedOverrides({ journalPath, marker = PERSISTENT_MARKER,
-  unitDirectory = "/etc/systemd/system", stagedDirectory, releaseRoot,
+  unitDirectory = "/etc/systemd/system", stagedDirectory, releaseRoot, permit = WRITER_START_PERMIT,
   assertWritersStopped = assertBridgeWritersStopped, getState = systemctlState,
-  daemonReload = reloadSystemd, inspectInstalled = inspectInstalledManagedUnits } = {}) {
+  daemonReload = reloadSystemd, inspectInstalled = inspectInstalledManagedUnits,
+  inspectWriterGuards = inspectInstalledWriterGuards } = {}) {
   if (process.getuid?.() !== 0 || !path.isAbsolute(stagedDirectory || "")) {
     throw new Error("Root and a private staged override directory are required");
   }
@@ -61,6 +64,9 @@ export async function installManagedOverrides({ journalPath, marker = PERSISTENT
   await verifyMarker(marker);
   await trustedDirectory(unitDirectory);
   await trustedDirectory(stagedDirectory);
+  await inspectWriterGuards({ unitDirectory, marker, permit });
+  try { await lstat(permit); throw new Error("Writer start permit remains active during snapshot switch"); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
   await assertWritersStopped();
   for (const unit of INGRESS) {
     if (await getState(unit) !== "inactive") throw new Error(`Ingress remains active: ${unit}`);
@@ -79,7 +85,8 @@ export async function installManagedOverrides({ journalPath, marker = PERSISTENT
     try { await trustedDirectory(directory); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     const entries = await readdir(directory).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
-    const expected = unit === "dp-beget-mcp-oauth-spike.service" ? ["10-dp012-dcr.conf"] : [];
+    const expected = unit === "dp-beget-mcp-oauth-spike.service"
+      ? ["10-dp012-dcr.conf", WRITER_GUARD_DROP_IN] : [WRITER_GUARD_DROP_IN];
     if (JSON.stringify(entries.sort()) !== JSON.stringify(expected)) {
       throw new Error(`Unexpected existing override for ${unit}`);
     }

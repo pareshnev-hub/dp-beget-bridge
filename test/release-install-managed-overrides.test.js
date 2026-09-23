@@ -9,6 +9,7 @@ import { advanceMigrationJournal, readMigrationJournal, startMigrationJournal } 
 import { MANAGED_APP_UNITS, MANAGED_DROP_IN, stageManagedUnitOverrides } from
   "../scripts/release/stage-managed-unit-overrides.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
+import { WRITER_GUARD_DROP_IN, writerGuardContent } from "../scripts/release/writer-boot-guard.mjs";
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "dp-install-managed-"));
@@ -31,6 +32,10 @@ async function fixture(t) {
   await mkdir(path.join(unitDirectory, `${oauth}.d`));
   await writeFile(path.join(backupDir, "files", dropinPath), bytes, { mode: 0o600 });
   await writeFile(path.join(unitDirectory, dropinPath), bytes);
+  for (const unit of MANAGED_APP_UNITS) {
+    if (unit !== oauth) await mkdir(path.join(unitDirectory, `${unit}.d`));
+    await writeFile(path.join(unitDirectory, `${unit}.d`, WRITER_GUARD_DROP_IN), writerGuardContent());
+  }
   manifest.files.push({ unit: oauth, path: dropinPath, uid: 0, gid: 0, mode: 0o644,
     size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
   await writeFile(manifestPath, JSON.stringify(manifest));
@@ -61,6 +66,7 @@ test("OPS-07: install app overrides only after stopped-state snapshot and keep i
   const options = await fixture(t);
   let reloaded = false;
   const result = await installManagedOverrides({ ...options,
+    inspectWriterGuards: async () => {},
     assertWritersStopped: async () => {}, getState: async () => "inactive",
     daemonReload: async () => { reloaded = true; },
     inspectInstalled: async () => {
@@ -81,8 +87,20 @@ test("OPS-07: failed daemon reload retains marker and switch intent for recovery
 }, async t => {
   const options = await fixture(t);
   await assert.rejects(installManagedOverrides({ ...options,
+    inspectWriterGuards: async () => {},
     assertWritersStopped: async () => {}, getState: async () => "inactive",
     daemonReload: async () => { throw new Error("reload failed"); } }), /reload failed/);
   assert.equal((await readMigrationJournal(options.journalPath)).phase, "switched");
   assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+});
+
+test("OPS-07: missing writer guard blocks managed switch before journal intent", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await rm(path.join(options.unitDirectory, "dp-beget-agent.service.d", WRITER_GUARD_DROP_IN));
+  await assert.rejects(installManagedOverrides({ ...options,
+    inspectWriterGuards: async () => {}, assertWritersStopped: async () => {},
+    getState: async () => "inactive" }), /Unexpected existing override/);
+  assert.equal((await readMigrationJournal(options.journalPath)).phase, "snapshotted");
 });
