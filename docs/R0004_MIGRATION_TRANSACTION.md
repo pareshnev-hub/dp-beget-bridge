@@ -22,6 +22,8 @@ The private R0002 tunnel is another independent ingress. Its unit must also rema
 
 The root-owned transaction journal needs an explicit phase, old and new code identities, unit-file hashes, snapshot path, admission-marker state, active-service set and exact release artifact digest. Each phase must be synced **before** the next externally visible mutation. A recovery process must inspect this journal before any ingress unit is allowed to start after a reboot. A stale activation lock or an incomplete journal is a stop condition, never permission to remove the marker automatically.
 
+The scoped boot-guard drop-ins can now be prepared and checked with `scripts/release/ingress-boot-guard.mjs`. They use `ConditionPathExists=!/var/lib/dp-beget-bridge/migration-incomplete` on the proxy socket, proxy service and dedicated tunnel only. The marker is persistent across reboot. This helper **does not install** the drop-ins or create/remove the marker. A journaled installer must verify that the original units were snapshotted, install and `daemon-reload` the guards, check that systemd loaded each condition, and only then write and sync the marker before closing ingress. Guard conditions by themselves do not close an already-running socket or tunnel.
+
 ## Failure and rollback invariants
 
 | Failure point | Safe recovery target |
