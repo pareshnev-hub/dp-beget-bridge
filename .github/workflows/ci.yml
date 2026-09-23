@@ -56,5 +56,7 @@ jobs:
       - run: npm ci
       - name: Root-only pinned release preparation
         run: sudo env "PATH=$PATH" node --test test/release-trust-key.test.js test/release-prepare.test.js
+      - name: Signed release dependency preparation
+        run: sudo env "PATH=$PATH" DP_TEST_REAL_DEPENDENCIES=1 node --test test/release-prepare.test.js
       - name: MCP and Agent systemd lifecycle smoke
         run: sudo env "PATH=$PATH" npm run test:integration:systemd
