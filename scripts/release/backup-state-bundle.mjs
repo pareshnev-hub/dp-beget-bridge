@@ -55,6 +55,17 @@ export async function backupStateBundle({ configRoot, databases, outputDir,
       ((await stat(parent)).mode & 0o022) !== 0) {
     throw new Error("Backup parent must be a root-owned non-writable-by-others real directory");
   }
+  if (!path.isAbsolute(configRoot || "") || path.normalize(configRoot) !== configRoot ||
+      !Array.isArray(databases) || databases.some(item => !item ||
+        !path.isAbsolute(item.source || "") || path.normalize(item.source) !== item.source) ||
+      (await realpath(configRoot)) !== configRoot) {
+    throw new Error("State bundle source paths must be real normalized absolute paths");
+  }
+  for (const item of databases) {
+    if ((await realpath(item.source)) !== item.source) {
+      throw new Error("State bundle database source cannot traverse a link");
+    }
+  }
   await assertQuiesced();
   await mkdir(output, { mode: 0o700 });
   try {
@@ -66,9 +77,10 @@ export async function backupStateBundle({ configRoot, databases, outputDir,
       const bytes = await readRegularFile(path.join(output, name, "backup-manifest.json"), 64 * 1024);
       hashes[name] = createHash("sha256").update(bytes).digest("hex");
     }
-    const manifest = { format: "dp-beget-bridge-state-bundle-v1", createdAt: new Date().toISOString(),
+    const manifest = { format: "dp-beget-bridge-state-bundle-v2", createdAt: new Date().toISOString(),
       configEntries: config.entries.length, databases: sqlite.databases.map(item => item.name),
-      manifestSha256: hashes };
+      manifestSha256: hashes,
+      sources: { configRoot, databases: databases.map(item => ({ name: item.name, path: item.source })) } };
     await writeFile(path.join(output, "bundle-manifest.json"), JSON.stringify(manifest, null, 2) + "\n",
       { flag: "wx", mode: 0o600 });
     await syncTree(output);

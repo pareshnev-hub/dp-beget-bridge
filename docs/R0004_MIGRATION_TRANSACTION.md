@@ -48,6 +48,8 @@ The version-pointer primitive now syncs the release directory around link creati
 
 `scripts/release/stage-pre-exposure-recovery.mjs` now prepares a fully checked grouped restore in a **new** private directory only for `snapshotted`, `switched` or `locally-healthy`. It requires an intact journal-bound unit and state backup, no transition lock, the trusted marker and loaded guards, all dedicated ingress units inactive, and an explicit exclusive public route proof. It checks those boundaries again after restoring and removes the staged copy if they change. An `ingress-open` journal refuses staging even if the marker was later recreated. This does not stop candidate services or replace live files: a separately journaled controller must repeat the checks, stop writers and safely switch all live state and units before reopening ingress.
 
+The grouped snapshot now uses private manifest format v2: it records the normalized real source directory for configuration and the explicit original path of every named SQLite store. The outer manifest digest remains bound to the migration journal. Staging returns that mapping only after verifying the bundle and restores; an eventual live rollback must check the current destination ownership and topology again before using it. No v1 grouped snapshot was installed on Beget.
+
 The systemd-unit snapshot syncs its files, directories and parent before returning. `scripts/release/verify-systemd-unit-backup.mjs` checks its complete private inventory and returns the manifest SHA-256 bound into the new journal. The installer must verify it again before restoring any unit.
 
 ## Failure and rollback invariants

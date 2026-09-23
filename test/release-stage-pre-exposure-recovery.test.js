@@ -54,6 +54,8 @@ test("OPS-07: pre-exposure staging verifies real grouped state without changing 
   const options = await fixture(t);
   const result = await stagePreExposureRecovery(options);
   assert.deepEqual(result.databases, ["legacy"]);
+  assert.equal(result.sources.databases[0].name, "legacy");
+  assert.equal(path.isAbsolute(result.sources.databases[0].path), true);
   assert.equal(await readFile(path.join(options.outputDir, "config", "secret.env"), "utf8"), "CANARY=private\n");
   const db = new DatabaseSync(path.join(options.outputDir, "sqlite", "legacy.sqlite"), { readOnly: true });
   try { assert.equal(db.prepare("SELECT value FROM state").get().value, "old-state"); }

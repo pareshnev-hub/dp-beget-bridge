@@ -24,10 +24,21 @@ export async function restoreStateBundle({ backupDir, outputDir }) {
   let manifest;
   try { manifest = JSON.parse(await readRegularFile(path.join(source, "bundle-manifest.json"), 16 * 1024)); }
   catch { throw new Error("Invalid state bundle manifest"); }
-  if (manifest?.format !== "dp-beget-bridge-state-bundle-v1" ||
+  if (manifest?.format !== "dp-beget-bridge-state-bundle-v2" ||
       !Number.isSafeInteger(manifest.configEntries) || manifest.configEntries < 0 ||
       !Array.isArray(manifest.databases) || manifest.databases.length === 0 ||
       manifest.databases.some(name => typeof name !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(name)) ||
+      new Set(manifest.databases).size !== manifest.databases.length ||
+      Object.keys(manifest.sources || {}).sort().join(",") !== "configRoot,databases" ||
+      !path.isAbsolute(manifest.sources.configRoot || "") ||
+      path.normalize(manifest.sources.configRoot) !== manifest.sources.configRoot ||
+      !Array.isArray(manifest.sources.databases) ||
+      manifest.sources.databases.length !== manifest.databases.length ||
+      manifest.sources.databases.some((item, index) => !item ||
+        Object.keys(item).sort().join(",") !== "name,path" ||
+        item.name !== manifest.databases[index] || !path.isAbsolute(item.path || "") ||
+        path.normalize(item.path) !== item.path) ||
+      new Set(manifest.sources.databases.map(item => item.path)).size !== manifest.databases.length ||
       Object.keys(manifest.manifestSha256 || {}).sort().join(",") !== "config,sqlite") {
     throw new Error("Invalid state bundle manifest");
   }
@@ -49,7 +60,8 @@ export async function restoreStateBundle({ backupDir, outputDir }) {
         sqlite.databases.join(",") !== manifest.databases.join(",")) {
       throw new Error("State bundle restored inventory differs from its manifest");
     }
-    return { directory: output, databases: sqlite.databases, configEntries: config.entries };
+    return { directory: output, databases: sqlite.databases, configEntries: config.entries,
+      sources: manifest.sources };
   } catch (error) {
     await rm(output, { recursive: true, force: true });
     throw error;
