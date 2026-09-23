@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -15,6 +16,19 @@ const UNITS = ["dp-beget-session-host.service", "dp-beget-agent.service",
   "dp-beget-oauth-proxy.socket", "dp-beget-oauth-proxy.service", "dp-beget-tunnel.service"];
 const DEFAULT_UNIT_DIR = "/etc/systemd/system";
 const MAX_UNIT_BYTES = 64 * 1024;
+
+async function syncSnapshot(directory) {
+  for (const item of await readdir(directory, { withFileTypes: true })) {
+    const filename = path.join(directory, item.name);
+    if (item.isDirectory()) await syncSnapshot(filename);
+    else if (item.isFile()) {
+      const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try { await handle.sync(); } finally { await handle.close(); }
+    } else throw new Error("Unit backup contains a link or special file");
+  }
+  const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try { await handle.sync(); } finally { await handle.close(); }
+}
 
 async function showUnit(unit) {
   const { stdout } = await exec("systemctl", ["show", unit,
@@ -99,6 +113,9 @@ export async function backupSystemdUnits({ outputDir, unitDirectory = DEFAULT_UN
       files: records.map(({ bytes, ...item }) => item) };
     await writeFile(path.join(output, "backup-manifest.json"), JSON.stringify(manifest, null, 2) + "\n",
       { flag: "wx", mode: 0o600 });
+    await syncSnapshot(output);
+    const parentHandle = await open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    try { await parentHandle.sync(); } finally { await parentHandle.close(); }
     return manifest;
   } catch (error) {
     await rm(output, { recursive: true, force: true });

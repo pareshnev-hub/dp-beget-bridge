@@ -30,6 +30,8 @@ After the future install and `daemon-reload`, `scripts/release/installed-ingress
 
 `scripts/release/inspect-migration-recovery.mjs` now gives a read-only fail-closed classification for an interrupted transition, orphaned marker, missing marker, or incomplete journal. It never grants permission to open ingress. The installer still needs to record unit hashes and the active-service set and verify their actual systemd state before any recovery action.
 
+The systemd-unit snapshot now syncs its files, directories and parent before returning. `scripts/release/verify-systemd-unit-backup.mjs` checks its complete private inventory and returns the manifest SHA-256 for later journal binding. The journal does not yet store this digest; the installer must verify it again before restoring any unit.
+
 ## Failure and rollback invariants
 
 | Failure point | Safe recovery target |

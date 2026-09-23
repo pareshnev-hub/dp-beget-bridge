@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os";
 import path from "node:path";
 import { backupSystemdUnits } from "../scripts/release/backup-systemd-units.mjs";
+import { verifySystemdUnitBackup } from "../scripts/release/verify-systemd-unit-backup.mjs";
 
 const UNITS = ["dp-beget-session-host.service", "dp-beget-agent.service",
   "dp-beget-mcp.service", "dp-beget-mcp-oauth-spike.service",
@@ -44,6 +45,9 @@ test("OPS-07: first-migration snapshot preserves app, dedicated ingress units an
   const { base, unitDirectory, dropin } = await fixture(t);
   const outputDir = path.join(base, "snapshot");
   const manifest = await backupSystemdUnits({ outputDir, unitDirectory, inspectUnit: show(unitDirectory, dropin) });
+  const evidence = await verifySystemdUnitBackup({ backupDir: outputDir });
+  assert.equal(evidence.files, 8);
+  assert.match(evidence.manifestSha256, /^[0-9a-f]{64}$/);
   assert.equal(manifest.files.length, 8);
   assert.deepEqual(manifest.files.filter(item => item.path.endsWith(".socket")).map(item => item.path),
     ["dp-beget-oauth-proxy.socket"]);
