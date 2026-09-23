@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, readlink, realpath, rename, rmdir, symlink, unlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readFile, readlink, realpath, rename, rmdir, symlink, unlink } from "node:fs/promises";
 import path from "node:path";
 
 const VERSION_DIR = /^((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[a-zA-Z0-9.-]+)?)-([0-9a-f]{40})$/;
@@ -34,14 +35,25 @@ async function managedLink(root, linkName) {
   return target;
 }
 
-async function atomicLink(root, linkName, target) {
-  const temporary = path.join(root, `.next-${linkName}-${randomUUID()}`);
-  await symlink(target, temporary);
-  try { await rename(temporary, path.join(root, linkName)); }
-  finally { await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); }
+async function syncDirectory(root) {
+  const handle = await open(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try { await handle.sync(); } finally { await handle.close(); }
 }
 
-export async function switchVersion({ releaseRoot, versionDir, checkHealthy }) {
+async function atomicLink(root, linkName, target, sync = syncDirectory) {
+  const temporary = path.join(root, `.next-${linkName}-${randomUUID()}`);
+  await symlink(target, temporary);
+  try {
+    await sync(root);
+    await rename(temporary, path.join(root, linkName));
+    await sync(root);
+  } finally {
+    try { await unlink(temporary); await sync(root); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+}
+
+export async function switchVersion({ releaseRoot, versionDir, checkHealthy, sync = syncDirectory }) {
   if (!path.isAbsolute(releaseRoot || "") || typeof checkHealthy !== "function") {
     throw new Error("An absolute release root and health callback are required");
   }
@@ -51,28 +63,36 @@ export async function switchVersion({ releaseRoot, versionDir, checkHealthy }) {
   }
   const lock = path.join(root, ".activation.lock");
   await mkdir(lock, { mode: 0o700 });
+  let retainLock = false;
   try {
+    await sync(root);
     const next = await releaseDirectory(root, versionDir);
     const current = await managedLink(root, "current");
     await managedLink(root, "previous");
     if (current === next) throw new Error("Release is already active");
-    let switched = false;
+    let mutationStarted = false;
     try {
-      await atomicLink(root, "current", next);
-      switched = true;
+      mutationStarted = true;
+      await atomicLink(root, "current", next, sync);
       await checkHealthy({ current: next, previous: current });
-      if (current) await atomicLink(root, "previous", current);
+      if (current) await atomicLink(root, "previous", current, sync);
       return { current: next, previous: current };
     } catch (error) {
-      if (switched) {
+      if (mutationStarted) {
         try {
-          if (current) await atomicLink(root, "current", current);
-          else await unlink(path.join(root, "current"));
+          const active = await managedLink(root, "current");
+          if (active === next) {
+            if (current) await atomicLink(root, "current", current, sync);
+            else { await unlink(path.join(root, "current")); await sync(root); }
+          } else if (active !== current) throw new Error("Current release pointer is neither old nor candidate");
         } catch (rollbackError) {
+          retainLock = true;
           throw new AggregateError([error, rollbackError], "Activation and pointer rollback failed");
         }
       }
       throw error;
     }
-  } finally { await rmdir(lock); }
+  } finally {
+    if (!retainLock) { await rmdir(lock); await sync(root); }
+  }
 }
