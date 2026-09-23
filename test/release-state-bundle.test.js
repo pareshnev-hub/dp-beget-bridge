@@ -30,12 +30,16 @@ test("OPS-06: stopped writers produce one private, restorable config and multi-D
     assertQuiesced: async () => { checks++; } });
   assert.equal(checks, 2);
   assert.deepEqual(manifest.databases, ["agent", "oauth", "session"]);
-  assert.doesNotMatch(JSON.stringify(manifest), /PRIVATE_TOKEN|\.sqlite\/|\/tmp\//);
+  assert.equal(manifest.format, "dp-beget-bridge-state-bundle-v2");
+  assert.deepEqual(manifest.sources, { configRoot,
+    databases: databases.map(item => ({ name: item.name, path: item.source })) });
+  assert.doesNotMatch(JSON.stringify(manifest), /PRIVATE_TOKEN/);
   assert.equal((await stat(outputDir)).mode & 0o777, 0o700);
   assert.equal((await stat(path.join(outputDir, "bundle-manifest.json"))).mode & 0o777, 0o600);
   const restoreDir = path.join(root, "restored");
   const recovered = await restoreStateBundle({ backupDir: outputDir, outputDir: restoreDir });
   assert.deepEqual(recovered.databases, manifest.databases);
+  assert.deepEqual(recovered.sources, manifest.sources);
   const configOutput = path.join(restoreDir, "config");
   const sqliteOutput = path.join(restoreDir, "sqlite");
   assert.equal(await readFile(path.join(configOutput, "oauth.env"), "utf8"), "PRIVATE_TOKEN=canary\n");
@@ -44,6 +48,15 @@ test("OPS-06: stopped writers produce one private, restorable config and multi-D
     try { assert.equal(db.prepare("SELECT value FROM data").get().value, name); }
     finally { db.close(); }
   }
+  const manifestPath = path.join(outputDir, "bundle-manifest.json");
+  const altered = { ...manifest, sources: { ...manifest.sources,
+    databases: manifest.sources.databases.map((item, index) => index === 0
+      ? { ...item, path: "/tmp/../wrong.sqlite" } : item) } };
+  await writeFile(manifestPath, JSON.stringify(altered));
+  await assert.rejects(restoreStateBundle({ backupDir: outputDir,
+    outputDir: path.join(root, "unsafe-targets") }), /Invalid state bundle manifest/);
+  await assert.rejects(stat(path.join(root, "unsafe-targets")), /ENOENT/);
+  await writeFile(manifestPath, JSON.stringify(manifest));
   await writeFile(path.join(outputDir, "config", "backup-manifest.json"), "tampered");
   await assert.rejects(restoreStateBundle({ backupDir: outputDir, outputDir: path.join(root, "rejected") }),
     /manifest checksum mismatch/);

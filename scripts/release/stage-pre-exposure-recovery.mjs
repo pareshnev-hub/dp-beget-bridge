@@ -67,5 +67,6 @@ export async function stagePreExposureRecovery({ journalPath, marker = PERSISTEN
     throw error;
   }
   return { transactionId: journal.transactionId, phase: journal.phase,
-    directory: result.directory, databases: result.databases, configEntries: result.configEntries };
+    directory: result.directory, databases: result.databases, configEntries: result.configEntries,
+    sources: result.sources };
 }
