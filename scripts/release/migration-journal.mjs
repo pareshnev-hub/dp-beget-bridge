@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { lstat, open, readFile, realpath, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { verifySystemdUnitBackup } from "./verify-systemd-unit-backup.mjs";
+import { inspectLegacyServiceActivity, validateLegacyServiceActivity } from "./legacy-service-activity.mjs";
 
 const PHASES = Object.freeze(["prepared", "guarded", "ingress-closed", "quiesced",
   "snapshotted", "switched", "locally-healthy", "ingress-open", "completed"]);
@@ -25,9 +26,9 @@ async function syncDir(parent) {
 }
 
 function validate(record) {
-  if (!record || record.format !== "dp-beget-migration-journal-v2" ||
+  if (!record || record.format !== "dp-beget-migration-journal-v3" ||
       Object.keys(record).sort().join(",") !==
-        "artifactSha256,format,newCommit,oldCommit,phase,snapshotPath,transactionId,unitBackup" ||
+        "artifactSha256,format,newCommit,oldCommit,phase,serviceActivity,snapshotPath,transactionId,unitBackup" ||
       !PHASES.includes(record.phase) || !/^[0-9a-f-]{36}$/.test(record.transactionId) ||
       !SHA256.test(record.artifactSha256) || typeof record.oldCommit !== "string" ||
       !/^[0-9a-f]{40}$/.test(record.oldCommit) ||
@@ -40,6 +41,7 @@ function validate(record) {
       !SHA256.test(record.unitBackup.manifestSha256)) {
     throw new Error("Invalid migration journal");
   }
+  validateLegacyServiceActivity(record.serviceActivity);
   return record;
 }
 
@@ -53,13 +55,15 @@ export async function readMigrationJournal(filename) {
   return validate(JSON.parse(await readFile(filename, "utf8")));
 }
 
-export async function startMigrationJournal(filename, { oldCommit, newCommit, artifactSha256, unitBackupDir }) {
+export async function startMigrationJournal(filename, { oldCommit, newCommit, artifactSha256, unitBackupDir,
+  inspectServices = inspectLegacyServiceActivity }) {
   if (process.getuid?.() !== 0) throw new Error("Root is required for a migration journal");
   const parent = await trustedParent(filename);
   const evidence = await verifySystemdUnitBackup({ backupDir: unitBackupDir });
-  const record = validate({ format: "dp-beget-migration-journal-v2", transactionId: randomUUID(),
+  const serviceActivity = validateLegacyServiceActivity(await inspectServices());
+  const record = validate({ format: "dp-beget-migration-journal-v3", transactionId: randomUUID(),
     phase: "prepared", oldCommit, newCommit, artifactSha256, snapshotPath: "",
-    unitBackup: { path: unitBackupDir, manifestSha256: evidence.manifestSha256 } });
+    unitBackup: { path: unitBackupDir, manifestSha256: evidence.manifestSha256 }, serviceActivity });
   const handle = await open(filename, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   try { await handle.writeFile(JSON.stringify(record) + "\n"); await handle.sync(); }
   finally { await handle.close(); }

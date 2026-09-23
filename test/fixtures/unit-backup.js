@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { LEGACY_UNITS } from "../../scripts/release/legacy-service-activity.mjs";
 
 const UNITS = ["dp-beget-session-host.service", "dp-beget-agent.service",
   "dp-beget-mcp.service", "dp-beget-mcp-oauth-spike.service",
@@ -23,4 +24,9 @@ export async function unitBackupFixture(t) {
     format: "dp-beget-bridge-unit-backup-v1", createdAt: new Date().toISOString(), files
   }), { mode: 0o600 });
   return { root, backupDir };
+}
+
+export async function legacyActivityFixture() {
+  return Object.fromEntries(LEGACY_UNITS.map(unit => [unit,
+    unit === "dp-beget-oauth-proxy.service" ? "inactive" : "active"]));
 }
