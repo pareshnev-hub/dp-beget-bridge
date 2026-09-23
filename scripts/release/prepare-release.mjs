@@ -3,11 +3,13 @@ import { mkdir, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractVerifiedArtifact } from "./extract-verified-artifact.mjs";
+import { installQuarantinedDependencies } from "./install-quarantined-dependencies.mjs";
 import { loadPinnedReleaseKey, DEFAULT_TRUST_DIR } from "./pin-release-key.mjs";
 import { stageVerifiedArtifact } from "./stage-verified-artifact.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
-export async function prepareRelease({ artifact, manifest, signature, workspace, trustDir = DEFAULT_TRUST_DIR }) {
+export async function prepareRelease({ artifact, manifest, signature, workspace, trustDir = DEFAULT_TRUST_DIR,
+  installDependencies = installQuarantinedDependencies }) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to prepare a release");
   if (!path.isAbsolute(workspace || "")) throw new Error("A new absolute private workspace is required");
   const target = path.resolve(workspace);
@@ -28,6 +30,7 @@ export async function prepareRelease({ artifact, manifest, signature, workspace,
     if (staged.commit !== extracted.commit || staged.sha256 !== extracted.sha256) {
       throw new Error("Staged and extracted release identities differ");
     }
+    await installDependencies({ directory: extracted.directory, version: extracted.version, workspace: target });
     return { version: extracted.version, commit: extracted.commit, sha256: extracted.sha256,
       keyFingerprint: fingerprint, directory: extracted.directory };
   } catch (error) {

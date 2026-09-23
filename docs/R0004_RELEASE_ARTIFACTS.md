@@ -57,7 +57,7 @@ The root-only one-time trust bootstrap now accepts a public Ed25519 SPKI PEM acq
 node scripts/release/pin-release-key.mjs --source /independent/public.pem --sha256 <independently-verified-64-hex-fingerprint>
 ```
 
-The root-only preparation step uses this pinned key, verifies the candidate **before** creating its workspace, and then re-verifies private staged and extracted bytes. Its output is a mode `0700` quarantine directory, **not** a service-ready release directory: dependencies, service ownership, migration, admission freeze, activation and rollback remain to be implemented.
+The root-only preparation step uses this pinned key, verifies the candidate **before** creating its workspace, and then re-verifies private staged and extracted bytes. It checks the signed package and lockfile version, runs `npm ci --omit=dev --ignore-scripts` with isolated private cache and configuration, rejects dependency symlinks outside the extracted tree and removes the cache. A CI root job also exercises the real dependency installation. Its output is a mode `0700` quarantine directory, **not** a service-ready release directory: runtime ownership, migration, admission freeze, activation and rollback remain to be implemented.
 
 ```bash
 node scripts/release/prepare-release.mjs --artifact /candidate/dp-beget-bridge-1.0.0.tar.gz --manifest /candidate/manifest.json --signature /candidate/manifest.sig --workspace /new/private/release-workspace
