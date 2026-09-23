@@ -75,6 +75,12 @@ The IP and hostname above are examples. A setup wizard must make these prerequis
 
 The version-pointer module is an **unwired deployment primitive**. It accepts only a prepared `releases/<version>-<40-character-commit>` directory matching its package version, refuses unmanaged `current`/`previous` paths, takes an exclusive activation lock and switches the `current` symlink atomically. The caller supplies a health callback; failure restores the former pointer, and success records it as `previous`. It neither installs dependencies nor restarts services. The full updater must freeze admission, back up state, manage systemd units, prove readiness and restore service health after pointer rollback before OPS-06/07/09 can pass.
 
+The separate root-only promotion primitive rechecks the pinned signature and extracted source files against the signed archive, rejects source changes and dependency links outside the release, and atomically moves the prepared directory to an unused `releases/<version>-<commit>` path on the same filesystem. Code becomes root-owned and readable by service identities only during that move. It does **not** change `current`, configure systemd, migrate data or stop any service:
+
+```bash
+node scripts/release/promote-prepared-release.mjs --workspace /private/prepared-release --release-root /new/root-owned/version-root
+```
+
 An unwired SQLite backup module uses Node's online SQLite backup API and writes each named database into a new mode `0700` directory with mode `0600` copies. It checks source and backup integrity/schema, records size and SHA-256 without absolute source paths, and refuses insufficient free space or an existing output directory. The caller must stop admission and quiesce writes before a **multi-database** migration snapshot; these individually consistent backups are not an atomic snapshot across Agent, Session Host and OAuth. Transcript files, restore/recovery and retention are separate R0004 work.
 
 A separate configuration-backup primitive copies a small, symlink-free configuration tree into another new mode `0700` directory with mode `0600` files. It records relative names, original numeric ownership/mode and SHA-256 but never logs credential values. Backup and restore remain unwired to services. The orchestrator must snapshot configuration and SQLite state together only after it has quiesced the relevant writers, without touching retained transcripts.
