@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createBridgeMcpServer } from "./mcp-server.js";
 import { requestRoute } from "../../../packages/core/src/logger.js";
 import { handleOAuthRoute } from "./oauth-routes.js";
+import { isAdmissionPaused } from "../../../packages/core/src/admission-gate.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -35,6 +36,10 @@ export function createMcpHttpServer({ config, agent, downloads, logger, oauth })
     try {
       if (request.method === "GET" && url.pathname === "/health") {
         sendJson(response, 200, { status: "ok", product: "DP Beget Bridge" });
+        return;
+      }
+      if (await isAdmissionPaused(config.admissionPausePath)) {
+        sendJson(response, 503, { error: { code: "admission_paused", message: "Bridge update in progress" } });
         return;
       }
       if (await handleOAuthRoute({ request, response, url, oauth })) return;

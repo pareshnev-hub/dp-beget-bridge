@@ -60,5 +60,7 @@ jobs:
         run: sudo env "PATH=$PATH" DP_TEST_REAL_DEPENDENCIES=1 node --test test/release-prepare.test.js
       - name: Root-only grouped state snapshot and restore
         run: sudo env "PATH=$PATH" node --test test/release-state-bundle.test.js
+      - name: Root-only admission pause and verified resume
+        run: sudo env "PATH=$PATH" node --test test/release-admission-gate.test.js
       - name: MCP and Agent systemd lifecycle smoke
         run: sudo env "PATH=$PATH" npm run test:integration:systemd
