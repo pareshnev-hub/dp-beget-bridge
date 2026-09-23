@@ -7,6 +7,7 @@ import { BridgeError } from "../../../packages/core/src/errors.js";
 import { readJson, sendError, sendJson } from "../../../packages/core/src/http.js";
 import { AGENT_CONTEXT_HEADER, verifyAgentContext } from "../../../packages/auth/src/agent-context.js";
 import { requestRoute } from "../../../packages/core/src/logger.js";
+import { isAdmissionPaused } from "../../../packages/core/src/admission-gate.js";
 
 function routeSession(pathname) {
   const match = pathname.match(/^\/v1\/sessions\/([a-zA-Z0-9_-]+)(?:\/(commands|output|input|interrupt|purge))?$/);
@@ -68,6 +69,9 @@ export function createAgentServer({ config, sessions, files, logger, sessionOwne
       if (request.method === "GET" && url.pathname === "/health") {
         sendJson(response, 200, { status: "ok", product: "DP Beget Bridge", agentId: config.agentId });
         return;
+      }
+      if (await isAdmissionPaused(config.admissionPausePath)) {
+        throw new BridgeError("admission_paused", "Bridge update in progress", 503);
       }
       const authorization = authenticateAgentRequest(request, config, `${url.pathname}${url.search}`);
 

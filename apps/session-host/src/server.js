@@ -2,6 +2,7 @@ import http from "node:http";
 import { BridgeError } from "../../../packages/core/src/errors.js";
 import { readJson, sendError, sendJson } from "../../../packages/core/src/http.js";
 import { requestRoute } from "../../../packages/core/src/logger.js";
+import { isAdmissionPaused } from "../../../packages/core/src/admission-gate.js";
 
 function routeSession(pathname) {
   const match = pathname.match(/^\/v1\/sessions\/([a-zA-Z0-9_-]+)(?:\/(commands|output|input|interrupt|purge))?$/);
@@ -13,7 +14,7 @@ function routeOperation(pathname) {
   return match ? { sessionId: match[1], operationId: match[2] } : null;
 }
 
-export function createSessionHostServer({ sessions, logger }) {
+export function createSessionHostServer({ sessions, logger, admissionPausePath }) {
   return http.createServer(async (request, response) => {
     const started = Date.now();
     const url = new URL(request.url, "http://session-host.local");
@@ -22,6 +23,9 @@ export function createSessionHostServer({ sessions, logger }) {
       if (request.method === "GET" && url.pathname === "/health") {
         sendJson(response, 200, { status: "ok", product: "DP Beget Bridge Session Host" });
         return;
+      }
+      if (await isAdmissionPaused(admissionPausePath)) {
+        throw new BridgeError("admission_paused", "Bridge update in progress", 503);
       }
       if (request.method === "GET" && url.pathname === "/v1/sessions") {
         sendJson(response, 200, { sessions: await sessions.list() });
