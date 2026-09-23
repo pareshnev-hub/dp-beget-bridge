@@ -30,12 +30,13 @@ test("journal is durable, private, ordered and leaves no success phase on reject
   await assert.rejects(advanceMigrationJournal(journal, "prepared", "ingress-closed"), /rejected/);
   await advanceMigrationJournal(journal, "guarded", "ingress-closed");
   await advanceMigrationJournal(journal, "ingress-closed", "quiesced");
-  await assert.rejects(advanceMigrationJournal(journal, "quiesced", "snapshotted"), /Snapshot path required/);
+  await assert.rejects(advanceMigrationJournal(journal, "quiesced", "snapshotted"), /Snapshot path and digest required/);
   assert.equal((await readMigrationJournal(journal)).phase, "quiesced");
   const next = await advanceMigrationJournal(journal, "quiesced", "snapshotted",
-    { snapshotPath: path.join(base, "snapshot") });
+    { snapshotPath: path.join(base, "snapshot"), snapshotSha256: "d".repeat(64) });
   assert.equal(next.transactionId, initial.transactionId);
   assert.equal(next.snapshotPath, path.join(base, "snapshot"));
+  assert.equal(next.snapshotSha256, "d".repeat(64));
   assert.equal((await readFile(journal, "utf8")).includes("snapshotPath"), true);
   await writeFile(`${journal}.lock`, "interrupted transition\n", { flag: "wx", mode: 0o600 });
   await assert.rejects(advanceMigrationJournal(journal, "snapshotted", "switched"), /EEXIST/);

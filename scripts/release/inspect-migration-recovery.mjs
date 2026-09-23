@@ -1,6 +1,7 @@
 import { lstat } from "node:fs/promises";
 import { readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
 import { PERSISTENT_MARKER } from "./ingress-boot-guard.mjs";
+import { verifyJournalStateBundle } from "./snapshot-legacy-state.mjs";
 
 async function exists(filename) {
   try { return await lstat(filename); }
@@ -17,6 +18,9 @@ export async function inspectMigrationRecovery({ journalPath, marker = PERSISTEN
   if (!journalFile) return { state: "orphaned-lock-or-marker", ingressMayOpen: false };
   const journal = await readMigrationJournal(journalPath);
   await verifyJournalUnitBackup(journal);
+  if (["snapshotted", "switched", "locally-healthy", "ingress-open", "completed"].includes(journal.phase)) {
+    await verifyJournalStateBundle(journal);
+  }
   if (markerFile && (!markerFile.isFile() || markerFile.nlink !== 1 || markerFile.uid !== 0 ||
       (markerFile.mode & 0o022) !== 0)) {
     throw new Error("Untrusted persistent migration marker");

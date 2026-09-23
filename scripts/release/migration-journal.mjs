@@ -26,15 +26,21 @@ async function syncDir(parent) {
 }
 
 function validate(record) {
-  if (!record || record.format !== "dp-beget-migration-journal-v3" ||
+  if (!record || record.format !== "dp-beget-migration-journal-v4" ||
       Object.keys(record).sort().join(",") !==
-        "artifactSha256,format,newCommit,oldCommit,phase,serviceActivity,snapshotPath,transactionId,unitBackup" ||
+        "artifactSha256,format,newCommit,oldCommit,phase,serviceActivity,snapshotPath,snapshotSha256,transactionId,unitBackup" ||
       !PHASES.includes(record.phase) || !/^[0-9a-f-]{36}$/.test(record.transactionId) ||
       !SHA256.test(record.artifactSha256) || typeof record.oldCommit !== "string" ||
       !/^[0-9a-f]{40}$/.test(record.oldCommit) ||
       !/^[0-9a-f]{40}$/.test(record.newCommit) ||
       typeof record.snapshotPath !== "string" ||
-      (record.snapshotPath && !path.isAbsolute(record.snapshotPath)) ||
+      (record.snapshotPath && (!path.isAbsolute(record.snapshotPath) ||
+        path.normalize(record.snapshotPath) !== record.snapshotPath)) ||
+      typeof record.snapshotSha256 !== "string" ||
+      (record.snapshotSha256 && !SHA256.test(record.snapshotSha256)) ||
+      (PHASES.indexOf(record.phase) < PHASES.indexOf("snapshotted")
+        ? !!record.snapshotPath || !!record.snapshotSha256
+        : !record.snapshotPath || !record.snapshotSha256) ||
       !record.unitBackup || Object.keys(record.unitBackup).sort().join(",") !== "manifestSha256,path" ||
       typeof record.unitBackup.path !== "string" || !path.isAbsolute(record.unitBackup.path) ||
       path.normalize(record.unitBackup.path) !== record.unitBackup.path ||
@@ -61,8 +67,8 @@ export async function startMigrationJournal(filename, { oldCommit, newCommit, ar
   const parent = await trustedParent(filename);
   const evidence = await verifySystemdUnitBackup({ backupDir: unitBackupDir });
   const serviceActivity = validateLegacyServiceActivity(await inspectServices());
-  const record = validate({ format: "dp-beget-migration-journal-v3", transactionId: randomUUID(),
-    phase: "prepared", oldCommit, newCommit, artifactSha256, snapshotPath: "",
+  const record = validate({ format: "dp-beget-migration-journal-v4", transactionId: randomUUID(),
+    phase: "prepared", oldCommit, newCommit, artifactSha256, snapshotPath: "", snapshotSha256: "",
     unitBackup: { path: unitBackupDir, manifestSha256: evidence.manifestSha256 }, serviceActivity });
   const handle = await open(filename, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   try { await handle.writeFile(JSON.stringify(record) + "\n"); await handle.sync(); }
@@ -92,13 +98,15 @@ export async function advanceMigrationJournal(filename, expectedPhase, nextPhase
   try {
     const previous = await readMigrationJournal(filename);
     if (previous.phase !== expectedPhase || PHASES.indexOf(nextPhase) !== PHASES.indexOf(expectedPhase) + 1 ||
-        Object.keys(details).some(key => key !== "snapshotPath") ||
+        Object.keys(details).some(key => !["snapshotPath", "snapshotSha256"].includes(key)) ||
         (details.snapshotPath !== undefined && (!path.isAbsolute(details.snapshotPath) ||
           path.normalize(details.snapshotPath) !== details.snapshotPath))) {
       throw new Error("Migration journal phase transition rejected");
     }
+    if (nextPhase === "snapshotted" && (!details.snapshotPath || !details.snapshotSha256)) {
+      throw new Error("Snapshot path and digest required");
+    }
     next = validate({ ...previous, ...details, phase: nextPhase });
-    if (nextPhase === "snapshotted" && !next.snapshotPath) throw new Error("Snapshot path required");
   } catch (error) {
     await unlink(lock); await syncDir(parent);
     throw error;
