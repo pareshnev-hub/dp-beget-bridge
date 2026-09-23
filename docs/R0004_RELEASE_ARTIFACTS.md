@@ -81,6 +81,12 @@ The separate root-only promotion primitive rechecks the pinned signature and ext
 node scripts/release/promote-prepared-release.mjs --workspace /private/prepared-release --release-root /new/root-owned/version-root
 ```
 
+A read-only update preflight checks that an existing `current` link points to a managed version, required Session Host/Agent/MCP units are active and run as distinct non-root users from that link, optional OAuth/tunnel states are known, and Session Host uses `KillMode=process` so systemd restart does not kill tmux. It fails on the current mutable R0003 `/opt/dp-beget-bridge` service directory by design; a separately tested first migration to the versioned systemd layout is still required. This preflight does not freeze admission or prove that no operations are running:
+
+```bash
+node scripts/release/service-preflight.mjs --release-root /existing/version-root
+```
+
 An unwired SQLite backup module uses Node's online SQLite backup API and writes each named database into a new mode `0700` directory with mode `0600` copies. It checks source and backup integrity/schema, records size and SHA-256 without absolute source paths, and refuses insufficient free space or an existing output directory. The caller must stop admission and quiesce writes before a **multi-database** migration snapshot; these individually consistent backups are not an atomic snapshot across Agent, Session Host and OAuth. Transcript files, restore/recovery and retention are separate R0004 work.
 
 A separate configuration-backup primitive copies a small, symlink-free configuration tree into another new mode `0700` directory with mode `0600` files. It records relative names, original numeric ownership/mode and SHA-256 but never logs credential values. Backup and restore remain unwired to services. The orchestrator must snapshot configuration and SQLite state together only after it has quiesced the relevant writers, without touching retained transcripts.
