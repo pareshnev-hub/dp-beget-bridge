@@ -23,7 +23,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
 | R0002 Core Safety & Persistent Runtime | VERIFIED | All included DP items verified; exact Beget runtime and actual ChatGPT file-contract evidence recorded for `41db306` through the outbound-only private acceptance tunnel; no public listener or Traefik change |
 | R0003 Working Direct / Private Beta | IN PROGRESS (formal gate) | DP-012, DP-013 and DP-014 verified; #80 records the real-client OAuth terminal/file acceptance at `971d67a`. Link the release-wide AUTO-01…04 and N/N-1 evidence before changing this row to VERIFIED. |
-| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; #88–#112 include signed artifact, trust, preflight, backup/restore, admission, systemd snapshot, ingress boot guard and migration journal/recovery primitives. No public install/update/rollback gate is yet accepted. |
+| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; implementation slices through #122 cover signed artifacts, trust, backups, ingress closure, writer quiescence, grouped snapshot and managed unit installation. The public install/update/rollback gate is still open. |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
 | R0006 Optional Catalog Transport Pilot | PLANNED | requires dated feasibility decision; Relay not yet authorized by roadmap |
 | R0007 Catalog Submission & Measured Scale | PLANNED | requires verified pilot and current official submission review |
@@ -73,10 +73,19 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Legacy systemd-unit snapshot | `f1a9b55` (#106) | Exact R0003 unit fragments and OAuth drop-in; no live unit replacement or first-migration rollback |
 | Dedicated ingress-unit snapshot | `62a6a63` (#109) | Includes OAuth proxy socket/service and tunnel fragments with layout checks; no live guard installation or service change |
 | Persistent ingress boot guard staging | `98c7545` (#110) | Root-only guard drop-ins for proxy socket/service and tunnel; no live installation or journaled close yet |
-| Migration phase journal | `f5e7b60` (#111) | Root-only synced phase updates and exclusive transition lock; unit hashes and actual service state are not recorded yet |
+| Migration phase journal | `f5e7b60` (#111) | Root-only synced phase updates and exclusive transition lock; expanded with snapshot and service evidence in #116, #117 and #120 |
 | Read-only interrupted-migration assessment | `683092b` (#112) | Classifies orphaned marker/lock and incomplete phases; never authorizes reopening ingress |
+| Loaded ingress guard preflight | `b149851` (#114) | Requires exact three systemd drop-ins loaded; no live guard installed |
+| Synced unit backup and verification | `f2bbaf3` (#115) | Root-only complete inventory/hash proof before journal binding |
+| Journal-bound unit snapshot | `5300e4a` (#116) | v2 journal refuses changed or incomplete unit snapshot |
+| Recorded legacy service activity | `86c07d9` (#117) | v3 journal saves seven-unit activity; requires active core and ingress |
+| Closed legacy ingress phase | `ebfb3d0` (#118) | Marker before socket/service/tunnel stops; isolated root CI; public route exclusivity still unproven |
+| Legacy writer quiescence phase | `54c2f7a` (#119) | Ledger check before Session Host stop; independent R0003 request-drain proof still required |
+| Journal-bound grouped state snapshot | `df2047b` (#120) | v4 journal records config/SQLite bundle-manifest digest; full restore gate pending |
+| Managed unit staging and loaded check | `de4e501` (#121) | Four version-link drop-ins and tmux-safe KillMode check; no live unit change |
+| Journaled managed unit installation | `f8ed61d` (#122) | Isolated closed-ingress unit install and daemon-reload with fail-closed state; no pointer activation or recovery wiring |
 
-These twenty-one slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These thirty slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
