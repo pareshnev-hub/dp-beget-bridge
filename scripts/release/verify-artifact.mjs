@@ -70,7 +70,7 @@ export async function verifyArtifact({ artifact, manifest, signature, trustedKey
   }
 
   await checkArtifact(artifact, record);
-  return { version: record.version, commit: record.commit, sha256: record.artifact.sha256 };
+  return { version: record.version, commit: record.commit, sha256: record.artifact.sha256, size: record.artifact.size };
 }
 
 export async function checkArtifact(artifact, record) {
