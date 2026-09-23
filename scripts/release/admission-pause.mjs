@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath, stat, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_ADMISSION_PAUSE_PATH } from "../../packages/core/src/admission-gate.js";
@@ -22,9 +22,21 @@ async function syncDirectory(directory) {
 
 async function assertFlag(flag) {
   const info = await lstat(flag);
-  if (!info.isFile() || info.nlink !== 1 || info.uid !== 0 || (info.mode & 0o022) !== 0) {
+  if (!info.isFile() || info.nlink !== 1 || info.uid !== 0 || (info.mode & 0o022) !== 0 || info.size > 128) {
     throw new Error("Admission gate flag is not a root-owned regular file");
   }
+}
+
+export async function verifyAdmissionPause({ flag = DEFAULT_ADMISSION_PAUSE_PATH } = {}) {
+  if (process.getuid?.() !== 0 || !path.isAbsolute(flag)) {
+    throw new Error("Root and an absolute admission flag path are required");
+  }
+  await trustedDirectory(path.dirname(flag));
+  await assertFlag(flag);
+  if (await readFile(flag, "utf8") !== "dp-beget-bridge-admission-paused-v1\n") {
+    throw new Error("Unexpected admission pause flag content");
+  }
+  return { paused: true };
 }
 
 export async function pauseAdmission({ flag = DEFAULT_ADMISSION_PAUSE_PATH } = {}) {

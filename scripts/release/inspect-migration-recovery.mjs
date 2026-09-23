@@ -35,6 +35,9 @@ export async function inspectMigrationRecovery({ journalPath, marker = PERSISTEN
     return { state: "missing-guard-marker", phase: journal.phase, ingressMayOpen: false };
   }
   if (lockFile) return { state: "interrupted-transition", phase: journal.phase, ingressMayOpen: false };
+  if (journal.phase === "ingress-open") {
+    return { state: "possibly-exposed", phase: journal.phase, ingressMayOpen: false };
+  }
   if (journal.phase !== "completed") {
     return { state: "incomplete-transaction", phase: journal.phase, ingressMayOpen: false };
   }

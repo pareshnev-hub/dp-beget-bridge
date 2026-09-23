@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { lstat, open, realpath, stat } from "node:fs/promises";
+import { lstat, open, realpath, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { guardContent, PERSISTENT_MARKER } from "./ingress-boot-guard.mjs";
 import { inspectInstalledIngressGuard } from "./installed-ingress-guard-preflight.mjs";
 import { inspectLegacyServiceActivity, LEGACY_UNITS, validateLegacyServiceActivity } from "./legacy-service-activity.mjs";
 import { advanceMigrationJournal, readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
+import { verifyMarker } from "./quiesce-legacy-writers.mjs";
 
 const exec = promisify(execFile);
 const STOP_ORDER = Object.freeze([
@@ -29,7 +30,7 @@ async function syncDirectory(directory) {
   try { await handle.sync(); } finally { await handle.close(); }
 }
 
-async function createPersistentMarker(marker) {
+export async function createPersistentMarker(marker) {
   guardContent(marker);
   const parent = path.dirname(marker);
   const info = await stat(parent);
@@ -39,6 +40,12 @@ async function createPersistentMarker(marker) {
   try { await handle.writeFile("dp-beget-bridge-migration-incomplete-v1\n"); await handle.sync(); }
   finally { await handle.close(); }
   await syncDirectory(parent);
+}
+
+export async function removePersistentMarker(marker) {
+  await verifyMarker(marker);
+  await unlink(marker);
+  await syncDirectory(path.dirname(marker));
 }
 
 // No CLI entry point: the route-target proof and migration installer must invoke this
