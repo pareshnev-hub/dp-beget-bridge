@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { lstat, readFile, realpath, readdir, rm } from "node:fs/promises";
+import { lstat, readFile, readlink, realpath, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -8,7 +8,7 @@ const MAX_ENTRIES = 100000;
 
 function within(root, filename) { return filename === root || filename.startsWith(`${root}${path.sep}`); }
 
-async function inspectInstalledTree(root, hasDependencies) {
+export async function inspectInstalledTree(root, hasDependencies) {
   const modules = path.join(root, "node_modules");
   let modulesInfo;
   try { modulesInfo = await lstat(modules); }
@@ -21,6 +21,7 @@ async function inspectInstalledTree(root, hasDependencies) {
       const filename = path.join(directory, name);
       const info = await lstat(filename);
       if (info.isSymbolicLink()) {
+        if (path.isAbsolute(await readlink(filename))) throw new Error("Installed dependency has an absolute link");
         const resolved = await realpath(filename);
         if (!within(root, resolved)) throw new Error("Installed dependency link leaves the release tree");
       } else if (info.isDirectory()) await walk(filename);
