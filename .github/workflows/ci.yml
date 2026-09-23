@@ -54,5 +54,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y tmux
       - run: npm ci
+      - name: Root-only pinned release preparation
+        run: sudo env "PATH=$PATH" node --test test/release-trust-key.test.js test/release-prepare.test.js
       - name: MCP and Agent systemd lifecycle smoke
         run: sudo env "PATH=$PATH" npm run test:integration:systemd

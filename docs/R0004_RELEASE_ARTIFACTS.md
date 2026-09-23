@@ -1,6 +1,6 @@
 # R0004 release artifact trust — first implementation slice
 
-Status: **CANDIDATE BUILD/SIGN/VERIFY IMPLEMENTED; INSTALLER ENFORCEMENT PENDING**. This does not install, update, publish, or activate a release.
+Status: **CANDIDATE BUILD/SIGN/VERIFY AND ROOT-OWNED PREPARATION IMPLEMENTED; INSTALLER ENFORCEMENT PENDING**. This does not install, update, publish, or activate a release.
 
 `scripts/release/verify-artifact.mjs` checks a detached Ed25519 signature over the **exact bytes** of a small JSON manifest, then streams the named archive and checks its signed size and SHA-256 digest. The release manifest format is:
 
@@ -51,7 +51,19 @@ node scripts/release/extract-verified-artifact.mjs --artifact /stage/dp-beget-br
 
 **Trust boundary:** the public key must be obtained through a separate authenticated channel and pinned by a future installer; placing an untrusted key beside the archive proves nothing. The future installer must consume **only** the verified staged bytes, preflight migrations and switch versions without destroying live Session Host state. Verification, staging and quarantine extraction never execute archive content or alter the running service.
 
-Next slices: approved release-key custody and rotation policy; pinned-key bootstrap; atomic staged install/update with migration backups, health-gated activation and rollback; clean-host and failed-update integration evidence. OPS-05 is only partially implemented until the installer enforces verification before any execution or mutation and tests rejection of a bad signature/checksum.
+The root-only one-time trust bootstrap now accepts a public Ed25519 SPKI PEM acquired separately from the release candidate and its independently verified SHA-256 fingerprint. It creates `/etc/dp-beget-bridge/release-trust/ed25519-public.pem` in a root-owned, non-writable-by-others directory and refuses replacement. The operator must obtain the key and fingerprint independently; this repository does not contain the production key or decide key custody and rotation. The executable bootstrap itself must come from a trusted installation source, never from an unverified candidate.
+
+```bash
+node scripts/release/pin-release-key.mjs --source /independent/public.pem --sha256 <independently-verified-64-hex-fingerprint>
+```
+
+The root-only preparation step uses this pinned key, verifies the candidate **before** creating its workspace, and then re-verifies private staged and extracted bytes. Its output is a mode `0700` quarantine directory, **not** a service-ready release directory: dependencies, service ownership, migration, admission freeze, activation and rollback remain to be implemented.
+
+```bash
+node scripts/release/prepare-release.mjs --artifact /candidate/dp-beget-bridge-1.0.0.tar.gz --manifest /candidate/manifest.json --signature /candidate/manifest.sig --workspace /new/private/release-workspace
+```
+
+Next slices: approved release-key custody and rotation policy; verified public installer bootstrap; atomic staged install/update with migration backups, health-gated activation and rollback; clean-host and failed-update integration evidence. OPS-05 is only partially implemented until the installer consumes pinned-key-prepared bytes and tests rejection of a bad signature/checksum on supported hosts.
 
 The read-only R0004 host preflight is separate from the existing technical-preview installer. It currently supports **Ubuntu 24.04 LTS with a preconfigured HTTPS reverse proxy and a single public A record**. It checks a non-root work identity, an absolute real allowed-root directory, Node 22+, host dependencies, exact DNS→VPS IPv4 mapping and a certificate validated for the hostname using SNI. It does not mutate system configuration or install software:
 
