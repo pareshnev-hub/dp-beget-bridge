@@ -61,13 +61,17 @@ function requireSessionOwner(authorization, sessionOwners, sessionId) {
 }
 
 export function createAgentServer({ config, sessions, files, logger, sessionOwners = new Map() }) {
+  let inFlightRequests = 0;
   return http.createServer(async (request, response) => {
     const started = Date.now();
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
     const route = requestRoute(url.pathname);
+    const tracked = !(request.method === "GET" && url.pathname === "/health");
+    if (tracked) inFlightRequests++;
     try {
       if (request.method === "GET" && url.pathname === "/health") {
-        sendJson(response, 200, { status: "ok", product: "DP Beget Bridge", agentId: config.agentId });
+        sendJson(response, 200, { status: "ok", product: "DP Beget Bridge", agentId: config.agentId,
+          admission: await isAdmissionPaused(config.admissionPausePath) ? "paused" : "open", inFlightRequests });
         return;
       }
       if (await isAdmissionPaused(config.admissionPausePath)) {
@@ -250,6 +254,7 @@ export function createAgentServer({ config, sessions, files, logger, sessionOwne
       if (!response.headersSent) sendError(response, error);
       else response.destroy(error);
     } finally {
+      if (tracked) inFlightRequests--;
       logger.debug("agent.request_completed", {
         method: request.method,
         route,

@@ -1,7 +1,7 @@
 # DP Beget Bridge — Implementation Status
 
 Date: 2026-09-23
-Baseline: `63a25b2f0d34843c3c7ec9a39da9748d0d95434c`
+Baseline: `adb01e1bf9c02d3bad72f1d27796825fdeec4f77`
 
 This is the live implementation index. Architecture documents describe targets; this file records what has implementation and verification evidence.
 
@@ -23,7 +23,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
 | R0002 Core Safety & Persistent Runtime | VERIFIED | All included DP items verified; exact Beget runtime and actual ChatGPT file-contract evidence recorded for `41db306` through the outbound-only private acceptance tunnel; no public listener or Traefik change |
 | R0003 Working Direct / Private Beta | IN PROGRESS (formal gate) | DP-012, DP-013 and DP-014 verified; #80 records the real-client OAuth terminal/file acceptance at `971d67a`. Link the release-wide AUTO-01…04 and N/N-1 evidence before changing this row to VERIFIED. |
-| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; #88–#102 merged as standalone artifact, trust-key, preflight, staging, extraction, dependency preparation, version promotion, pointer and backup/restore primitives. No public install/update/rollback gate is yet accepted. |
+| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; #88–#104 merged as artifact, trust-key, preflight, staging, extraction, dependencies, version promotion, pointer, backup/restore and admission primitives. No public install/update/rollback gate is yet accepted. |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
 | R0006 Optional Catalog Transport Pilot | PLANNED | requires dated feasibility decision; Relay not yet authorized by roadmap |
 | R0007 Catalog Submission & Measured Scale | PLANNED | requires verified pilot and current official submission review |
@@ -67,8 +67,10 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Private dependency installation | `e87de56` (#100) | Signed lockfile, npm lifecycle scripts disabled, isolated cache, real dependency CI; no running service change |
 | Inert versioned promotion | `a186133` (#101) | Rechecks signed source and dependency links; moves release into versioned root; no activation or rollback orchestration |
 | Read-only managed service preflight | `63a25b2` (#102) | Requires already-versioned healthy services and tmux-safe Session Host; current R0003 mutable layout needs separate migration |
+| Grouped stopped-state snapshot | `749ee1a` (#103) | Root-only config and multi-DB copy/restore; no live state replacement or service orchestration |
+| Persistent admission gate | `adb01e1` (#104) | MCP, Agent and Session Host refuse non-health requests under root-owned flag; no updater resume wiring yet |
 
-The thirteen slices above are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+The fifteen slices above are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
