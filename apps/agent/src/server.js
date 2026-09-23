@@ -181,6 +181,11 @@ export function createAgentServer({ config, sessions, files, logger, sessionOwne
         sendJson(response, 201, result);
         return;
       }
+      if (request.method === "GET" && url.pathname === "/v1/files/metadata") {
+        requireScope(authorization, "files:read");
+        sendJson(response, 200, await files.metadata(url.searchParams.get("path")));
+        return;
+      }
       if (request.method === "GET" && url.pathname === "/v1/files/content") {
         requireScope(authorization, "files:read");
         const release = files.acquireTransfer("download");

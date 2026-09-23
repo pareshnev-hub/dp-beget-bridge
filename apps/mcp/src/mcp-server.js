@@ -228,9 +228,15 @@ export function createBridgeMcpServer({ agent, downloads, config, requestSignal,
     title: "Download a server file",
     description: "Create a short-lived download link for a file on the connected server.",
     inputSchema: { path: z.string() },
-    outputSchema: { uri: z.string().url(), expiresAt: z.string() },
+    outputSchema: {
+      uri: z.string().url(),
+      expiresAt: z.string(),
+      size: z.number().int().nonnegative(),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    },
     annotations: readOnly,
   }, async ({ path: candidate }) => {
+    const metadata = await agent.fileMetadata(candidate);
     const { token, expiresAt } = downloads.issue(candidate, {
       authorization,
       expiresAt: authorization?.grantExpiresAt,
@@ -238,10 +244,18 @@ export function createBridgeMcpServer({ agent, downloads, config, requestSignal,
     const uri = `${config.publicUrl.replace(/\/$/, "")}/download/${token}`;
     return {
       content: [
-        { type: "text", text: `Download link expires at ${expiresAt}.` },
+        {
+          type: "text",
+          text: `Download link expires at ${expiresAt}. File size: ${metadata.size} bytes. SHA-256: ${metadata.sha256}.`,
+        },
         { type: "resource_link", uri, name: path.basename(candidate) || "download", description: "Short-lived DP Beget Bridge download" },
       ],
-      structuredContent: { uri, expiresAt },
+      structuredContent: {
+        uri,
+        expiresAt,
+        size: metadata.size,
+        sha256: metadata.sha256,
+      },
     };
   });
 

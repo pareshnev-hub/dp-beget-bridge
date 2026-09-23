@@ -37,6 +37,18 @@ test("uploads, lists, copies, moves, and deletes files inside allowed roots", as
   await assert.rejects(fs.access(path.join(root, "moved.txt")));
 });
 
+test("download metadata reports exact size and SHA-256", async (t) => {
+  const { root, manager } = await createFixture(t);
+  await fs.writeFile(path.join(root, "canary.txt"), "hello");
+
+  const metadata = await manager.metadata("canary.txt");
+
+  assert.equal(metadata.size, 5);
+  assert.match(metadata.modifiedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(metadata.sha256, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+  assert.equal(manager.activeTransfers, 0);
+});
+
 test("rejects uploads over the configured size", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-files-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
