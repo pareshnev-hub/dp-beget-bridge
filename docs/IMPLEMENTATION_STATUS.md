@@ -1,7 +1,7 @@
 # DP Beget Bridge — Implementation Status
 
-Date: 2026-09-22
-Baseline: `35ec4d8ef3a575d6d4707cb134d8b33d9b02fc76`
+Date: 2026-09-23
+Baseline: `b7702564f06f3c723c87a10f8e915221e4c6ae93`
 
 This is the live implementation index. Architecture documents describe targets; this file records what has implementation and verification evidence.
 
@@ -22,8 +22,8 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 |---|---|---|
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
 | R0002 Core Safety & Persistent Runtime | VERIFIED | All included DP items verified; exact Beget runtime and actual ChatGPT file-contract evidence recorded for `41db306` through the outbound-only private acceptance tunnel; no public listener or Traefik change |
-| R0003 Working Direct / Private Beta | IN PROGRESS | DP-012, DP-013 and DP-014 verified; remaining release gate is final real-client terminal OAuth E2E and private-beta operational acceptance |
-| R0004 Public Direct 1.0 | PLANNED | requires verified R0003, reproducible lifecycle and independent security gate |
+| R0003 Working Direct / Private Beta | IN PROGRESS (formal gate) | DP-012, DP-013 and DP-014 verified; #80 records the real-client OAuth terminal/file acceptance at `971d67a`. Link the release-wide AUTO-01…04 and N/N-1 evidence before changing this row to VERIFIED. |
+| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; #88–#95 merged as standalone artifact, preflight, staging, extraction, pointer and backup primitives. No public install/update/rollback gate is yet accepted. |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
 | R0006 Optional Catalog Transport Pilot | PLANNED | requires dated feasibility decision; Relay not yet authorized by roadmap |
 | R0007 Catalog Submission & Measured Scale | PLANNED | requires verified pilot and current official submission review |
@@ -49,6 +49,21 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | DP-013 Owner consent/grants | #13 | P1 | R0003 | VERIFIED | `0625a79`; PRs #68–#73; AUTH-04/08/09; live OAuth `list_files` and signed Agent context |
 | DP-014 Refresh/revoke/re-pair | #14 | P1 | R0003 | VERIFIED | `4738635`; PRs #74–#78; AUTH-05…07/10; CI runs 35790732466, 35791425640, 35791923413, 35792275181 and 35792676446; Beget schema v1→v2, live rotation/reuse/revocation smoke and real ChatGPT OAuth `list_files` |
 | DP-015 Analytics correctness/recovery | #15 | P2 | R0004 | PLANNED | TEL-01…07; runtime unaffected while OFF |
+
+## R0004 implementation slices (not release acceptance)
+
+| Slice | Merged commit | Evidence / remaining boundary |
+|---|---|---|
+| Signed candidate verification | `80c98af` (#88) | Ed25519 manifest verification; tampered bytes and wrong-key tests |
+| Exact-commit build and offline signing | `ec0175e` (#89) | Repeatable archive on the supported toolchain; key generation/custody and public trust distribution pending |
+| Private staging and re-verification | `c8daf52` (#90) | Copied bytes checked again; no installer enforcement yet |
+| Read-only host preflight | `1d79f4e` (#91) | Ubuntu 24.04, DNS/TLS checks; live Beget OS/dependency probe passed, DNS/TLS pending |
+| Quarantine extraction | `2e6316d` (#92) | Signed link/traversal rejection before write; no service activation |
+| Atomic version pointer | `0d5dba8` (#93) | Health failure restores old pointer in tests; no systemd orchestration or crash recovery |
+| SQLite migration backup | `a5c1f92` (#94) | WAL snapshot and integrity tests; no multi-store freeze/restore wiring |
+| Private configuration backup | `b770256` (#95) | Secret-preserving file copy; no restore wiring |
+
+The eight slices above are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
