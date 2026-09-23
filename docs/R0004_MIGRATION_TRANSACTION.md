@@ -26,6 +26,8 @@ The scoped boot-guard drop-ins can now be prepared and checked with `scripts/rel
 
 `scripts/release/migration-journal.mjs` provides a root-only, private, synced phase record for an exact old/new commit and release digest. Its exclusive transition lock survives interruption and blocks a second writer until recovery has inspected the state. This is only a primitive: it does not yet record unit hashes, active-service sets or marker state, and it must not be used to drive a live migration until those fields and recovery checks are implemented.
 
+`scripts/release/inspect-migration-recovery.mjs` now gives a read-only fail-closed classification for an interrupted transition, orphaned marker, missing marker, or incomplete journal. It never grants permission to open ingress. The installer still needs to record unit hashes and the active-service set and verify their actual systemd state before any recovery action.
+
 ## Failure and rollback invariants
 
 | Failure point | Safe recovery target |
