@@ -52,7 +52,10 @@ approved for public exposure.
 - `upload_files` is open-world until DP-004 constrains source fetching.
 - `copy_path` is destructive because `overwrite=true` can replace data.
 - every file tool returning `structuredContent` declares an `outputSchema` that
-  matches its actual result shape.
+  matches its actual result shape;
+- `download_file` returns the server-observed byte size and SHA-256 alongside
+  its short-lived resource link, so a real client can verify an exact small-file
+  round trip without needing model-side access to the user-facing URL.
 
 Contract tests inspect the advertised MCP descriptor, reject missing
 `file_id`, exercise the optional metadata path, and validate structured output.
