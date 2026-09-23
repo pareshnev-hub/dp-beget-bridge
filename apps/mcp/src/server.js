@@ -21,10 +21,13 @@ function authenticate(request, config, oauth) {
 }
 
 export function createMcpHttpServer({ config, agent, downloads, logger, oauth }) {
+  let inFlightRequests = 0;
   return http.createServer(async (request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
     const route = requestRoute(url.pathname, { mcpPath: config.path });
     const started = Date.now();
+    const tracked = !(request.method === "GET" && url.pathname === "/health");
+    if (tracked) inFlightRequests++;
     const requestAbort = new AbortController();
     const abortRequest = () => {
       if (!requestAbort.signal.aborted) requestAbort.abort(new Error("MCP client disconnected"));
@@ -35,7 +38,8 @@ export function createMcpHttpServer({ config, agent, downloads, logger, oauth })
     });
     try {
       if (request.method === "GET" && url.pathname === "/health") {
-        sendJson(response, 200, { status: "ok", product: "DP Beget Bridge" });
+        sendJson(response, 200, { status: "ok", product: "DP Beget Bridge",
+          admission: await isAdmissionPaused(config.admissionPausePath) ? "paused" : "open", inFlightRequests });
         return;
       }
       if (await isAdmissionPaused(config.admissionPausePath)) {
@@ -104,6 +108,7 @@ export function createMcpHttpServer({ config, agent, downloads, logger, oauth })
       if (!response.headersSent) sendJson(response, 500, { error: { code: "internal_error", message: "Internal server error" } });
       else response.destroy(error);
     } finally {
+      if (tracked) inFlightRequests--;
       logger.debug("mcp.request_completed", {
         method: request.method,
         route,

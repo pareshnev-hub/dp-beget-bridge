@@ -15,13 +15,17 @@ function routeOperation(pathname) {
 }
 
 export function createSessionHostServer({ sessions, logger, admissionPausePath }) {
+  let inFlightRequests = 0;
   return http.createServer(async (request, response) => {
     const started = Date.now();
     const url = new URL(request.url, "http://session-host.local");
     const route = requestRoute(url.pathname);
+    const tracked = !(request.method === "GET" && url.pathname === "/health");
+    if (tracked) inFlightRequests++;
     try {
       if (request.method === "GET" && url.pathname === "/health") {
-        sendJson(response, 200, { status: "ok", product: "DP Beget Bridge Session Host" });
+        sendJson(response, 200, { status: "ok", product: "DP Beget Bridge Session Host",
+          admission: await isAdmissionPaused(admissionPausePath) ? "paused" : "open", inFlightRequests });
         return;
       }
       if (await isAdmissionPaused(admissionPausePath)) {
@@ -96,6 +100,7 @@ export function createSessionHostServer({ sessions, logger, admissionPausePath }
       if (!response.headersSent) sendError(response, error);
       else response.destroy(error);
     } finally {
+      if (tracked) inFlightRequests--;
       logger.debug("session_host.request_completed", {
         method: request.method,
         route,
