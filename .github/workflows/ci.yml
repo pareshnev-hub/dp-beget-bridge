@@ -68,5 +68,7 @@ jobs:
         run: sudo env "PATH=$PATH" node --test test/release-quiesce-legacy-writers.test.js
       - name: Root-only journaled grouped snapshot
         run: sudo env "PATH=$PATH" node --test test/release-snapshot-legacy-state.test.js
+      - name: Root-only managed unit preparation
+        run: sudo env "PATH=$PATH" node --test test/release-managed-unit-overrides.test.js test/release-installed-managed-unit-preflight.test.js
       - name: MCP and Agent systemd lifecycle smoke
         run: sudo env "PATH=$PATH" npm run test:integration:systemd
