@@ -12,6 +12,7 @@ import { verifyMarker } from "./quiesce-legacy-writers.mjs";
 import { verifyJournalStateBundle } from "./snapshot-legacy-state.mjs";
 import { localReleaseHealthProbes, waitForAdmissionDrain } from "./wait-admission-drain.mjs";
 import { DEFAULT_ADMISSION_PAUSE_PATH } from "../../packages/core/src/admission-gate.js";
+import { probePublicOAuthPaused } from "./public-admission-probe.mjs";
 
 const exec = promisify(execFile);
 const INGRESS = ["dp-beget-oauth-proxy.socket", "dp-beget-oauth-proxy.service", "dp-beget-tunnel.service"];
@@ -37,7 +38,8 @@ async function assertPausedHealth() {
 // This function has no CLI and cannot infer either claim from local health alone.
 export async function openManagedIngress({ journalPath, marker = PERSISTENT_MARKER,
   admissionFlag = DEFAULT_ADMISSION_PAUSE_PATH, unitDirectory = "/etc/systemd/system",
-  releaseRoot, versionDir, artifactSha256, assertRouteExclusive, assertPublicPaused,
+  releaseRoot, versionDir, artifactSha256, assertRouteExclusive,
+  assertPublicPaused = probePublicOAuthPaused,
   inspectGuard = inspectInstalledIngressGuard, inspectManaged = inspectInstalledManagedUnits,
   assertLocalPaused = assertPausedHealth, getState = systemctlState,
   startUnit = unit => systemctl(unit, "start"), stopUnit = unit => systemctl(unit, "stop"),
