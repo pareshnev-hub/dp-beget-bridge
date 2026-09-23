@@ -53,8 +53,11 @@ export async function backupSqliteSet({ databases, outputDir, minFreeBytes = DEF
         await backup(db, destination, { rate: 100, timeout: 5000 });
       } finally { db.close(); }
       await chmod(destination, 0o600);
-      const copy = new DatabaseSync(destination, { readOnly: true });
+      const copy = new DatabaseSync(destination);
       try {
+        // Make the backed-up database self-contained. Checking a WAL-mode copy
+        // read-only creates -wal/-shm sidecars that are not part of the manifest.
+        copy.exec("PRAGMA journal_mode=DELETE");
         if (copy.prepare("PRAGMA quick_check").get().quick_check !== "ok" ||
             Number(copy.prepare("PRAGMA user_version").get().user_version) !== sourceVersion) {
           throw new Error("Backup SQLite integrity or schema check failed");

@@ -65,4 +65,13 @@ The version-pointer module is an **unwired deployment primitive**. It accepts on
 
 An unwired SQLite backup module uses Node's online SQLite backup API and writes each named database into a new mode `0700` directory with mode `0600` copies. It checks source and backup integrity/schema, records size and SHA-256 without absolute source paths, and refuses insufficient free space or an existing output directory. The caller must stop admission and quiesce writes before a **multi-database** migration snapshot; these individually consistent backups are not an atomic snapshot across Agent, Session Host and OAuth. Transcript files, restore/recovery and retention are separate R0004 work.
 
-A separate configuration-backup primitive copies a small, symlink-free configuration tree into another new mode `0700` directory with mode `0600` files. It records relative names, original numeric ownership/mode and SHA-256 but never logs credential values. It is still unwired and has no restore routine. The orchestrator must snapshot configuration and SQLite state together only after it has quiesced the relevant writers, without touching retained transcripts.
+A separate configuration-backup primitive copies a small, symlink-free configuration tree into another new mode `0700` directory with mode `0600` files. It records relative names, original numeric ownership/mode and SHA-256 but never logs credential values. Backup and restore remain unwired to services. The orchestrator must snapshot configuration and SQLite state together only after it has quiesced the relevant writers, without touching retained transcripts.
+
+The standalone backup restore utility verifies the private backup directory, declared file inventory and checksums before creating a fresh output directory. Configuration restore records original numeric ownership and mode; restoring a different owner requires an appropriately privileged caller. SQLite restore checks SHA-256 again on the bytes copied and then checks SQLite integrity and schema in the output. The backup writer checkpoints the standalone copy into DELETE journal mode so no unrecorded WAL sidecars are needed. Neither restore function replaces a live database or configuration path, switches a service, or provides cross-service snapshot consistency:
+
+```bash
+node scripts/release/restore-backup.mjs config --backup-dir /private/backup/config --output-dir /new/private/restore/config
+node scripts/release/restore-backup.mjs sqlite --backup-dir /private/backup/sqlite --output-dir /new/private/restore/sqlite
+```
+
+These are implementation primitives for rehearsing recovery. An updater must stop writers and freeze admission, take a grouped snapshot, perform versioned migrations, restore stopped services on failure, and verify the running old version after rollback before OPS-06/07/09 can be accepted.
