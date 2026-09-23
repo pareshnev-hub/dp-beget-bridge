@@ -73,7 +73,7 @@ jobs:
       - name: Root-only managed unit installation transaction
         run: sudo env "PATH=$PATH" node --test test/release-install-managed-overrides.test.js
       - name: Root-only candidate activation and fail-closed rollback
-        run: sudo env "PATH=$PATH" node --test test/release-activate-managed-release.test.js
+        run: sudo env "PATH=$PATH" node --test test/release-activate-managed-release.test.js test/release-writer-start-permit.test.js
       - name: Root-only ingress release and uncertain-resume recovery
         run: sudo env "PATH=$PATH" node --test test/release-open-managed-ingress.test.js test/release-public-admission-probe.test.js
       - name: Root-only pre-exposure recovery staging

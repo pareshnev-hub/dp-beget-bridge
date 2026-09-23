@@ -10,6 +10,8 @@ import { verifyMarker } from "./quiesce-legacy-writers.mjs";
 import { verifyJournalStateBundle } from "./snapshot-legacy-state.mjs";
 import { localReleaseHealthProbes, waitForAdmissionDrain } from "./wait-admission-drain.mjs";
 import { switchVersion } from "./version-pointer.mjs";
+import { assertWriterPermitAbsent, withWriterStartPermit } from "./writer-start-permit.mjs";
+import { WRITER_START_PERMIT } from "./writer-boot-guard.mjs";
 
 const exec = promisify(execFile);
 const START_ORDER = Object.freeze(["dp-beget-session-host.service", "dp-beget-agent.service",
@@ -37,10 +39,11 @@ async function assertPausedHealth() {
 // managed unit installation and before reopening any dedicated ingress.
 export async function activateManagedRelease({ journalPath, marker = PERSISTENT_MARKER,
   unitDirectory = "/etc/systemd/system", releaseRoot, versionDir, artifactSha256,
+  permit = WRITER_START_PERMIT,
   inspectManaged = inspectInstalledManagedUnits, assertWritersStopped = assertBridgeWritersStopped,
   getState = systemctlState, pause = pauseAdmission, startUnit = systemctlStart,
   stopUnit = systemctlStop, assertHealthy = assertPausedHealth,
-  switchPointer = switchVersion } = {}) {
+  switchPointer = switchVersion, withPermit = withWriterStartPermit } = {}) {
   if (process.getuid?.() !== 0 || !path.isAbsolute(releaseRoot || "") ||
       !/^[0-9a-f]{64}$/.test(artifactSha256 || "")) {
     throw new Error("Root, release root and exact signed artifact digest are required");
@@ -53,6 +56,7 @@ export async function activateManagedRelease({ journalPath, marker = PERSISTENT_
   await verifyJournalUnitBackup(journal);
   await verifyJournalStateBundle(journal);
   await verifyMarker(marker);
+  await assertWriterPermitAbsent(permit);
   await assertWritersStopped();
   for (const unit of INGRESS) {
     if (await getState(unit) !== "inactive") throw new Error(`Ingress remains active: ${unit}`);
@@ -62,14 +66,15 @@ export async function activateManagedRelease({ journalPath, marker = PERSISTENT_
   const started = [];
   let result;
   try {
-    result = await switchPointer({ releaseRoot, versionDir, checkHealthy: async () => {
-      for (const unit of START_ORDER) {
-        // Track before start: a failed systemctl start may still leave a live process.
-        started.push(unit);
-        await startUnit(unit);
-      }
-      await assertHealthy();
-    } });
+    result = await switchPointer({ releaseRoot, versionDir, checkHealthy: async () =>
+      withPermit({ marker, permit, action: async () => {
+        for (const unit of START_ORDER) {
+          // Track before start: a failed systemctl start may still leave a live process.
+          started.push(unit);
+          await startUnit(unit);
+        }
+        await assertHealthy();
+      } }) });
   } catch (error) {
     const stopFailures = [];
     for (const unit of started.reverse()) {
