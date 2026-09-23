@@ -1,0 +1,31 @@
+# R0004 read-only Beget inventory
+
+Observed: 2026-09-23 through the real-client OAuth full-shell connector as the `dp-preview` work identity. The purpose-built terminals were closed after the checks. No R0004 code, service unit, configuration, key, database or public route was deployed or changed.
+
+## Existing R0003 deployment
+
+| Unit | Active | User | Working directory | Other migration fact |
+|---|---|---|---|---|
+| `dp-beget-session-host.service` | yes | `dp-preview` | `/opt/dp-beget-bridge` | `KillMode=process` preserves tmux processes |
+| `dp-beget-agent.service` | yes | `dp-agent` | `/opt/dp-beget-bridge` | main unit in `/etc/systemd/system` |
+| `dp-beget-mcp.service` | yes | `dp-mcp` | `/opt/dp-beget-bridge` | main unit in `/etc/systemd/system` |
+| `dp-beget-mcp-oauth-spike.service` | yes | `dp-mcp` | `/opt/dp-beget-bridge-dp012-dcr` | drop-in `10-dp012-dcr.conf` controls the separate code root |
+| `dp-beget-tunnel.service` | yes | `dp-tunnel` | `/var/lib/dp-beget-tunnel` | preserve the separate R0002 harness |
+
+Both existing application code roots reported package version `0.1.0`. `/opt/dp-beget-bridge` and the separate OAuth code root are root-owned mode `0755`. The config directory is root-owned mode `0750`; the Session Host, Agent and MCP state directories have distinct owners and mode `0700`. `/opt` and `/var/lib/dp-beget-bridge` share `/dev/vda1`; the observation does **not** establish free space sufficient for an update snapshot.
+
+## Existing OAuth route
+
+The local OAuth discovery endpoint reported issuer `https://bridge-oauth.pareshnev.com`. Its only public A record resolved to `45.12.238.143`, matching the VPS's public IPv4. A TLS connection with SNI and hostname validation succeeded; the certificate reported expiry on 2026-12-21. Public OAuth authorization-server metadata returned HTTP 200 with the same issuer.
+
+These checks validate the **current R0003 OAuth route**, not a completed R0004 install or an approved 1.0 hostname. The R0004 host-preflight module itself was not executed on Beget, because R0004 code is not installed there.
+
+## First-migration consequences
+
+1. Preserve the four existing unit fragments, the OAuth drop-in, both old code roots, split environment files and service-owned state before changing the systemd working directories.
+2. Keep the active tunnel harness and tmux server outside the bridge code-pointer rollback.
+3. Fail closed if the observed unit layout or a drop-in changes before the migration begins; rerun read-only inventory and review the delta.
+4. Block external admissions, drain prior requests and durable terminal operations, stop all state writers, take a grouped snapshot, then change code pointers and unit bindings. Keep the pause through readiness checks and any rollback.
+5. Verify OAuth and base MCP independently after a restart. Do not infer readiness from one listener.
+
+The legacy-unit snapshot and state-bundle primitives exist, but no first-migration transaction or live Beget rollback proof exists yet. The current R0003 services should continue serving unchanged while that transaction is built and tested.
