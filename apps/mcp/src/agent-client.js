@@ -87,6 +87,9 @@ export class AgentClient {
   deletePath(candidate, recursive) {
     return this.json(`/v1/files?path=${encodeURIComponent(candidate)}&recursive=${Boolean(recursive)}`, "DELETE");
   }
+  fileMetadata(candidate) {
+    return this.json(`/v1/files/metadata?path=${encodeURIComponent(candidate)}`);
+  }
   downloadPath(candidate, { signal } = {}) {
     return this.request(`/v1/files/content?path=${encodeURIComponent(candidate)}`, { signal });
   }
