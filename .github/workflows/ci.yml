@@ -79,6 +79,6 @@ jobs:
       - name: Root-only pre-exposure recovery staging
         run: sudo env "PATH=$PATH" node --test test/release-stage-pre-exposure-recovery.test.js
       - name: Root-only writer reboot guard conditions
-        run: sudo env "PATH=$PATH" node --test test/release-writer-boot-guard.test.js
+        run: sudo env "PATH=$PATH" node --test test/release-writer-boot-guard.test.js test/release-installed-writer-guard-preflight.test.js
       - name: MCP and Agent systemd lifecycle smoke
         run: sudo env "PATH=$PATH" npm run test:integration:systemd

@@ -23,7 +23,8 @@ async function fixture(t) {
   await advanceMigrationJournal(journalPath, "prepared", "guarded");
   const stopped = [];
   await closeLegacyIngress({ journalPath, marker, unitDirectory: "/etc/systemd/system",
-    inspectGuard: async () => true, inspectServices: legacyActivityFixture,
+    inspectGuard: async () => true, inspectWriterGuards: async () => true,
+    inspectServices: legacyActivityFixture,
     stopUnit: async unit => { stopped.push(unit); },
     getState: async unit => stopped.includes(unit) ? "inactive" : "active" });
   return { journalPath, marker, stateDatabase, stopped };
