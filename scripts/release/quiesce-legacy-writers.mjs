@@ -24,7 +24,7 @@ async function systemctlStop(unit) {
   await exec("systemctl", ["stop", unit], { timeout: 20000, maxBuffer: 4096 });
 }
 
-async function verifyMarker(marker) {
+export async function verifyMarker(marker) {
   guardContent(marker);
   const parent = path.dirname(marker);
   const parentInfo = await stat(parent);
