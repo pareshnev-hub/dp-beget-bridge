@@ -24,6 +24,8 @@ The root-owned transaction journal needs an explicit phase, old and new code ide
 
 The scoped boot-guard drop-ins can now be prepared and checked with `scripts/release/ingress-boot-guard.mjs`. They use `ConditionPathExists=!/var/lib/dp-beget-bridge/migration-incomplete` on the proxy socket, proxy service and dedicated tunnel only. The marker is persistent across reboot. This helper **does not install** the drop-ins or create/remove the marker. A journaled installer must verify that the original units were snapshotted, install and `daemon-reload` the guards, check that systemd loaded each condition, and only then write and sync the marker before closing ingress. Guard conditions by themselves do not close an already-running socket or tunnel.
 
+`scripts/release/migration-journal.mjs` provides a root-only, private, synced phase record for an exact old/new commit and release digest. Its exclusive transition lock survives interruption and blocks a second writer until recovery has inspected the state. This is only a primitive: it does not yet record unit hashes, active-service sets or marker state, and it must not be used to drive a live migration until those fields and recovery checks are implemented.
+
 ## Failure and rollback invariants
 
 | Failure point | Safe recovery target |
