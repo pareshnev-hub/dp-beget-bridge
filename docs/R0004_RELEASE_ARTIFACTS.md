@@ -99,3 +99,5 @@ node scripts/release/restore-backup.mjs sqlite --backup-dir /private/backup/sqli
 ```
 
 These are implementation primitives for rehearsing recovery. An updater must stop writers and freeze admission, take a grouped snapshot, perform versioned migrations, restore stopped services on failure, and verify the running old version after rollback before OPS-06/07/09 can be accepted.
+
+A root-only grouped snapshot now requires the Agent, MCP, Session Host and any installed OAuth/tunnel units to be stopped both before and after capture. It combines the private configuration copy and explicit SQLite set into a new mode `0700` directory, binds the child manifests with SHA-256, syncs the files and directories, and discards an incomplete bundle on failure. The matching restore checks that binding and restores **only into another new private directory**. It cannot itself freeze admissions, stop services, select database paths, replace live state or prove that an external administrator did not restart a writer during the copy. A future updater must hold those service boundaries for the entire snapshot and rollback transaction.
