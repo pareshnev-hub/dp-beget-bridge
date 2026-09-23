@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const FORMAT = "dp-beget-bridge-release-v1";
 
-async function readRegularFile(filename, maxBytes) {
+export async function readRegularFile(filename, maxBytes) {
   const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const stat = await handle.stat();
@@ -23,7 +23,7 @@ function exactlyKeys(value, keys) {
     Object.keys(value).sort().join(",") === [...keys].sort().join(",");
 }
 
-function parseManifest(bytes) {
+export function parseManifest(bytes) {
   let manifest;
   try { manifest = JSON.parse(bytes.toString("utf8")); } catch { throw new Error("Invalid release manifest"); }
   if (!exactlyKeys(manifest, ["format", "version", "commit", "artifact"]) ||
@@ -69,6 +69,12 @@ export async function verifyArtifact({ artifact, manifest, signature, trustedKey
     throw new Error("Release signature verification failed");
   }
 
+  await checkArtifact(artifact, record);
+  return { version: record.version, commit: record.commit, sha256: record.artifact.sha256 };
+}
+
+export async function checkArtifact(artifact, record) {
+  if (path.basename(artifact) !== record.artifact.name) throw new Error("Artifact name mismatch");
   const handle = await open(artifact, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const stat = await handle.stat();
@@ -79,7 +85,6 @@ export async function verifyArtifact({ artifact, manifest, signature, trustedKey
   } finally {
     await handle.close();
   }
-  return { version: record.version, commit: record.commit, sha256: record.artifact.sha256 };
 }
 
 async function main(args) {
