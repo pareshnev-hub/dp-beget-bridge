@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, readFile, realpath, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
+import { verifySystemdUnitBackup } from "./verify-systemd-unit-backup.mjs";
 
 const PHASES = Object.freeze(["prepared", "guarded", "ingress-closed", "quiesced",
   "snapshotted", "switched", "locally-healthy", "ingress-open", "completed"]);
@@ -24,15 +25,19 @@ async function syncDir(parent) {
 }
 
 function validate(record) {
-  if (!record || record.format !== "dp-beget-migration-journal-v1" ||
+  if (!record || record.format !== "dp-beget-migration-journal-v2" ||
       Object.keys(record).sort().join(",") !==
-        "artifactSha256,format,newCommit,oldCommit,phase,snapshotPath,transactionId" ||
+        "artifactSha256,format,newCommit,oldCommit,phase,snapshotPath,transactionId,unitBackup" ||
       !PHASES.includes(record.phase) || !/^[0-9a-f-]{36}$/.test(record.transactionId) ||
       !SHA256.test(record.artifactSha256) || typeof record.oldCommit !== "string" ||
       !/^[0-9a-f]{40}$/.test(record.oldCommit) ||
       !/^[0-9a-f]{40}$/.test(record.newCommit) ||
       typeof record.snapshotPath !== "string" ||
-      (record.snapshotPath && !path.isAbsolute(record.snapshotPath))) {
+      (record.snapshotPath && !path.isAbsolute(record.snapshotPath)) ||
+      !record.unitBackup || Object.keys(record.unitBackup).sort().join(",") !== "manifestSha256,path" ||
+      typeof record.unitBackup.path !== "string" || !path.isAbsolute(record.unitBackup.path) ||
+      path.normalize(record.unitBackup.path) !== record.unitBackup.path ||
+      !SHA256.test(record.unitBackup.manifestSha256)) {
     throw new Error("Invalid migration journal");
   }
   return record;
@@ -48,16 +53,27 @@ export async function readMigrationJournal(filename) {
   return validate(JSON.parse(await readFile(filename, "utf8")));
 }
 
-export async function startMigrationJournal(filename, { oldCommit, newCommit, artifactSha256 }) {
+export async function startMigrationJournal(filename, { oldCommit, newCommit, artifactSha256, unitBackupDir }) {
   if (process.getuid?.() !== 0) throw new Error("Root is required for a migration journal");
   const parent = await trustedParent(filename);
-  const record = validate({ format: "dp-beget-migration-journal-v1", transactionId: randomUUID(),
-    phase: "prepared", oldCommit, newCommit, artifactSha256, snapshotPath: "" });
+  const evidence = await verifySystemdUnitBackup({ backupDir: unitBackupDir });
+  const record = validate({ format: "dp-beget-migration-journal-v2", transactionId: randomUUID(),
+    phase: "prepared", oldCommit, newCommit, artifactSha256, snapshotPath: "",
+    unitBackup: { path: unitBackupDir, manifestSha256: evidence.manifestSha256 } });
   const handle = await open(filename, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   try { await handle.writeFile(JSON.stringify(record) + "\n"); await handle.sync(); }
   finally { await handle.close(); }
   await syncDir(parent);
   return record;
+}
+
+export async function verifyJournalUnitBackup(record) {
+  validate(record);
+  const evidence = await verifySystemdUnitBackup({ backupDir: record.unitBackup.path });
+  if (evidence.manifestSha256 !== record.unitBackup.manifestSha256) {
+    throw new Error("Migration unit backup no longer matches the journal");
+  }
+  return evidence;
 }
 
 export async function advanceMigrationJournal(filename, expectedPhase, nextPhase, details = {}) {
