@@ -13,6 +13,7 @@ import { verifyJournalStateBundle } from "./snapshot-legacy-state.mjs";
 import { localReleaseHealthProbes, waitForAdmissionDrain } from "./wait-admission-drain.mjs";
 import { DEFAULT_ADMISSION_PAUSE_PATH } from "../../packages/core/src/admission-gate.js";
 import { probePublicOAuthPaused } from "./public-admission-probe.mjs";
+import { assertWriterPermitAbsent } from "./writer-start-permit.mjs";
 
 const exec = promisify(execFile);
 const INGRESS = ["dp-beget-oauth-proxy.socket", "dp-beget-oauth-proxy.service", "dp-beget-tunnel.service"];
@@ -59,6 +60,7 @@ export async function openManagedIngress({ journalPath, marker = PERSISTENT_MARK
   await verifyJournalUnitBackup(journal);
   await verifyJournalStateBundle(journal);
   await verifyMarker(marker);
+  await assertWriterPermitAbsent();
   await verifyAdmissionPause({ flag: admissionFlag });
   if ((await realpath(releaseRoot)) !== releaseRoot ||
       (await realpath(path.join(releaseRoot, "releases"))) !== path.join(releaseRoot, "releases") ||

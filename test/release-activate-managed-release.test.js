@@ -47,11 +47,13 @@ test("OPS-07: candidate services start in order under paused admission and close
     assertWritersStopped: async () => { steps.push("writers-stopped"); },
     getState: async () => "inactive",
     pause: async () => { steps.push("paused"); },
+    withPermit: async ({ action }) => { steps.push("permit-open");
+      try { return await action(); } finally { steps.push("permit-closed"); } },
     startUnit: async unit => { steps.push(unit); },
     assertHealthy: async () => { steps.push("healthy"); } });
   assert.equal(steps.indexOf("paused") < steps.indexOf("dp-beget-session-host.service"), true);
-  assert.deepEqual(steps.slice(-5), ["dp-beget-session-host.service", "dp-beget-agent.service",
-    "dp-beget-mcp.service", "dp-beget-mcp-oauth-spike.service", "healthy"]);
+  assert.deepEqual(steps.slice(-6), ["dp-beget-session-host.service", "dp-beget-agent.service",
+    "dp-beget-mcp.service", "dp-beget-mcp-oauth-spike.service", "healthy", "permit-closed"]);
   assert.equal(report.admission, "paused");
   assert.equal((await readMigrationJournal(options.journalPath)).phase, "locally-healthy");
   assert.equal(await readlink(path.join(options.releaseRoot, "current")), `releases/${options.versionDir}`);
@@ -65,6 +67,7 @@ test("OPS-07: health failure stops candidate, restores pointer and keeps ingress
   const stopped = [];
   await assert.rejects(activateManagedRelease({ ...options,
     inspectManaged: async () => {}, assertWritersStopped: async () => {},
+    withPermit: async ({ action }) => action(),
     getState: async () => "inactive", pause: async () => {}, startUnit: async () => {},
     stopUnit: async unit => { stopped.push(unit); },
     assertHealthy: async () => { throw new Error("candidate unhealthy"); } }), /candidate unhealthy/);
@@ -82,6 +85,7 @@ test("OPS-07: a failed systemd start also stops the possibly live failed unit", 
   const stopped = [];
   await assert.rejects(activateManagedRelease({ ...options,
     inspectManaged: async () => {}, assertWritersStopped: async () => {},
+    withPermit: async ({ action }) => action(),
     getState: async () => "inactive", pause: async () => {},
     startUnit: async unit => { if (unit === "dp-beget-agent.service") throw new Error("start failed"); },
     stopUnit: async unit => { stopped.push(unit); }, assertHealthy: async () => {} }), /start failed/);
