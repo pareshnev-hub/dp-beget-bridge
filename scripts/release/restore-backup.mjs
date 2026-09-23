@@ -136,7 +136,7 @@ export async function restoreConfig({ backupDir, outputDir }) {
 
 export async function restoreSqliteSet({ backupDir, outputDir }) {
   const { backup, output } = await roots(backupDir, outputDir);
-  const manifest = await manifestOf(backup, "dp-beget-bridge-sqlite-backup-v1");
+  const manifest = await manifestOf(backup, "dp-beget-bridge-sqlite-backup-v2");
   if (!Array.isArray(manifest.databases) || manifest.databases.length === 0 || manifest.databases.length > MAX_ENTRIES) {
     throw new Error("Invalid SQLite backup manifest");
   }
@@ -144,7 +144,8 @@ export async function restoreSqliteSet({ backupDir, outputDir }) {
   const names = new Set();
   for (const entry of entries) {
     if (!/^[a-z][a-z0-9_-]{0,31}$/.test(entry?.name || "") || names.has(entry.name) ||
-        !Number.isSafeInteger(entry.schemaVersion) || entry.schemaVersion < 0) {
+        !Number.isSafeInteger(entry.schemaVersion) || entry.schemaVersion < 0 ||
+        !owner(entry.uid) || !owner(entry.gid) || !mode(entry.mode)) {
       throw new Error("Invalid SQLite backup record");
     }
     names.add(entry.name);
@@ -195,6 +196,11 @@ export async function restoreSqliteSet({ backupDir, outputDir }) {
           throw new Error("Restored SQLite integrity or schema mismatch");
         }
       } finally { db.close(); }
+      const restored = await stat(destination);
+      if (restored.uid !== entry.uid || restored.gid !== entry.gid) {
+        await chown(destination, entry.uid, entry.gid);
+      }
+      await chmod(destination, entry.mode);
     }
     return { databases: entries.map(entry => entry.name) };
   } catch (error) {

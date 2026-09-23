@@ -23,7 +23,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
 | R0002 Core Safety & Persistent Runtime | VERIFIED | All included DP items verified; exact Beget runtime and actual ChatGPT file-contract evidence recorded for `41db306` through the outbound-only private acceptance tunnel; no public listener or Traefik change |
 | R0003 Working Direct / Private Beta | IN PROGRESS (formal gate) | DP-012, DP-013 and DP-014 verified; #80 records the real-client OAuth terminal/file acceptance at `971d67a`. Link the release-wide AUTO-01…04 and N/N-1 evidence before changing this row to VERIFIED. |
-| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; implementation slices through #122 cover signed artifacts, trust, backups, ingress closure, writer quiescence, grouped snapshot and managed unit installation. The public install/update/rollback gate is still open. |
+| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; implementation slices through #129 cover signed artifacts, trust, backups, first-migration phases through guarded ingress release, and verified pre-exposure recovery staging. The public install/update/rollback gate is still open. |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
 | R0006 Optional Catalog Transport Pilot | PLANNED | requires dated feasibility decision; Relay not yet authorized by roadmap |
 | R0007 Catalog Submission & Measured Scale | PLANNED | requires verified pilot and current official submission review |
@@ -84,8 +84,14 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Journal-bound grouped state snapshot | `df2047b` (#120) | v4 journal records config/SQLite bundle-manifest digest; full restore gate pending |
 | Managed unit staging and loaded check | `de4e501` (#121) | Four version-link drop-ins and tmux-safe KillMode check; no live unit change |
 | Journaled managed unit installation | `f8ed61d` (#122) | Isolated closed-ingress unit install and daemon-reload with fail-closed state; no pointer activation or recovery wiring |
+| Durable version pointer | `212dcf9` (#124) | Directory fsync and activation lock retained if rollback is uncertain |
+| Managed candidate activation | `ac5ae9a` (#125) | Starts four services under paused admissions and closed ingress; stops candidate and restores pointer on failed local health, not grouped state |
+| Guarded ingress release | `ba48203` (#126) | Journal intent precedes marker removal; requires exclusive route proof and public pause response; never rewinds after possible exposure |
+| Fixed public admission probe | `9bf38ea` (#127) | HTTPS `/mcp` requires exact `503 admission_paused` JSON; route exclusivity remains independent |
+| Verified pre-exposure recovery staging | `167bf36` (#128) | Fully checks grouped restore in a new directory with ingress closed; does not replace live state |
+| Bound snapshot source paths | `2e0dcc3` (#129) | Private v2 grouped manifest records config and database origins; no live restore controller |
 
-These thirty slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These thirty-six slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 

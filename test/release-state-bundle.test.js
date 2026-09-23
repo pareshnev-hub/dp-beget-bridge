@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +22,7 @@ test("OPS-06: stopped writers produce one private, restorable config and multi-D
     db.exec("CREATE TABLE data (value TEXT)");
     db.prepare("INSERT INTO data VALUES (?)").run(name);
     db.close();
+    if (name === "agent") await chmod(source, 0o640);
     databases.push({ name, source });
   }
   let checks = 0;
@@ -40,6 +41,13 @@ test("OPS-06: stopped writers produce one private, restorable config and multi-D
   const recovered = await restoreStateBundle({ backupDir: outputDir, outputDir: restoreDir });
   assert.deepEqual(recovered.databases, manifest.databases);
   assert.deepEqual(recovered.sources, manifest.sources);
+  const restoredAgent = await stat(path.join(restoreDir, "sqlite", "agent.sqlite"));
+  assert.equal(restoredAgent.uid, (await stat(databases[0].source)).uid);
+  assert.equal(restoredAgent.gid, (await stat(databases[0].source)).gid);
+  assert.equal(restoredAgent.mode & 0o777, 0o640);
+  const snapshotAgent = await stat(path.join(outputDir, "sqlite", "agent.sqlite"));
+  assert.equal(snapshotAgent.uid, process.getuid());
+  assert.equal(snapshotAgent.mode & 0o777, 0o600);
   const configOutput = path.join(restoreDir, "config");
   const sqliteOutput = path.join(restoreDir, "sqlite");
   assert.equal(await readFile(path.join(configOutput, "oauth.env"), "utf8"), "PRIVATE_TOKEN=canary\n");

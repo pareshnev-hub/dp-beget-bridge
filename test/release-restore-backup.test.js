@@ -59,7 +59,16 @@ test("OPS-06: committed WAL rows restore as a standalone, checked SQLite databas
     const db = new DatabaseSync(path.join(restored, "agent.sqlite"), { readOnly: true });
     try { assert.deepEqual(db.prepare("SELECT value FROM data").all().map(row => row.value), ["before"]); }
     finally { db.close(); }
-    assert.equal((await stat(path.join(restored, "agent.sqlite"))).mode & 0o777, 0o600);
+    assert.equal((await stat(path.join(restored, "agent.sqlite"))).mode & 0o777,
+      (await stat(source)).mode & 0o777);
+    const manifestPath = path.join(backup, "backup-manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    await writeFile(manifestPath, JSON.stringify({ ...manifest,
+      databases: [{ ...manifest.databases[0], mode: 0o10000 }] }));
+    await assert.rejects(restoreSqliteSet({ backupDir: backup,
+      outputDir: path.join(root, "bad-metadata") }), /Invalid SQLite backup record/);
+    await assert.rejects(stat(path.join(root, "bad-metadata")), /ENOENT/);
+    await writeFile(manifestPath, JSON.stringify(manifest));
     await writeFile(path.join(backup, "agent.sqlite"), "broken");
     await assert.rejects(restoreSqliteSet({ backupDir: backup, outputDir: path.join(root, "bad") }));
     await assert.rejects(stat(path.join(root, "bad")), /ENOENT/);
