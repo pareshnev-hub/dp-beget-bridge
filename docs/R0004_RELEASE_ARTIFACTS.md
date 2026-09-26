@@ -34,7 +34,7 @@ node scripts/release/sign-manifest.mjs --artifact /candidate/dp-beget-bridge-1.0
 Local verification of an independently acquired candidate:
 
 ```bash
-node scripts/release/verify-artifact.mjs --artifact dp-beget-bridge-1.0.0.tar.gz --manifest manifest.json --signature manifest.sig --trustedKey /path/to/independently-trusted-release-key.pem
+node scripts/release/verify-artifact.mjs --artifact dp-beget-bridge-1.0.0.tar.gz --manifest manifest.json --signature manifest.sig --trusted-key /path/to/independently-trusted-release-key.pem
 ```
 
 An independent staging utility copies a verified candidate into a newly created private directory, then verifies the copied bytes again. Source-path substitution between the two checks cannot make unverified staged bytes pass. It performs no archive extraction, execution, service change or migration:

@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { verifyArtifact } from "../scripts/release/verify-artifact.mjs";
+
+const exec = promisify(execFile);
 
 async function fixture(t) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "dp-release-"));
@@ -32,6 +36,16 @@ test("OPS-05: accepts an artifact only with a matching trusted signature, size a
   const result = await verifyArtifact(inputs);
   assert.equal(result.version, "1.0.0");
   assert.equal(result.commit, "a".repeat(40));
+});
+
+test("release verification CLI accepts the documented --trusted-key option", async t => {
+  const { artifact, manifest, signature, trustedKey } = await fixture(t);
+  const { stdout } = await exec(process.execPath, [
+    "scripts/release/verify-artifact.mjs", "--artifact", artifact,
+    "--manifest", manifest, "--signature", signature,
+    "--trusted-key", trustedKey
+  ]);
+  assert.match(stdout, /^Verified release 1\.0\.0 \(a{40}\), SHA-256 [0-9a-f]{64}\n$/);
 });
 
 test("OPS-05: rejects modified artifact bytes and modified signed metadata", async t => {
