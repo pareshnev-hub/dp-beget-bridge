@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import { backupStateBundle } from "../scripts/release/backup-state-bundle.mjs";
+import { stageCompletePreExposureRecovery } from "../scripts/release/stage-complete-pre-exposure-recovery.mjs";
 import { advanceMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
 import { stagePreExposureRecovery } from "../scripts/release/stage-pre-exposure-recovery.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
@@ -145,5 +146,47 @@ test("OPS-07: permit appearing during recovery removes staged state", {
       await writeFile(options.permit, "unexpected permit\n");
       return result;
     } }), /permit remains active/);
+  await assert.rejects(stat(options.outputDir), /ENOENT/);
+});
+
+test("OPS-07: stages matching old state and original systemd units together", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  const result = await stageCompletePreExposureRecovery(options);
+  assert.equal(result.transactionId, result.state.transactionId);
+  assert.equal(result.units.files, 7);
+  assert.equal(await readFile(path.join(result.directory, "state", "config", "secret.env"), "utf8"),
+    "CANARY=private\n");
+  assert.match(await readFile(path.join(result.directory, "units", "dp-beget-session-host.service"), "utf8"),
+    /Description=dp-beget-session-host.service/);
+});
+
+test("OPS-07: a route change after both restorations removes the entire staged pair", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  let proofs = 0;
+  await assert.rejects(stageCompletePreExposureRecovery({ ...options,
+    assertRouteExclusive: async () => ++proofs < 3 }), /route not proven/);
+  assert.equal(proofs, 3);
+  await assert.rejects(stat(options.outputDir), /ENOENT/);
+});
+
+test("OPS-07: failed unit restoration removes staged state as a single pair", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await assert.rejects(stageCompletePreExposureRecovery({ ...options,
+    stageUnits: async () => { throw new Error("original unit backup changed"); } }),
+  /original unit backup changed/);
+  await assert.rejects(stat(options.outputDir), /ENOENT/);
+});
+
+test("OPS-07: possible public exposure forbids combined old-state staging", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t, "ingress-open");
+  await assert.rejects(stageCompletePreExposureRecovery(options), /forbidden after possible public exposure/);
   await assert.rejects(stat(options.outputDir), /ENOENT/);
 });
