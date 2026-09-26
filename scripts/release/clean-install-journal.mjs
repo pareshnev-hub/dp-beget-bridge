@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { lstat, open, readFile, realpath, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { verifyCleanInstallManifest } from "./clean-install-manifest.mjs";
+import { inspectCleanInstallIdentityPlan } from "./clean-install-identity-plan.mjs";
 
 const SHA = /^[0-9a-f]{64}$/;
 // Later phases must be added together with real boundary verifiers. A journal
@@ -28,7 +29,7 @@ async function syncDirectory(directory) {
 function validate(record) {
   if (!record || typeof record !== "object" || Array.isArray(record) ||
       Object.keys(record).sort().join(",") !==
-        "artifactSha256,commit,format,manifestSha256,phase,releaseRoot,transactionId,version,workspace" ||
+        "artifactSha256,commit,format,identityPlan,manifestSha256,phase,releaseRoot,transactionId,version,workspace" ||
       record.format !== FORMAT || !PHASES.includes(record.phase) ||
       !/^[0-9a-f-]{36}$/.test(record.transactionId || "") ||
       !SHA.test(record.artifactSha256 || "") || !SHA.test(record.manifestSha256 || "") ||
@@ -39,7 +40,18 @@ function validate(record) {
         !path.isAbsolute(value) || path.normalize(value) !== value) ||
       record.workspace === record.releaseRoot ||
       record.workspace.startsWith(`${record.releaseRoot}/`) ||
-      record.releaseRoot.startsWith(`${record.workspace}/`)) {
+      record.releaseRoot.startsWith(`${record.workspace}/`) ||
+      !record.identityPlan || typeof record.identityPlan !== "object" ||
+      Object.keys(record.identityPlan).sort().join(",") !==
+        "agentUser,allowedRoot,domain,ipcGroup,mcpUser,releaseRoot,workGroup,workUser" ||
+      record.identityPlan.releaseRoot !== record.releaseRoot ||
+      ["workUser", "workGroup", "ipcGroup", "agentUser", "mcpUser"].some(key =>
+        !/^[a-z_][a-z0-9_-]{0,31}$/.test(record.identityPlan[key] || "") ||
+        record.identityPlan[key] === "root") ||
+      typeof record.identityPlan.allowedRoot !== "string" ||
+      !path.isAbsolute(record.identityPlan.allowedRoot) ||
+      typeof record.identityPlan.domain !== "string" ||
+      !/^[a-z0-9.-]+$/.test(record.identityPlan.domain)) {
     throw new Error("Invalid clean-install journal");
   }
   return record;
@@ -57,13 +69,15 @@ export async function readCleanInstallJournal(journalPath) {
 // The journal is placed outside the candidate workspace so interruption of
 // later live mutations cannot remove its recovery record with the workspace.
 export async function startCleanInstallJournal({ journalPath, workspace, manifestSha256,
-  releaseRoot, trustDir, verify = verifyCleanInstallManifest } = {}) {
+  releaseRoot, trustDir, verify = verifyCleanInstallManifest,
+  inspectPlan = inspectCleanInstallIdentityPlan } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to start a clean-install journal");
   const parent = await privateParent(journalPath);
   const candidate = await verify({ workspace, manifestSha256, trustDir });
+  const identityPlan = await inspectPlan({ workspace, manifestSha256, trustDir });
   const record = validate({ format: FORMAT, transactionId: randomUUID(), phase: "prepared",
     workspace, releaseRoot, manifestSha256, artifactSha256: candidate.artifactSha256,
-    version: candidate.version, commit: candidate.commit });
+    version: candidate.version, commit: candidate.commit, identityPlan });
   const handle = await open(journalPath,
     constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   try { await handle.writeFile(JSON.stringify(record) + "\n"); await handle.sync(); }
@@ -73,7 +87,8 @@ export async function startCleanInstallJournal({ journalPath, workspace, manifes
 }
 
 export async function advanceCleanInstallJournal({ journalPath, transactionId,
-  expectedPhase, nextPhase, verify = verifyCleanInstallManifest, trustDir } = {}) {
+  expectedPhase, nextPhase, verify = verifyCleanInstallManifest,
+  inspectPlan = inspectCleanInstallIdentityPlan, trustDir } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to advance a clean-install journal");
   const parent = await privateParent(journalPath);
   const lock = `${journalPath}.lock`;
@@ -93,6 +108,11 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
     if (candidate.artifactSha256 !== current.artifactSha256 ||
         candidate.commit !== current.commit || candidate.version !== current.version) {
       throw new Error("Clean-install candidate changed during transaction");
+    }
+    if (JSON.stringify(await inspectPlan({ workspace: current.workspace,
+      manifestSha256: current.manifestSha256, trustDir })) !==
+        JSON.stringify(current.identityPlan)) {
+      throw new Error("Clean-install identity plan changed during transaction");
     }
     const next = validate({ ...current, phase: nextPhase });
     const temporary = `${journalPath}.${randomUUID()}.tmp`;
