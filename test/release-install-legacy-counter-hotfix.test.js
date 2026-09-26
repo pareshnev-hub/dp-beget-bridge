@@ -42,14 +42,21 @@ async function fixture(t, failStart = false) {
     [unit, { ActiveState: "active", MainPID: unit.endsWith(".socket") ? "0" : String(900 + index),
       KillMode: unit === "dp-beget-session-host.service" ? "process" : "control-group" }]));
   let failed = false;
+  const events = [];
   const options = { stageDir, manifestSha256, files,
     preflight: async () => ({}), inspectRoute: async () => ({}),
     publicOriginal: async () => assert.equal(states.get(INGRESS[0]).ActiveState, "active"),
     publicClosed: async () => assert.equal(states.get(INGRESS[0]).ActiveState, "inactive"),
     systemctlShow: async unit => states.get(unit),
     checkLedger: () => ({ activeOperationCount: 0 }),
-    drain: async () => assert.equal(states.get(INGRESS[0]).ActiveState, "inactive"),
-    stop: async unit => { const state = states.get(unit); state.ActiveState = "inactive"; state.MainPID = "0"; },
+    drain: async () => {
+      events.push("drain");
+      assert.equal(states.get(INGRESS[0]).ActiveState, "inactive");
+    },
+    stop: async unit => {
+      events.push(`stop:${unit}`);
+      const state = states.get(unit); state.ActiveState = "inactive"; state.MainPID = "0";
+    },
     start: async unit => {
       if (failStart && !failed && unit === "dp-beget-session-host.service") {
         failed = true; throw new Error("injected startup failure");
@@ -61,7 +68,7 @@ async function fixture(t, failStart = false) {
     readHealth: async ({ requireCounters } = {}) => ({ services: 4,
       products: ["bridge", "bridge", "bridge", "host"],
       ...(requireCounters ? { inFlightRequests: [0, 0, 0, 0] } : {}) }) };
-  return { options, files, stageDir, states };
+  return { options, files, stageDir, states, events };
 }
 
 test("TCP and session socket inventory counts possible active clients", () => {
@@ -84,13 +91,14 @@ test("systemd socket has no MainPID property in the observed Beget output", () =
 test("hotfix activates reviewed bytes and leaves an exact durable journal", {
   skip: process.getuid?.() !== 0
 }, async t => {
-  const { options, files, stageDir, states } = await fixture(t);
+  const { options, files, stageDir, states, events } = await fixture(t);
   const report = await installLegacyCounterHotfix(options);
   assert.equal(report.phase, "complete");
   for (const item of files) {
     assert.equal(digest(await readFile(path.join(item.root, item.relative))), item.after);
   }
   assert.equal(states.get(INGRESS[0]).ActiveState, "active");
+  assert.ok(events.indexOf("drain") < events.indexOf(`stop:${INGRESS[1]}`));
   const journal = JSON.parse(await readFile(`${stageDir}.activation.json`, "utf8"));
   assert.equal(journal.phase, "complete");
 });

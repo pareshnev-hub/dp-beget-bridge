@@ -16,8 +16,7 @@ import { probeBegetLegacyOAuthRoute } from "./probe-beget-legacy-oauth-route.mjs
 import { probeLegacyLocalHealth } from "./probe-legacy-health.mjs";
 
 const exec = promisify(execFile);
-const INGRESS = ["dp-beget-oauth-proxy.socket", "dp-beget-oauth-proxy.service",
-  "dp-beget-tunnel.service"];
+const ENTRY = ["dp-beget-oauth-proxy.socket", "dp-beget-tunnel.service"];
 const WRITERS = ["dp-beget-mcp-oauth-spike.service", "dp-beget-mcp.service",
   "dp-beget-agent.service", "dp-beget-session-host.service"];
 const START = [...WRITERS].reverse();
@@ -145,7 +144,11 @@ export function countLegacyConnections(tcp, unix) {
   for (const line of tcp.split("\n")) {
     if (!line.trim()) continue;
     const parts = line.trim().split(/\s+/);
-    if (parts[0] !== "ESTAB" || parts.length < 5) throw new Error("Unknown TCP socket inventory");
+    if (parts.length < 5 || !["ESTAB", "CLOSE-WAIT", "FIN-WAIT-1", "FIN-WAIT-2",
+      "LAST-ACK", "SYN-RECV", "SYN-SENT", "CLOSING", "LISTEN", "TIME-WAIT"].includes(parts[0])) {
+      throw new Error("Unknown TCP socket inventory");
+    }
+    if (["LISTEN", "TIME-WAIT"].includes(parts[0])) continue;
     if ([parts[3], parts[4]].some(address =>
       /:(?:8787|8788|8789|8791)$/.test(address))) count++;
   }
@@ -157,7 +160,7 @@ export function countLegacyConnections(tcp, unix) {
 }
 async function inspectConnections() {
   const options = { timeout: 5000, maxBuffer: 512 * 1024 };
-  const tcp = (await exec("ss", ["-Htan", "state", "established"], options)).stdout;
+  const tcp = (await exec("ss", ["-Htan"], options)).stdout;
   const unix = (await exec("ss", ["-Hxan", "state", "connected"], options)).stdout;
   return countLegacyConnections(tcp, unix);
 }
@@ -229,11 +232,13 @@ export async function recoverLegacyCounterHotfix({ stageDir, manifestSha256,
     throw new Error("Hotfix transaction already reached a terminal phase");
   }
   await journalUpdate(journalPath, journal, "recovering");
-  for (const unit of INGRESS) {
+  for (const unit of ENTRY) {
     await stop(unit);
     await stopped(unit, systemctlShow);
   }
   await drain();
+  await stop("dp-beget-oauth-proxy.service");
+  await stopped("dp-beget-oauth-proxy.service", systemctlShow);
   for (const unit of WRITERS) {
     if ((await systemctlShow(unit)).ActiveState === "active") {
       if (unit === "dp-beget-session-host.service") checkLedger(LEDGER);
@@ -255,7 +260,7 @@ export async function recoverLegacyCounterHotfix({ stageDir, manifestSha256,
   }
   await waitHealth(readHealth, { counters: false });
   await journalUpdate(journalPath, journal, "opening-ingress");
-  for (const unit of ["dp-beget-oauth-proxy.socket", "dp-beget-tunnel.service"]) {
+  for (const unit of ENTRY) {
     await start(unit);
     await active(unit, systemctlShow);
   }
@@ -291,11 +296,13 @@ export async function installLegacyCounterHotfix({ stageDir, manifestSha256,
   const journal = await journalCreate(journalPath, stageDir, manifestSha256);
   try {
   await journalUpdate(journalPath, journal, "closing-ingress");
-  for (const unit of INGRESS) await stop(unit);
-  for (const unit of INGRESS) await stopped(unit, systemctlShow);
+  for (const unit of ENTRY) await stop(unit);
+  for (const unit of ENTRY) await stopped(unit, systemctlShow);
   await publicClosed();
   await journalUpdate(journalPath, journal, "ingress-closed");
   await drain();
+  await stop("dp-beget-oauth-proxy.service");
+  await stopped("dp-beget-oauth-proxy.service", systemctlShow);
   await journalUpdate(journalPath, journal, "stopping-writers");
   for (const unit of WRITERS) {
     if (unit === "dp-beget-session-host.service") checkLedger(LEDGER);
@@ -317,7 +324,7 @@ export async function installLegacyCounterHotfix({ stageDir, manifestSha256,
   await waitHealth(readHealth, { counters: true });
   await journalUpdate(journalPath, journal, "locally-healthy");
   await inspectRoute();
-  for (const unit of ["dp-beget-oauth-proxy.socket", "dp-beget-tunnel.service"]) {
+  for (const unit of ENTRY) {
     await start(unit);
     await active(unit, systemctlShow);
   }
