@@ -64,6 +64,12 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
   const journal = await startCleanInstallJournal({ journalPath, workspace: args.workspace,
     manifestSha256: result.manifestSha256, releaseRoot: args.releaseRoot, trustDir });
   assert.equal(journal.phase, "prepared");
+  assert.deepEqual(journal.identityPlan, {
+    workUser: "operator", workGroup: "operator", ipcGroup: "dp-ipc",
+    agentUser: "dp-agent", mcpUser: "dp-mcp", allowedRoot: "/srv/operator",
+    releaseRoot: "/opt/dp-versions", domain: "bridge.example.com"
+  });
+  assert.doesNotMatch(JSON.stringify(journal), /DP_AGENT_TOKEN|DP_MCP_ACCESS_TOKEN/);
   assert.equal((await stat(journalPath)).mode & 0o777, 0o600);
   await assert.rejects(startCleanInstallJournal({ journalPath, workspace: args.workspace,
     manifestSha256: result.manifestSha256, releaseRoot: args.releaseRoot, trustDir }), /EEXIST/);
