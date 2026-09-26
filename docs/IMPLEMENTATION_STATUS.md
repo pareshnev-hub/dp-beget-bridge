@@ -118,8 +118,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Fixed public R0003 OAuth proof | `97eb185` (#155) | Bounded HTTPS challenge at fixed hostname after old-service restart; exclusive Traefik route proof still missing |
 | Cross-process state recovery | `83ef40f` (#156) | A separate process dies after either config rename; resumed rollback verifies durable ledger, old SQLite and parked candidate bytes; no full systemd transaction |
 | Cross-process pointer recovery | `116b834` (#157) | A separate process dies after candidate `current` unlink; resumed journal syncs the directory with ingress still closed |
+| Seven-unit systemd boundary | `9c1d383` (#159) | CI snapshots, guards, closes dedicated ingress and quiesces four inert services under the persistent marker on a disposable runner; candidate switch and rollback still untested end to end |
 
-These sixty-five slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These sixty-six slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
