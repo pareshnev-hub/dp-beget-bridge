@@ -20,6 +20,8 @@ import { readCandidateRollbackStopRecord, stopCandidateForRollback, verifyCandid
   "../scripts/release/stop-candidate-for-rollback.mjs";
 import { verifyStagedRecoveryPair } from "../scripts/release/verify-staged-recovery-pair.mjs";
 import { verifyOriginalUnitViewRestored } from "../scripts/release/verify-original-unit-view.mjs";
+import { readLiveStateCopyRecord, stageLiveStateRecovery, verifyPreparedLiveStateCopies } from
+  "../scripts/release/stage-live-state-recovery.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
 async function fixture(t, phase = "locally-healthy") {
@@ -402,6 +404,41 @@ test("OPS-07: original view proof rejects lost guard or changed unit fragment", 
   await rm(path.join(options.unitDirectory, "dp-beget-agent.service.d", MANAGED_DROP_IN));
   await writeFile(path.join(options.unitDirectory, "dp-beget-agent.service"), "changed\n");
   await assert.rejects(verifyOriginalUnitViewRestored(options), /legacy app units differ/);
+});
+
+test("OPS-07: destination-local recovery copies leave live state untouched", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  const recordPath = path.join(path.dirname(options.outputDir), "live-copy-record.json");
+  const before = await stat(options.database);
+  const record = await stageLiveStateRecovery({ ...options, recordPath });
+  assert.equal(record.phase, "prepared");
+  assert.equal((await readLiveStateCopyRecord(recordPath)).phase, "prepared");
+  assert.equal((await readFile(path.join(record.configCopy, "secret.env"), "utf8")), "CANARY=private\n");
+  const copied = new DatabaseSync(record.databases[0].copy, { readOnly: true });
+  try { assert.equal(copied.prepare("SELECT value FROM state").get().value, "old-state"); }
+  finally { copied.close(); }
+  assert.equal((await stat(options.database)).ino, before.ino);
+  await verifyPreparedLiveStateCopies({ ...options, recordPath });
+  await writeFile(path.join(record.configCopy, "secret.env"), "tampered\n");
+  await assert.rejects(verifyPreparedLiveStateCopies({ ...options, recordPath }),
+    /Prepared configuration file changed/);
+});
+
+test("OPS-07: failed recovery copy retains copying intent and original live data", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  const recordPath = path.join(path.dirname(options.outputDir), "live-copy-record.json");
+  const before = await readFile(options.database);
+  await assert.rejects(stageLiveStateRecovery({ ...options, recordPath,
+    copyDatabase: async () => { throw new Error("copy interrupted"); } }), /copy interrupted/);
+  assert.equal((await readLiveStateCopyRecord(recordPath)).phase, "copying");
+  assert.deepEqual(await readFile(options.database), before);
+  await assert.rejects(verifyPreparedLiveStateCopies({ ...options, recordPath }), /incomplete/);
 });
 
 test("OPS-07: daemon-reload failure retains restoring intent and ingress marker", {
