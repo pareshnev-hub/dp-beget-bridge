@@ -8,6 +8,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { buildArtifact } from "../scripts/release/build-artifact.mjs";
 import { verifyCleanInstallManifest } from "../scripts/release/clean-install-manifest.mjs";
+import { advanceCleanInstallJournal, readCleanInstallJournal,
+  startCleanInstallJournal } from "../scripts/release/clean-install-journal.mjs";
 import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
 import { prepareCleanInstall } from "../scripts/release/prepare-clean-install.mjs";
 import { prepareRelease } from "../scripts/release/prepare-release.mjs";
@@ -58,6 +60,26 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
   const unit = path.join(args.workspace, "clean-install", "units", "dp-beget-agent.service");
   assert.match(await readFile(unit, "utf8"), /WorkingDirectory=\/opt\/dp-versions\/current\n/);
   assert.equal((await stat(unit)).mode & 0o777, 0o600);
+  const journalPath = path.join(workspaceParent, "clean-install-journal.json");
+  const journal = await startCleanInstallJournal({ journalPath, workspace: args.workspace,
+    manifestSha256: result.manifestSha256, releaseRoot: args.releaseRoot, trustDir });
+  assert.equal(journal.phase, "prepared");
+  assert.equal((await stat(journalPath)).mode & 0o777, 0o600);
+  await assert.rejects(startCleanInstallJournal({ journalPath, workspace: args.workspace,
+    manifestSha256: result.manifestSha256, releaseRoot: args.releaseRoot, trustDir }), /EEXIST/);
+  await assert.rejects(advanceCleanInstallJournal({ journalPath,
+    transactionId: journal.transactionId, expectedPhase: "prepared", nextPhase: "files-intent", trustDir }),
+  /transition rejected/);
+  assert.equal((await readCleanInstallJournal(journalPath)).phase, "prepared");
+  assert.equal((await advanceCleanInstallJournal({ journalPath, transactionId: journal.transactionId,
+    expectedPhase: "prepared", nextPhase: "identities-intent", trustDir })).phase, "identities-intent");
+  await assert.rejects(advanceCleanInstallJournal({ journalPath,
+    transactionId: journal.transactionId, expectedPhase: "identities-intent",
+    nextPhase: "identities-ready", trustDir }), /transition rejected/);
+  const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
+  const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
+    workspace: args.workspace, manifestSha256: result.manifestSha256,
+    releaseRoot: args.releaseRoot, trustDir });
   await assert.rejects(prepareCleanInstall(args), /EEXIST/);
   assert.ok((await stat(unit)).isFile(), "an existing candidate cannot be cleaned up by a failed retry");
   await assert.rejects(prepareCleanInstall({ ...args,
@@ -74,4 +96,11 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
   await writeFile(configFile, (await readFile(configFile, "utf8")) + "DP_LOG_LEVEL=debug\n");
   await assert.rejects(verifyCleanInstallManifest({ workspace: args.workspace, trustDir,
     manifestSha256: result.manifestSha256 }), /files changed/);
+  await assert.rejects(advanceCleanInstallJournal({ journalPath: secondJournalPath,
+    transactionId: secondJournal.transactionId, expectedPhase: "prepared",
+    nextPhase: "identities-intent", trustDir }), /files changed/);
+  assert.equal((await readCleanInstallJournal(secondJournalPath)).phase, "prepared");
+  await assert.rejects(advanceCleanInstallJournal({ journalPath: secondJournalPath,
+    transactionId: secondJournal.transactionId, expectedPhase: "prepared",
+    nextPhase: "identities-intent", trustDir }), /EEXIST/);
 });
