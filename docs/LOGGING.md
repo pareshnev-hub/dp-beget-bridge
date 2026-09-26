@@ -20,6 +20,12 @@ filter and canary verification.
 `DP_LOG_LEVEL` supports `debug`, `info`, `warn`, and `error`. `info` is the
 default. Debug mode is opt-in and uses the same field allowlist.
 
+`node scripts/doctor.mjs --json` emits a small machine-readable local health
+report. Each health and systemd probe has a timeout; failed probes expose only
+bounded error categories. The report contains no environment values, endpoint
+URLs, tokens, terminal contents, or filesystem paths. It does not yet provide
+cross-service request correlation or a support bundle.
+
 ## Terminal continuity log
 
 Each terminal has a local append-only output file on the user's VPS. A versioned
