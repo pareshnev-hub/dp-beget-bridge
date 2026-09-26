@@ -61,7 +61,7 @@ export async function activateManagedRelease({ journalPath, marker = PERSISTENT_
   for (const unit of INGRESS) {
     if (await getState(unit) !== "inactive") throw new Error(`Ingress remains active: ${unit}`);
   }
-  await inspectManaged({ unitDirectory, releaseRoot });
+  await inspectManaged({ unitDirectory, releaseRoot, marker, permit });
   await pause();
   const started = [];
   let result;

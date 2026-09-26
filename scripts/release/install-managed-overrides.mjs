@@ -105,6 +105,6 @@ export async function installManagedOverrides({ journalPath, marker = PERSISTENT
   }
   await syncDirectory(unitDirectory);
   await daemonReload();
-  await inspectInstalled({ unitDirectory, releaseRoot });
+  await inspectInstalled({ unitDirectory, releaseRoot, marker, permit });
   return { units: [...MANAGED_APP_UNITS], releaseRoot };
 }

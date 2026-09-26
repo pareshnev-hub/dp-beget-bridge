@@ -91,7 +91,7 @@ export async function restoreOriginalUnitView({ planPath, stopRecordPath, unitRe
   }
   await verifyJournalUnitBackup(journal);
   await assertOriginalAppUnits(journal, unitDirectory);
-  await inspectManaged({ unitDirectory, releaseRoot });
+  await inspectManaged({ unitDirectory, releaseRoot, marker, permit });
   await verifyMarker(marker);
   await assertWriterPermitAbsent(permit);
   const expected = managedUnitContent(releaseRoot);

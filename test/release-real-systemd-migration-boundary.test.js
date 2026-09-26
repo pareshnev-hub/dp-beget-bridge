@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -9,8 +10,12 @@ import { closeLegacyIngress } from "../scripts/release/close-legacy-ingress.mjs"
 import { stageIngressBootGuard } from "../scripts/release/ingress-boot-guard.mjs";
 import { inspectLegacyServiceActivity } from "../scripts/release/legacy-service-activity.mjs";
 import { installMigrationBootGuards } from "../scripts/release/install-migration-boot-guards.mjs";
+import { installManagedOverrides } from "../scripts/release/install-managed-overrides.mjs";
+import { inspectInstalledManagedUnits } from "../scripts/release/installed-managed-unit-preflight.mjs";
 import { readMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
 import { quiesceLegacyWriters } from "../scripts/release/quiesce-legacy-writers.mjs";
+import { snapshotLegacyState } from "../scripts/release/snapshot-legacy-state.mjs";
+import { stageManagedUnitOverrides } from "../scripts/release/stage-managed-unit-overrides.mjs";
 import { stageWriterBootGuard } from "../scripts/release/writer-boot-guard.mjs";
 import { assertWriterPermitAbsent, withWriterStartPermit } from "../scripts/release/writer-start-permit.mjs";
 
@@ -161,4 +166,35 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
   for (const unit of writers) assert.equal(await active(unit), "inactive");
   for (const unit of ingress) assert.equal(await active(unit), "inactive");
   assert.equal((await readMigrationJournal(journalPath)).phase, "quiesced");
+
+  // Advance through a real grouped snapshot and loaded managed drop-ins.
+  // The inert candidate is never started, so this is still a closed-ingress
+  // boundary rehearsal, not a full activation or rollback test.
+  const configRoot = path.join(root, "config");
+  await mkdir(configRoot, { mode: 0o700 });
+  await writeFile(path.join(configRoot, "settings.json"), "{}\n", { mode: 0o600 });
+  const databases = [];
+  for (const name of ["session-host", "agent", "oauth"]) {
+    const source = path.join(root, `${name}.sqlite`);
+    const db = new DatabaseSync(source);
+    try { db.exec("CREATE TABLE rehearsal (id INTEGER PRIMARY KEY)"); }
+    finally { db.close(); }
+    databases.push({ name, source });
+  }
+  const outputDir = path.join(root, "state-snapshot");
+  await snapshotLegacyState({ journalPath, marker, permit, unitDirectory,
+    configRoot, databases, outputDir });
+  assert.equal((await readMigrationJournal(journalPath)).phase, "snapshotted");
+  const releaseRoot = path.join(root, "candidate");
+  await mkdir(releaseRoot, { mode: 0o755 });
+  const stagedDirectory = path.join(root, "staged-managed");
+  await stageManagedUnitOverrides({ outputDir: stagedDirectory, releaseRoot });
+  await installManagedOverrides({ journalPath, marker, permit, unitDirectory,
+    stagedDirectory, releaseRoot });
+  await inspectInstalledManagedUnits({ unitDirectory, releaseRoot, marker, permit });
+  assert.equal((await readMigrationJournal(journalPath)).phase, "switched");
+  await systemctl("start", writers[0]).catch(() => {});
+  for (const unit of writers) assert.equal(await active(unit), "inactive");
+  for (const unit of ingress) assert.equal(await active(unit), "inactive");
+  assert.ok((await stat(marker)).isFile());
 });
