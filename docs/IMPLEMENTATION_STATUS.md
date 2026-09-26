@@ -23,7 +23,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
 | R0002 Core Safety & Persistent Runtime | VERIFIED | All included DP items verified; exact Beget runtime and actual ChatGPT file-contract evidence recorded for `41db306` through the outbound-only private acceptance tunnel; no public listener or Traefik change |
 | R0003 Working Direct / Private Beta | IN PROGRESS (formal gate) | DP-012, DP-013 and DP-014 verified; #80 records the real-client OAuth terminal/file acceptance at `971d67a`. Link the release-wide AUTO-01…04 and N/N-1 evidence before changing this row to VERIFIED. |
-| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; implementation slices through #144 cover signed artifacts, trust, backups, guarded first-migration phases, reverified pre-exposure recovery staging and disposable systemd guard behavior. The public install/update/rollback gate is still open. |
+| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; implementation slices through #145 cover signed artifacts, trust, backups, guarded first-migration phases, reverified pre-exposure recovery staging and prepared rollback intent. The public install/update/rollback gate is still open. |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
 | R0006 Optional Catalog Transport Pilot | PLANNED | requires dated feasibility decision; Relay not yet authorized by roadmap |
 | R0007 Catalog Submission & Measured Scale | PLANNED | requires verified pilot and current official submission review |
@@ -105,8 +105,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Real systemd guard lifecycle | `5e3dabe` (#142) | CI checks loaded guard conditions on disposable ingress and writer services; no Beget mutation |
 | Recovery pair destination binding | `cfd1ba6` (#143) | Stages original state and units only when live data topology still matches; no live replacement |
 | Recovery pair re-verification | `c241459` (#144) | Reopens staged config, SQLite and original units against bound manifests and closed ingress; no live replacement |
+| Durable pre-exposure rollback intent | `60d4d31` (#145) | Root-owned prepared record binds migration, staged pair and live destination inodes; no live replacement |
 
-These fifty-one slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These fifty-two slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
