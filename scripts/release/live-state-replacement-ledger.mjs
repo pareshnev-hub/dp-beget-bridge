@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, open, readdir, realpath } from "node:fs/promises";
+import { lstat, open, readdir, realpath, rename } from "node:fs/promises";
 import path from "node:path";
 import { readLiveStateCopyRecord, verifyPreparedLiveStateCopies } from "./stage-live-state-recovery.mjs";
 import { readMigrationJournal } from "./migration-journal.mjs";
@@ -26,6 +26,23 @@ async function trustedParent(filename, rootOwner = false) {
 async function syncDirectory(directory) {
   const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
   try { await handle.sync(); } finally { await handle.close(); }
+}
+async function syncPreservedState(filename, kind) {
+  if (kind === "config") {
+    for (const name of await readdir(filename)) {
+      const child = path.join(filename, name);
+      const info = await lstat(child);
+      if (info.isDirectory()) await syncPreservedState(child, "config");
+      else if (info.isFile() && info.nlink === 1 && (await realpath(child)) === child) {
+        const handle = await open(child, constants.O_RDONLY | constants.O_NOFOLLOW);
+        try { await handle.sync(); } finally { await handle.close(); }
+      } else throw new Error("Cannot preserve special configuration entry");
+    }
+    await syncDirectory(filename);
+  } else {
+    const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try { await handle.sync(); } finally { await handle.close(); }
+  }
 }
 async function missing(filename) {
   try { await lstat(filename); return false; }
@@ -230,4 +247,66 @@ export async function prepareLiveReplacementLedger({ ledgerPath, recordPath,
   await syncDirectory(parent);
   await inspectLiveReplacementLedger({ ...boundary, ledgerPath, stateDatabase });
   return record;
+}
+
+async function changePhase(ledgerPath, before, after) {
+  const current = await readLiveReplacementLedger(ledgerPath);
+  if (JSON.stringify(current) !== JSON.stringify(before)) {
+    throw new Error("Replacement ledger changed before durable phase transition");
+  }
+  const next = validate({ ...current, phase: after });
+  const temporary = `${ledgerPath}.${randomUUID()}.tmp`;
+  const handle = await open(temporary,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  try { await handle.writeFile(JSON.stringify(next) + "\n"); await handle.sync(); }
+  finally { await handle.close(); }
+  await rename(temporary, ledgerPath);
+  await syncDirectory(path.dirname(ledgerPath));
+  return next;
+}
+
+// Each same-directory rename is followed by a directory sync and a full
+// position/boundary recheck. On failure, the persistent marker and the
+// 'replacing' record remain. Calling again resumes a recognized parked or
+// installed position; an unknown inode fails closed for manual inspection.
+export async function replaceLiveStateFromLedger({ ledgerPath, stateDatabase,
+  renameEntry = rename, ...boundary } = {}) {
+  if (process.getuid?.() !== 0 || !absolute(ledgerPath) || !absolute(stateDatabase)) {
+    throw new Error("Root, replacement ledger and state database are required");
+  }
+  let { record, positions } = await inspectLiveReplacementLedger({ ...boundary,
+    ledgerPath, stateDatabase });
+  if (record.phase === "replaced") return { record, positions };
+  if (record.phase === "prepared") {
+    const copies = await readLiveStateCopyRecord(record.copyRecordPath);
+    await verifyPreparedLiveStateCopies({ ...boundary, recordPath: record.copyRecordPath,
+      planPath: copies.planPath, stopRecordPath: copies.stopRecordPath,
+      unitRecordPath: copies.unitRecordPath, stateDatabase });
+    record = await changePhase(ledgerPath, record, "replacing");
+    ({ positions } = await inspectLiveReplacementLedger({ ...boundary, ledgerPath, stateDatabase }));
+  }
+  for (let index = 0; index < record.targets.length; index++) {
+    const item = record.targets[index];
+    if (positions[index] === "pending") {
+      await syncPreservedState(item.live, item.kind);
+      ({ positions } = await inspectLiveReplacementLedger({ ...boundary, ledgerPath, stateDatabase }));
+      if (positions[index] !== "pending") throw new Error(`Old state changed before parking: ${item.name}`);
+      await renameEntry(item.live, item.parked);
+      await syncDirectory(path.dirname(item.live));
+      ({ positions } = await inspectLiveReplacementLedger({ ...boundary, ledgerPath, stateDatabase }));
+      if (positions[index] !== "parked") throw new Error(`Old state parking is uncertain: ${item.name}`);
+    }
+    if (positions[index] === "parked") {
+      await renameEntry(item.copy, item.live);
+      await syncDirectory(path.dirname(item.live));
+      ({ positions } = await inspectLiveReplacementLedger({ ...boundary, ledgerPath, stateDatabase }));
+      if (positions[index] !== "installed") throw new Error(`Restored state placement is uncertain: ${item.name}`);
+    }
+    if (positions[index] !== "installed") throw new Error(`Replacement position changed: ${item.name}`);
+  }
+  if (positions.some(position => position !== "installed")) {
+    throw new Error("Live replacement is incomplete");
+  }
+  record = await changePhase(ledgerPath, record, "replaced");
+  return inspectLiveReplacementLedger({ ...boundary, ledgerPath, stateDatabase });
 }
