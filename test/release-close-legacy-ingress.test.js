@@ -68,6 +68,25 @@ test("OPS-07: changed service inventory fails before writing marker", { skip: pr
   assert.equal((await readMigrationJournal(journalPath)).phase, "guarded");
 });
 
+test("OPS-07: route change during stops retains persistent guard and refuses closed result", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const { journalPath, marker } = await fixture(t);
+  const stopped = [];
+  let proofs = 0;
+  await assert.rejects(closeLegacyIngress({ journalPath, marker,
+    unitDirectory: "/etc/systemd/system", inspectGuard: async () => true,
+    inspectWriterGuards: async () => true, inspectServices: legacyActivityFixture,
+    assertRouteExclusive: async () => ++proofs === 1,
+    stopUnit: async unit => { stopped.push(unit); },
+    getState: async unit => stopped.includes(unit) ? "inactive" : "active" }),
+  /route changed during ingress closure/);
+  assert.equal(proofs, 2);
+  assert.equal(stopped.length, 3);
+  assert.equal((await readMigrationJournal(journalPath)).phase, "ingress-closed");
+  assert.match(await readFile(marker, "utf8"), /migration-incomplete/);
+});
+
 test("OPS-07: missing writer guard or stale writer start permit blocks ingress closure", {
   skip: process.getuid?.() !== 0
 }, async t => {
