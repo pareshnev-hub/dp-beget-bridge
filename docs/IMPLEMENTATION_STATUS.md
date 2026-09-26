@@ -128,9 +128,10 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Pinned public host inventory | `2faa22b` (#168) | Repeated DNS and TLS checks bind the observed IPv4 to the local route surfaces; NAT and alternate ingress still need proof |
 | Interrupted seven-unit restart | `ff9b5d2` (#169) | CI interrupts inert writer startup after the first unit and retries the inactive suffix under a new permit; full state rollback still open |
 | Public legacy OAuth rollback probe | `6bebad1` (#170) | Ingress reopening requires a real public R0003 OAuth challenge before removing the rollback marker; no live Beget rollback |
-| Pinned host NAT inventory | this change | Root read-only IPv4/IPv6 NAT, nft destinations and Traefik network identity integrated into repeated route inventory; live execution and complete exclusive route proof still open |
+| Pinned host NAT inventory | `ec97317` (#171) | Root read-only IPv4/IPv6 NAT, nft destinations and Traefik network identity integrated into repeated route inventory; live execution and complete exclusive route proof still open |
+| Loaded OAuth proxy path | this change | Manager-loaded 8791 socket, proxyd target 8789 and optional known migration guard checked twice; public upstream identity and live executable proof still open |
 
-These seventy-six slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These seventy-seven slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
