@@ -77,7 +77,8 @@ export function validateBegetOAuthListenerSnapshot(ssOutput, containers) {
       `missing expected Traefik port publishing on ${port}`);
   }
   return { publicPorts: [80, 443], oauthAddress: "127.0.0.1:8789",
-    proxyAddress: "172.18.0.1:8791", traefikContainerId: traefik[0].Id };
+    proxyAddress: "172.18.0.1:8791", traefikContainerId: traefik[0].Id,
+    listening: [...seen.keys()].sort() };
 }
 
 // This is a read-only component of a future exclusive-route proof, not a

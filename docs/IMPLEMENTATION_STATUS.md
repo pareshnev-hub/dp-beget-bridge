@@ -122,8 +122,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Ingress route gate | `dd4b44a` (#161) | Closure requires a fresh caller-supplied exclusive OAuth route proof before writing the marker; no production proof implementation or Beget switch |
 | Pinned Traefik route inspection | `d1a9188` (#163) | Root read-only file digest, provider, mount and Docker router checks; host NAT, listener proof and live execution still open |
 | Beget listener and port inspection | `5cc2c8c` (#164) | Root read-only host listener and Docker published-port check; NAT and live Beget execution still open |
+| Seven-unit guarded restart | `7dfca8a` (#165) | CI restarts four inert old writers under scoped permit while ingress remains closed, then verifies permit removal blocks starts; full state rollback still open |
 
-These sixty-nine slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These seventy slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
