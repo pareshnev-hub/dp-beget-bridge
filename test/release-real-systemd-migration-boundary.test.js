@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readlink, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { backupSystemdUnits } from "../scripts/release/backup-systemd-units.mjs";
+import { activateManagedRelease } from "../scripts/release/activate-managed-release.mjs";
+import { pauseAdmission } from "../scripts/release/admission-pause.mjs";
 import { closeLegacyIngress } from "../scripts/release/close-legacy-ingress.mjs";
 import { stageIngressBootGuard } from "../scripts/release/ingress-boot-guard.mjs";
 import { inspectLegacyServiceActivity } from "../scripts/release/legacy-service-activity.mjs";
@@ -14,8 +16,13 @@ import { installManagedOverrides } from "../scripts/release/install-managed-over
 import { inspectInstalledManagedUnits } from "../scripts/release/installed-managed-unit-preflight.mjs";
 import { readMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
 import { quiesceLegacyWriters } from "../scripts/release/quiesce-legacy-writers.mjs";
+import { openManagedIngress } from "../scripts/release/open-managed-ingress.mjs";
+import { recoverFirstMigration } from "../scripts/release/recover-first-migration.mjs";
+import { reopenLegacyIngress } from "../scripts/release/reopen-legacy-ingress.mjs";
+import { restartLegacyAfterRollback } from "../scripts/release/restart-legacy-after-rollback.mjs";
 import { snapshotLegacyState } from "../scripts/release/snapshot-legacy-state.mjs";
 import { stageManagedUnitOverrides } from "../scripts/release/stage-managed-unit-overrides.mjs";
+import { stopCandidateForRollback } from "../scripts/release/stop-candidate-for-rollback.mjs";
 import { stageWriterBootGuard } from "../scripts/release/writer-boot-guard.mjs";
 import { assertWriterPermitAbsent, withWriterStartPermit } from "../scripts/release/writer-start-permit.mjs";
 
@@ -48,11 +55,12 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
     await assert.rejects(stat(path.join(unitDirectory, `${unit}.d`)), { code: "ENOENT" });
   }
   const workdirs = ["/opt/dp-beget-bridge", "/opt/dp-beget-bridge-dp012-dcr",
-    "/var/lib/dp-beget-tunnel"];
+    "/var/lib/dp-beget-tunnel", "/var/lib/dp-beget-bridge"];
   for (const directory of workdirs) {
     await assert.rejects(stat(directory), { code: "ENOENT" });
   }
   const root = await mkdtemp("/var/lib/dp-r0004-systemd-rehearsal-");
+  await chmod(root, 0o755); // inert service users must traverse the version pointer
   const runtime = await mkdtemp("/run/dp-r0004-systemd-rehearsal-");
   const created = [];
   t.after(async () => {
@@ -175,9 +183,13 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
   await writeFile(path.join(configRoot, "settings.json"), "{}\n", { mode: 0o600 });
   const databases = [];
   for (const name of ["session-host", "agent", "oauth"]) {
-    const source = path.join(root, `${name}.sqlite`);
+    const source = name === "session-host" ? "/var/lib/dp-beget-bridge/state.sqlite"
+      : path.join(root, `${name}.sqlite`);
     const db = new DatabaseSync(source);
-    try { db.exec("CREATE TABLE rehearsal (id INTEGER PRIMARY KEY)"); }
+    try {
+      db.exec("CREATE TABLE rehearsal (id INTEGER PRIMARY KEY)");
+      if (name === "session-host") db.exec("PRAGMA user_version=1; CREATE TABLE operations (status TEXT NOT NULL)");
+    }
     finally { db.close(); }
     databases.push({ name, source });
   }
@@ -197,4 +209,65 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
   for (const unit of writers) assert.equal(await active(unit), "inactive");
   for (const unit of ingress) assert.equal(await active(unit), "inactive");
   assert.ok((await stat(marker)).isFile());
+
+  // A signed release is represented by inert, versioned package metadata.
+  // Real systemd starts only the fixture oneshot units; no public endpoint
+  // or real R0004 health handler is present on this isolated runner.
+  const versionDir = `0.1.0-${"b".repeat(40)}`;
+  const candidate = path.join(releaseRoot, "releases", versionDir);
+  await mkdir(path.join(releaseRoot, "releases"));
+  await mkdir(candidate);
+  await writeFile(path.join(candidate, "package.json"),
+    JSON.stringify({ name: "dp-beget-bridge", version: "0.1.0" }) + "\n");
+  const admissionFlag = path.join(root, "admission", "paused");
+  await activateManagedRelease({ journalPath, marker, permit, unitDirectory,
+    releaseRoot, versionDir, artifactSha256: "c".repeat(64),
+    pause: () => pauseAdmission({ flag: admissionFlag }),
+    assertHealthy: async () => {
+      for (const unit of writers) assert.equal(await active(unit), "active");
+      for (const unit of ingress) assert.equal(await active(unit), "inactive");
+    } });
+  assert.equal((await readMigrationJournal(journalPath)).phase, "locally-healthy");
+  assert.equal(await readlink(path.join(releaseRoot, "current")), `releases/${versionDir}`);
+  await assertWriterPermitAbsent(permit);
+
+  // Public admission fails before exposure; the candidate has changed one
+  // disposable database, which the rollback must restore from the snapshot.
+  const agentSource = databases.find(item => item.name === "agent").source;
+  const changed = new DatabaseSync(agentSource);
+  try { changed.exec("INSERT INTO rehearsal (id) VALUES (1)"); }
+  finally { changed.close(); }
+  await assert.rejects(openManagedIngress({ journalPath, marker, permit, unitDirectory,
+    releaseRoot, versionDir, artifactSha256: "c".repeat(64), admissionFlag,
+    assertLocalPaused: async () => {}, assertRouteExclusive: async () => false }),
+  /Exclusive public OAuth route not proven/);
+  assert.equal((await readMigrationJournal(journalPath)).phase, "locally-healthy");
+  assert.ok((await stat(marker)).isFile());
+
+  const legacyHealthy = async () => ({ services: 4, products: ["DP Beget Bridge",
+    "DP Beget Bridge", "DP Beget Bridge", "DP Beget Bridge Session Host"] });
+  const record = name => path.join(root, name);
+  const recovered = await recoverFirstMigration({ journalPath, marker, permit,
+    unitDirectory, releaseRoot, versionDir, admissionFlag,
+    recoveryRoot: record("staged-recovery"), planPath: record("rollback-intent.json"),
+    stopRecordPath: record("candidate-stop.json"), unitRecordPath: record("units-restored.json"),
+    copyRecordPath: record("state-copies.json"), ledgerPath: record("replacement-ledger.json"),
+    pointerRecordPath: record("pointer-removed.json"),
+    restartRecordPath: record("legacy-started.json"), ingressRecordPath: record("legacy-exposed.json"),
+    assertRouteExclusive: async () => true,
+    stopCandidate: options => stopCandidateForRollback({ ...options,
+      assertPaused: async () => {} }),
+    restartLegacy: options => restartLegacyAfterRollback({ ...options,
+      assertLegacyHealthy: legacyHealthy }),
+    reopenIngress: options => reopenLegacyIngress({ ...options,
+      assertLegacyHealthy: legacyHealthy, assertPublicLegacy: async () => true }) });
+  assert.equal(recovered.phase, "ingress-open");
+  assert.equal((await readMigrationJournal(journalPath)).phase, "ingress-open");
+  for (const unit of writers) assert.equal(await active(unit), "active");
+  for (const unit of [ingress[0], ingress[2]]) assert.equal(await active(unit), "active");
+  await assert.rejects(stat(marker), { code: "ENOENT" });
+  await assert.rejects(readlink(path.join(releaseRoot, "current")), { code: "ENOENT" });
+  const restored = new DatabaseSync(agentSource, { readOnly: true });
+  try { assert.equal(restored.prepare("SELECT COUNT(*) AS n FROM rehearsal").get().n, 0); }
+  finally { restored.close(); }
 });
