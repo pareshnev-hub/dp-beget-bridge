@@ -18,6 +18,31 @@ function rules(output, family) {
   return lines;
 }
 
+// iptables-nft and the older xtables backend can coexist. Inspect the
+// complete legacy-save output, not only its NAT table: mangle TPROXY or a
+// filter redirect could otherwise bypass the nft-based inventory.
+export function validateBegetLegacyIptables(ipv4, ipv6) {
+  for (const [family, output] of [["IPv4", ipv4], ["IPv6", ipv6]]) {
+    check(typeof output === "string", `missing ${family} legacy iptables inventory`);
+    const meaningful = output.split("\n").map(line => line.trim())
+      .filter(line => line && !line.startsWith("#"));
+    let inTable = false;
+    for (const line of meaningful) {
+      if (/^\*[a-z]+$/.test(line)) {
+        check(!inTable, `${family} legacy iptables has an incomplete table`);
+        inTable = true;
+      } else if (/^:[A-Za-z0-9_-]+ (?:ACCEPT|DROP|-) \[\d+:\d+\]$/.test(line)) {
+        check(inTable, `${family} legacy iptables has an incomplete table`);
+      } else if (line === "COMMIT") {
+        check(inTable, `${family} legacy iptables has an incomplete table`);
+        inTable = false;
+      } else check(false, `${family} legacy iptables contains a rule`);
+    }
+    check(!inTable, `${family} legacy iptables has an incomplete table`);
+  }
+  return true;
+}
+
 // Fail closed on any added NAT rule, including another published port,
 // alternate redirect, or a changed bridge. Docker's two loopback-only
 // publishers may change container addresses without changing this boundary.
@@ -83,6 +108,9 @@ export async function inspectBegetOAuthNat() {
   const { stdout: v4 } = await exec("iptables-save", ["-t", "nat"], options);
   const { stdout: v6 } = await exec("ip6tables-save", ["-t", "nat"], options);
   const { stdout: nft } = await exec("nft", ["-a", "list", "ruleset"], options);
+  const { stdout: legacy4 } = await exec("iptables-legacy-save", [], options);
+  const { stdout: legacy6 } = await exec("ip6tables-legacy-save", [], options);
+  validateBegetLegacyIptables(legacy4, legacy6);
   const result = validateBegetOAuthNatSnapshot(v4, v6, nft, containers[0]);
   const { stdout: after } = await exec("docker", ["inspect", "n8n-traefik-1"], options);
   const final = JSON.parse(after);

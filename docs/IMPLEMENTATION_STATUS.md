@@ -131,9 +131,10 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Pinned host NAT inventory | `ec97317` (#171) | Root read-only IPv4/IPv6 NAT, nft destinations and Traefik network identity integrated into repeated route inventory; live execution and complete exclusive route proof still open |
 | Loaded OAuth proxy path | `d847a1a` (#172) | Manager-loaded 8791 socket, proxyd target 8789 and optional known migration guard checked twice; public upstream identity and live executable proof still open |
 | Legacy OAuth response parity | `90f356d` (#173) | Bounded loopback → socket → IP-pinned public challenge comparison; matching live headers/body hashes observed separately, full exclusive ingress proof still open |
-| Complete host listener inventory | this change | Reject new non-loopback TCP/UDP listener outside SSH, Traefik and OAuth bridge socket; fresh root execution and exclusive route proof still open |
+| Complete host listener inventory | `f8db64d` (#174) | Reject new non-loopback TCP/UDP listener outside SSH, Traefik and OAuth bridge socket; fresh root execution and exclusive route proof still open |
+| Legacy xtables inventory | this change | Reject any separate iptables-legacy rule across IPv4/IPv6 tables; live root evidence and complete exclusive route proof still open |
 
-These seventy-nine slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These eighty slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
