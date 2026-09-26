@@ -80,6 +80,8 @@ Each schema migration has:
 
 Do not silently downgrade a state schema if N-1 cannot safely read it.
 
+An ordinary managed version switch checks the signed archive's `release-compatibility.json` against the active version's declared SQLite schemas and rejects any change. Update these declarations whenever the implementations change. Changes to schemas require a separate stopped-writer snapshot, verified forward and reverse recovery, and a successful N/N−1 rehearsal. Identical declarations are a necessary gate, not evidence that data compatibility or rollback has been tested.
+
 ## Rollback
 
 Rollback may restore service code/configuration. It does **not** promise to:
