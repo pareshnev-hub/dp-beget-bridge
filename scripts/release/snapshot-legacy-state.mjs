@@ -3,6 +3,9 @@ import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import { backupStateBundle } from "./backup-state-bundle.mjs";
 import { PERSISTENT_MARKER } from "./ingress-boot-guard.mjs";
+import { inspectInstalledWriterGuards } from "./installed-writer-guard-preflight.mjs";
+import { WRITER_START_PERMIT } from "./writer-boot-guard.mjs";
+import { assertWriterPermitAbsent } from "./writer-start-permit.mjs";
 import { advanceMigrationJournal, readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
 import { verifyMarker } from "./quiesce-legacy-writers.mjs";
 import { readRegularFile } from "./verify-artifact.mjs";
@@ -26,7 +29,9 @@ export async function verifyJournalStateBundle(record) {
 // Called only after all writers have stopped. The grouped backup checks this
 // invariant both before and after copying, and syncs its contents before return.
 export async function snapshotLegacyState({ journalPath, marker = PERSISTENT_MARKER,
-  configRoot, databases, outputDir, backupBundle = backupStateBundle } = {}) {
+  configRoot, databases, outputDir, backupBundle = backupStateBundle,
+  unitDirectory = "/etc/systemd/system", permit = WRITER_START_PERMIT,
+  inspectWriterGuards = inspectInstalledWriterGuards } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required for the migration snapshot");
   const journal = await readMigrationJournal(journalPath);
   if (journal.phase !== "quiesced") throw new Error("Legacy writers must be journaled quiesced first");
@@ -35,7 +40,11 @@ export async function snapshotLegacyState({ journalPath, marker = PERSISTENT_MAR
   }
   await verifyJournalUnitBackup(journal);
   await verifyMarker(marker);
+  await inspectWriterGuards({ unitDirectory, marker, permit });
+  await assertWriterPermitAbsent(permit);
   await backupBundle({ configRoot, databases, outputDir });
+  await inspectWriterGuards({ unitDirectory, marker, permit });
+  await assertWriterPermitAbsent(permit);
   const filename = path.join(outputDir, "bundle-manifest.json");
   const info = await lstat(filename);
   if (!info.isFile() || info.nlink !== 1 || info.uid !== 0 || (info.mode & 0o077) !== 0) {
