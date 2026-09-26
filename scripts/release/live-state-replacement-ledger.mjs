@@ -287,6 +287,13 @@ export async function replaceLiveStateFromLedger({ ledgerPath, stateDatabase,
   }
   for (let index = 0; index < record.targets.length; index++) {
     const item = record.targets[index];
+    // A prior process may have completed a rename but failed before syncing
+    // its parent. Make that observed position durable before skipping it or
+    // performing the next rename.
+    if (positions[index] !== "pending") {
+      await syncDirectory(path.dirname(item.live));
+      ({ positions } = await inspectLiveReplacementLedger({ ...boundary, ledgerPath, stateDatabase }));
+    }
     if (positions[index] === "pending") {
       await syncPreservedState(item.live, item.kind);
       ({ positions } = await inspectLiveReplacementLedger({ ...boundary, ledgerPath, stateDatabase }));
