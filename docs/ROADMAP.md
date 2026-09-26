@@ -292,7 +292,7 @@ R0004 starts as the primary track only after the real-client E2E record identifi
 ## RELEASE 0004 — Public Direct 1.0
 
 Proposed version: **1.0.0**  
-Status: **PLANNED**
+Status: **IN PROGRESS — NOT DEPLOYABLE**. Implementation evidence is tracked in `docs/IMPLEMENTATION_STATUS.md`; the release gate below remains open.
 
 ### Goal
 Turn the private beta into a reproducibly installable and maintainable open-source product.
