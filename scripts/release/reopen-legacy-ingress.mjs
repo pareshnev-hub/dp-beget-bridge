@@ -14,6 +14,7 @@ import { readLiveReplacementLedger } from "./live-state-replacement-ledger.mjs";
 import { advanceMigrationJournal, readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
 import { readPreparedRollbackIntent } from "./prepare-pre-exposure-rollback.mjs";
 import { probeLegacyLocalHealth } from "./probe-legacy-health.mjs";
+import { probePublicLegacyOAuth } from "./public-legacy-probe.mjs";
 import { assertLegacyHealthResult, readLegacyRestartRecord } from "./restart-legacy-after-rollback.mjs";
 import { readLiveStateCopyRecord } from "./stage-live-state-recovery.mjs";
 import { verifyJournalStateBundle } from "./snapshot-legacy-state.mjs";
@@ -142,7 +143,7 @@ async function proof({ marker, permit, unitDirectory, assertRouteExclusive, insp
 export async function reopenLegacyIngress({ recordPath, restartRecordPath,
   marker = PERSISTENT_MARKER, permit = WRITER_START_PERMIT,
   unitDirectory = "/etc/systemd/system", assertRouteExclusive,
-  assertPublicLegacy, assertLegacyHealthy = probeLegacyLocalHealth,
+  assertPublicLegacy = probePublicLegacyOAuth, assertLegacyHealthy = probeLegacyLocalHealth,
   inspectGuard = inspectInstalledIngressGuard,
   inspectWriterGuards = inspectInstalledWriterGuards,
   getState = systemctlState, startUnit = systemctlStart, stopUnit = systemctlStop,
