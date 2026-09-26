@@ -10,7 +10,7 @@ test("STR-03: new terminal capture pipe has a hard byte ceiling", async (t) => {
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const calls = [];
   const manager = new TmuxSessionManager({
-    config: { historyLines: 1000, sessionOutputMaxBytes: 12345 },
+    config: { historyLines: 1000, sessionOutputMaxBytes: 12345, storageMinFreeBytes: 4096 },
     store: {
       async list() { return []; },
       sessionDir(id) { return path.join(root, id); },
@@ -26,7 +26,7 @@ test("STR-03: new terminal capture pipe has a hard byte ceiling", async (t) => {
   const pipe = calls.find((args) => args[0] === "pipe-pane");
   assert.match(
     pipe.at(-1),
-    new RegExp(`^/usr/bin/env node '.*scripts/transcript-capture\\.mjs' '.*${opened.id}/terminal\\.log' 12345$`),
+    new RegExp(`^/usr/bin/env node '.*scripts/transcript-capture\\.mjs' '.*${opened.id}/terminal\\.log' 12345 4096$`),
   );
 });
 

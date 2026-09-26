@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { StateStore } from "../apps/agent/src/state-store.js";
 import { TmuxSessionManager } from "../apps/agent/src/tmux.js";
+import { CAPTURE_STOP_SUFFIX } from "../scripts/transcript-capture.mjs";
 
 async function fixture(context, output = "") {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-cursor-"));
@@ -114,6 +115,29 @@ test("CUR-06: storage reserve stops capture but leaves the terminal controlled",
   assert.equal(result.capture.reason, "storage_reserve");
   assert.deepEqual(tmuxCalls, [["pipe-pane", "-t", `dpb_${session.id}`]]);
   assert.equal((await store.get(session.id)).transcriptCaptureState, "DEGRADED");
+});
+
+test("CUR-06: a capture stop while no client reads is visible after restart", async context => {
+  const { dataDir, store, session, manager } = await fixture(context, "retained");
+  await fs.writeFile(`${store.outputPath(session.id)}${CAPTURE_STOP_SUFFIX}`,
+    "storage_reserve\n", { mode: 0o600 });
+  const read = await manager.readOutput(session.id);
+  assert.equal(read.output, "retained");
+  assert.equal(read.capture.state, "DEGRADED");
+  assert.equal(read.capture.reason, "storage_reserve");
+  store.close();
+  const resumed = new StateStore(dataDir);
+  await resumed.init();
+  context.after(() => resumed.close());
+  assert.equal((await resumed.get(session.id)).transcriptGapReason, "storage_reserve");
+});
+
+test("CUR-06: an untrusted capture stop marker cannot be treated as healthy", async context => {
+  const { store, session, manager } = await fixture(context, "retained");
+  await fs.symlink(store.outputPath(session.id),
+    `${store.outputPath(session.id)}${CAPTURE_STOP_SUFFIX}`);
+  await assert.rejects(manager.readOutput(session.id), error =>
+    error?.code === "transcript_capture_invalid" && error?.status === 503);
 });
 
 test("STR-03: transcript ceiling stops capture but leaves the terminal controlled", async (context) => {

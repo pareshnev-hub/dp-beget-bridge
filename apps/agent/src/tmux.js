@@ -1,10 +1,12 @@
 import crypto from "node:crypto";
+import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { BridgeError } from "../../../packages/core/src/errors.js";
+import { CAPTURE_STOP_SUFFIX } from "../../../scripts/transcript-capture.mjs";
 import { durationBucket } from "./telemetry.js";
 
 const execFileAsync = promisify(execFile);
@@ -187,7 +189,7 @@ export class TmuxSessionManager {
         "-o",
         "-t",
         name,
-        `/usr/bin/env node ${shellQuote(CAPTURE_SCRIPT)} ${shellQuote(this.store.outputPath(id))} ${Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024))}`,
+        `/usr/bin/env node ${shellQuote(CAPTURE_SCRIPT)} ${shellQuote(this.store.outputPath(id))} ${Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024))} ${Math.max(0, Number(this.config.storageMinFreeBytes || 0))}`,
       ]);
       const saved = await this.store.save(session);
       this.telemetry.trackActivity?.();
@@ -259,6 +261,32 @@ export class TmuxSessionManager {
     return Number(BigInt(stat.bavail) * BigInt(stat.bsize));
   }
 
+  async observeCaptureStop(id, session) {
+    if (session.transcriptCaptureState === "DEGRADED") return session;
+    const marker = `${this.store.outputPath(id)}${CAPTURE_STOP_SUFFIX}`;
+    let file;
+    try { file = await fs.open(marker, constants.O_RDONLY | constants.O_NOFOLLOW); }
+    catch (error) {
+      if (error.code === "ENOENT") return session;
+      throw new BridgeError("transcript_capture_invalid", "Capture status cannot be verified", 503);
+    }
+    try {
+      const info = await file.stat();
+      if (!info.isFile() || info.nlink !== 1 || info.size !== 16 ||
+          info.uid !== process.getuid?.() || (info.mode & 0o022) !== 0 ||
+          (await file.readFile("utf8")) !== "storage_reserve\n") {
+        throw new Error("Invalid capture stop record");
+      }
+    } catch {
+      throw new BridgeError("transcript_capture_invalid", "Capture status cannot be verified", 503);
+    } finally { await file.close(); }
+    const degraded = await this.store.updateTranscript(id, {
+      captureState: "DEGRADED", gapReason: "storage_reserve",
+    });
+    this.logger.warn("terminal.capture_degraded", { sessionId: id, reason: "storage_reserve" });
+    return degraded;
+  }
+
   async enforceCaptureReserve(id, session, alive) {
     const minimum = Number(this.config.storageMinFreeBytes || 0);
     if (!alive || session.transcriptCaptureState !== "ACTIVE" || minimum <= 0) return session;
@@ -295,6 +323,7 @@ export class TmuxSessionManager {
   async readOutput(id, cursor = undefined, maxBytes = 64 * 1024) {
     let session = await this.store.get(id);
     if (!session) throw new BridgeError("session_not_found", "Terminal session not found", 404);
+    session = await this.observeCaptureStop(id, session);
     const alive = await this.isAlive(id);
     session = await this.enforceCaptureReserve(id, session, alive);
     this.telemetry.trackActivity?.();
