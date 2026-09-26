@@ -1,6 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_TRUST_DIR } from "./pin-release-key.mjs";
+import { verifyCleanInstallManifest, writeCleanInstallManifest } from "./clean-install-manifest.mjs";
 import { preflightCleanInstall } from "./preflight-clean-install.mjs";
 import { prepareRelease } from "./prepare-release.mjs";
 import { stageCleanInstallConfig } from "./stage-clean-install-config.mjs";
@@ -12,7 +13,9 @@ export async function prepareCleanInstall({ artifact, manifest, signature, domai
   expectedIp, workUser, workGroup, agentUser, mcpUser, ipcGroup, allowedRoot,
   workspaceParent, workspace, releaseRoot, trustDir = DEFAULT_TRUST_DIR,
   inspect = preflightCleanInstall, prepare = prepareRelease,
-  stageUnits = stageCleanInstallUnits, stageConfig = stageCleanInstallConfig } = {}) {
+  stageUnits = stageCleanInstallUnits, stageConfig = stageCleanInstallConfig,
+  writeManifest = writeCleanInstallManifest,
+  verifyManifest = verifyCleanInstallManifest } = {}) {
   if (process.getuid?.() !== 0 || typeof workspace !== "string" ||
       typeof workspaceParent !== "string" || !path.isAbsolute(workspace) ||
       path.normalize(workspace) !== workspace || path.dirname(workspace) !== workspaceParent ||
@@ -47,8 +50,11 @@ export async function prepareCleanInstall({ artifact, manifest, signature, domai
           "session-host.env", "agent.env", "mcp.env"])) {
       throw new Error("Clean-install staging inventory is incomplete");
     }
+    const bound = await writeManifest({ workspace, artifactSha256: candidate.sha256, trustDir });
+    await verifyManifest({ workspace, manifestSha256: bound.sha256, trustDir });
     return { version: candidate.version, commit: candidate.commit, sha256: candidate.sha256,
-      workspace, units: units.units.length, configFiles: config.files.length,
+      manifestSha256: bound.sha256, workspace, units: units.units.length,
+      configFiles: config.files.length,
       scope: "private candidate staging only; no service installation or exposure" };
   } catch (error) {
     await rm(workspace, { recursive: true, force: true });
