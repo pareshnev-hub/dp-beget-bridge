@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { countLegacyConnections, installLegacyCounterHotfix, recoverLegacyCounterHotfix,
@@ -114,6 +114,42 @@ test("failed startup restores all original bytes before ingress reopens", {
   assert.equal(states.get(INGRESS[0]).ActiveState, "active");
   const journal = JSON.parse(await readFile(`${stageDir}.activation.json`, "utf8"));
   assert.equal(journal.phase, "recovered");
+});
+
+test("recovered activation retries once and preserves the failed journal", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const { options, files, stageDir, states } = await fixture(t, true);
+  await assert.rejects(installLegacyCounterHotfix(options), /original R0003 was recovered/);
+  const oldJournal = await readFile(`${stageDir}.activation.json`);
+  await assert.rejects(installLegacyCounterHotfix(options), /EEXIST/);
+  const report = await installLegacyCounterHotfix({ ...options, retryRecovered: true });
+  assert.equal(report.phase, "complete");
+  const archives = (await readdir(path.dirname(stageDir))).filter(name =>
+    name.startsWith(`${path.basename(stageDir)}.activation.recovered-`));
+  assert.equal(archives.length, 1);
+  assert.deepEqual(await readFile(path.join(path.dirname(stageDir), archives[0])), oldJournal);
+  assert.equal(JSON.parse(await readFile(`${stageDir}.activation.json`, "utf8")).phase, "complete");
+  for (const item of files) {
+    assert.equal(digest(await readFile(path.join(item.root, item.relative))), item.after);
+  }
+  assert.equal(states.get(INGRESS[0]).ActiveState, "active");
+  await assert.rejects(installLegacyCounterHotfix({ ...options, retryRecovered: true }),
+    /has not completed recovery/);
+});
+
+test("retry refuses an unresolved activation journal without overwriting it", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const { options, stageDir, events } = await fixture(t);
+  const journal = Buffer.from(JSON.stringify({
+    format: "dp-r0003-counter-hotfix-install-v1", stageDir,
+    manifestSha256: options.manifestSha256, phase: "recovering" }) + "\n");
+  await writeFile(`${stageDir}.activation.json`, journal, { mode: 0o600 });
+  await assert.rejects(installLegacyCounterHotfix({ ...options, retryRecovered: true }),
+    /has not completed recovery/);
+  assert.deepEqual(await readFile(`${stageDir}.activation.json`), journal);
+  assert.equal(events.filter(event => event.startsWith("stop:")).length, 0);
 });
 
 test("crash recovery accepts a mixed four-source state and restores original code", {

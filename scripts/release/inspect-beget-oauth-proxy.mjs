@@ -44,10 +44,11 @@ export function validateBegetOAuthProxySnapshot(socketOutput, serviceOutput) {
   }
   check(socket.Listen === "172.18.0.1:8791 (Stream)" &&
     socket.Triggers === SERVICE, "socket listener or activated service changed");
-  // Runtime fields vary after activation. All executable and argument fields
-  // must remain exact; changes to the proxyd target invalidate this snapshot.
+  // An active command has code=(null) and status=0/0. After systemd stops a
+  // service, its same ExecStart command can have code=exited and status=0.
+  // These are execution metadata; the binary, arguments and target stay pinned.
   check(service.User === "dp-beget-oauth-proxy" &&
-    /^\{ path=\/lib\/systemd\/systemd-socket-proxyd ; argv\[\]=\/lib\/systemd\/systemd-socket-proxyd 127\.0\.0\.1:8789 ; ignore_errors=no ; start_time=\[[^\]\n]+\] ; stop_time=\[[^\]\n]+\] ; pid=\d+ ; code=\([a-z-]+\) ; status=\d+\/\d+ \}$/.test(service.ExecStart),
+    /^\{ path=\/lib\/systemd\/systemd-socket-proxyd ; argv\[\]=\/lib\/systemd\/systemd-socket-proxyd 127\.0\.0\.1:8789 ; ignore_errors=no ; start_time=\[[^\]\n]+\] ; stop_time=\[[^\]\n]+\] ; pid=\d+ ; code=(?:\(null\)|exited|killed) ; status=(?:0(?:\/0)?|15(?:\/TERM)?) \}$/.test(service.ExecStart),
   "proxy command or target changed");
   check(socket.DropInPaths === service.DropInPaths.replace(`${SERVICE}.d`, `${SOCKET}.d`),
     "socket and service guards do not match");
