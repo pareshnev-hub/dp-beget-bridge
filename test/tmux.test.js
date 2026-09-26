@@ -129,6 +129,23 @@ test("R0004: concurrent session opens reserve quota before starting tmux", async
   assert.equal(manager.pendingOpens, 0);
 });
 
+test("R0004: an OPEN session still reserves capture space while tmux is absent", async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-stopped-open-quota-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const manager = new TmuxSessionManager({
+    config: { terminalMaxActive: 8, sessionOutputMaxBytes: 10,
+      transcriptTotalMaxBytes: 10 },
+    store: {
+      async list() { return [{ id: "stopped", closedAt: null }]; },
+      outputPath: id => path.join(root, id, "terminal.log"),
+    },
+    pathPolicy: {}, logger: {},
+  });
+  manager.isAlive = async () => false;
+  await assert.rejects(manager.open({}), error =>
+    error?.code === "transcript_quota" && error?.status === 507);
+});
+
 test("uses an explicit tmux socket and prepares its persistent directory", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-tmux-socket-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));

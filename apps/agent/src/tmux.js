@@ -154,11 +154,13 @@ export class TmuxSessionManager {
             !Number.isSafeInteger(perSession) || perSession < 1) {
           throw new BridgeError("transcript_quota_invalid", "Transcript quota is invalid", 503);
         }
-        // Each live or opening terminal may still write its full allowance.
-        // Closed and unexpectedly stopped sessions retain their actual bytes.
-        let committed = BigInt(active + this.pendingOpens + 1) * BigInt(perSession);
+        // OPEN metadata keeps its full allowance even if tmux temporarily
+        // appears stopped: a recovered terminal may still write its full tail.
+        // CLOSED sessions retain only their actual bytes.
+        const stillOpen = sessions.filter(session => !session.closedAt).length;
+        let committed = BigInt(stillOpen + this.pendingOpens + 1) * BigInt(perSession);
         for (let index = 0; index < sessions.length; index++) {
-          if (alive[index]) continue;
+          if (!sessions[index].closedAt) continue;
           let info;
           try { info = await fs.lstat(this.store.outputPath(sessions[index].id)); }
           catch (error) {
