@@ -87,5 +87,10 @@ export async function closeLegacyIngress({ journalPath, unitDirectory, marker = 
   for (const unit of STOP_ORDER) {
     if (await getState(unit) !== "inactive") throw new Error(`Ingress remains active: ${unit}`);
   }
+  // A watched Traefik file or Docker router can change during the stops.
+  // Retain the marker and journal for recovery if this second proof fails.
+  if (await assertRouteExclusive() !== true) {
+    throw new Error("Exclusive public OAuth route changed during ingress closure");
+  }
   return { closed: [...STOP_ORDER], marker };
 }
