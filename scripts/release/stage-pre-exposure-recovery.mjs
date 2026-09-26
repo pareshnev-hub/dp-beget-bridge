@@ -27,7 +27,7 @@ export async function assertPreExposureRecoveryBoundary({ journalPath, marker = 
   unitDirectory = "/etc/systemd/system", assertRouteExclusive,
   inspectGuard = inspectInstalledIngressGuard, getState = systemctlState,
   inspectWriterGuards = inspectInstalledWriterGuards, permit = WRITER_START_PERMIT,
-  transactionId, phase }) {
+  transactionId, phase, managedWriterView = phase !== "snapshotted" }) {
   if (process.getuid?.() !== 0 || typeof assertRouteExclusive !== "function") {
     throw new Error("Root and an exclusive route proof are required for recovery");
   }
@@ -39,7 +39,7 @@ export async function assertPreExposureRecoveryBoundary({ journalPath, marker = 
   catch (error) { if (error.code !== "ENOENT") throw error; }
   await verifyMarker(marker);
   await inspectGuard({ unitDirectory, marker });
-  await inspectWriterGuards({ unitDirectory, marker, permit, managed: phase !== "snapshotted" });
+  await inspectWriterGuards({ unitDirectory, marker, permit, managed: managedWriterView });
   await assertWriterPermitAbsent(permit);
   for (const unit of INGRESS) {
     if (await getState(unit) !== "inactive") throw new Error(`Ingress remains active: ${unit}`);

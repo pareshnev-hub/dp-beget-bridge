@@ -107,8 +107,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Recovery pair re-verification | `c241459` (#144) | Reopens staged config, SQLite and original units against bound manifests and closed ingress; no live replacement |
 | Durable pre-exposure rollback intent | `60d4d31` (#145) | Root-owned prepared record binds migration, staged pair and live destination inodes; no live replacement |
 | Candidate rollback stop | `0830fcc` (#146) | Journaled writer stops under pause and marker; retained tmux and ledger rechecked; no live state replacement |
+| Original unit view restoration | `65706e7` (#147) | Journaled removal of managed bindings with original fragments and boot guards intact; no live state replacement |
 
-These fifty-three slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These fifty-four slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
