@@ -3,6 +3,7 @@ import { activateManagedRelease } from "./activate-managed-release.mjs";
 import { closeLegacyIngress } from "./close-legacy-ingress.mjs";
 import { installManagedOverrides } from "./install-managed-overrides.mjs";
 import { installMigrationBootGuards } from "./install-migration-boot-guards.mjs";
+import { boundDatabases } from "./legacy-bound-databases.mjs";
 import { readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
 import { openManagedIngress } from "./open-managed-ingress.mjs";
 import { preflightBegetLegacyRoute } from "./preflight-beget-legacy-route.mjs";
@@ -10,24 +11,8 @@ import { promotePreparedRelease } from "./promote-prepared-release.mjs";
 import { quiesceLegacyWriters } from "./quiesce-legacy-writers.mjs";
 import { snapshotLegacyState } from "./snapshot-legacy-state.mjs";
 
-const DATABASES = Object.freeze([
-  ["dp-beget-session-host.service", "session-host", "/var/lib/dp-beget-bridge/state.sqlite"],
-  ["dp-beget-agent.service", "agent", "/var/lib/dp-beget-bridge-agent/session-owners.sqlite"],
-  ["dp-beget-mcp-oauth-spike.service", "oauth", "/var/lib/dp-beget-bridge-mcp/auth/auth.sqlite"]
-]);
 function absolute(value) {
   return typeof value === "string" && path.isAbsolute(value) && path.normalize(value) === value;
-}
-
-function boundDatabases(report) {
-  const entries = report?.bindings?.databases;
-  if (!Array.isArray(entries) || entries.length !== DATABASES.length ||
-      DATABASES.some(([unit, , database], index) => entries[index]?.unit !== unit ||
-        entries[index]?.database !== database || !Number.isSafeInteger(entries[index]?.size) ||
-        entries[index].size < 0)) {
-    throw new Error("Live R0003 database bindings do not match the migration inventory");
-  }
-  return DATABASES.map(([, name, source]) => ({ name, source }));
 }
 
 // Library entry point only. A production caller must supply independently
