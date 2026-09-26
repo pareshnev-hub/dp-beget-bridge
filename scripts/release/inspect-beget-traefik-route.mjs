@@ -76,7 +76,10 @@ function checkContainers(containers) {
     for (const [key, value] of normalized) {
       requireCondition(!/^traefik\.(?:tcp|udp)\.routers\./.test(key),
         "uninspected TCP/UDP router");
-      const router = /^traefik\.http\.routers\.([^.]+)\.([^.]+)$/.exec(key);
+      // Live routers have these seven properties, including nested
+      // tls.certresolver. Unknown properties need a new audit; every router
+      // still requires one explicit, host-restricted rule.
+      const router = /^traefik\.http\.routers\.([^.]+)\.(entrypoints|middlewares|priority|rule|service|tls(?:\.certresolver)?)$/.exec(key);
       if (!/^traefik\.http\.routers\./.test(key)) continue;
       requireCondition(router !== null, "invalid Docker router label");
       configured.add(router[1]);

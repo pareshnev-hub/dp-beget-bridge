@@ -133,7 +133,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Legacy OAuth response parity | `90f356d` (#173) | Bounded loopback → socket → IP-pinned public challenge comparison; matching live headers/body hashes observed separately, full exclusive ingress proof still open |
 | Complete host listener inventory | `f8db64d` (#174) | Reject new non-loopback TCP/UDP listener outside SSH, Traefik and OAuth bridge socket; fresh root execution and exclusive route proof still open |
 | Legacy xtables inventory | `7b5ea2d` (#175), `d86e82f` (#176) | Reject any separate IPv4/IPv6 legacy rule without loading absent kernel tables; both root legacy saves returned empty with status 0 on 2026-09-26; fresh composite execution and exclusive route proof still open |
-| Read-only legacy route preflight | this change | Brackets the bounded R0003 OAuth challenge parity with repeated root route inventory; local tests only, no live composite execution or exclusive-route authorization |
+| Read-only legacy route preflight | `573cf3e` (#177); this fix | Three-hop parity passed live from an inert checkout; first root composite stopped on nested Docker router label syntax, now fixed locally; complete root run and exclusive-route authorization still open |
 
 These eighty-one slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
