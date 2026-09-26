@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import { backupStateBundle } from "../scripts/release/backup-state-bundle.mjs";
+import { inspectStateBundleSpace } from "../scripts/release/inspect-state-bundle-space.mjs";
 import { restoreStateBundle } from "../scripts/release/restore-state-bundle.mjs";
 
 test("OPS-06: stopped writers produce one private, restorable config and multi-DB snapshot", {
@@ -91,5 +92,31 @@ test("OPS-06: a restarted writer or missing DB removes the incomplete bundle", {
   await assert.rejects(stat(outputDir), /ENOENT/);
   await assert.rejects(backupStateBundle({ configRoot, databases: [{ name: "missing", source: path.join(root, "missing.sqlite") }],
     outputDir, assertQuiesced: async () => {} }), /ENOENT/);
+  await assert.rejects(stat(outputDir), /ENOENT/);
+});
+
+test("OPS-06: insufficient rollback headroom refuses a grouped snapshot before any write", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "dp-state-capacity-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const configRoot = path.join(root, "config");
+  await mkdir(configRoot);
+  const source = path.join(root, "agent.sqlite");
+  const db = new DatabaseSync(source);
+  db.exec("CREATE TABLE t (value TEXT)");
+  db.close();
+  const databases = [{ name: "agent", source }];
+  const result = await inspectStateBundleSpace({ databases, parent: root,
+    inspectFilesystem: async () => ({ bavail: 1024n * 1024n * 1024n, bsize: 1n }) });
+  assert.ok(result.requiredBytes > 512n * 1024n * 1024n);
+  assert.match(result.scope, /artifact excluded/);
+  let quiesceChecks = 0;
+  const outputDir = path.join(root, "snapshot");
+  await assert.rejects(backupStateBundle({ configRoot, databases, outputDir,
+    inspectSpace: args => inspectStateBundleSpace({ ...args,
+      inspectFilesystem: async () => ({ bavail: result.requiredBytes - 1n, bsize: 1n }) }),
+    assertQuiesced: async () => { quiesceChecks++; } }), /Insufficient free space/);
+  assert.equal(quiesceChecks, 0);
   await assert.rejects(stat(outputDir), /ENOENT/);
 });
