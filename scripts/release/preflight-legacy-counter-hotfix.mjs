@@ -40,16 +40,12 @@ async function pinnedBytes(filename, sha, mode) {
 // Reopen the staged four-file hotfix and check the active R0003 boundary in
 // one read-only pass. This deliberately does not approve service restarts or
 // attest that existing HTTP requests have drained.
-export async function preflightLegacyCounterHotfix({ stageDir, manifestSha256,
-  files = LEGACY_COUNTER_HOTFIX_FILES,
-  inspectServices = inspectLegacyServiceActivity,
-  inspectBindings = inspectBegetLegacyDataBindings,
-  readHealth = probeLegacyLocalHealth,
-  assertRestartSafe = assertSessionHostRestartSafe,
-  ledgerPath = "/var/lib/dp-beget-bridge/state.sqlite" } = {}) {
+export async function verifyLegacyCounterHotfixStage({ stageDir, manifestSha256,
+  files = LEGACY_COUNTER_HOTFIX_FILES } = {}) {
   if (process.getuid?.() !== 0 || !absolute(stageDir) ||
-      !/^[0-9a-f]{64}$/.test(manifestSha256 || "") || files.length !== 4 ||
-      !absolute(ledgerPath)) throw new Error("Root, private stage and manifest digest required");
+      !/^[0-9a-f]{64}$/.test(manifestSha256 || "") || files.length !== 4) {
+    throw new Error("Root, private stage and manifest digest required");
+  }
   await trustedDirectory(path.dirname(stageDir));
   await trustedDirectory(stageDir, true);
   const entries = await readdir(stageDir);
@@ -73,8 +69,20 @@ export async function preflightLegacyCounterHotfix({ stageDir, manifestSha256,
   for (const record of expected) {
     await pinnedBytes(path.join(stageDir, `${record.name}.before.js`), record.before, 0o600);
     await pinnedBytes(path.join(stageDir, `${record.name}.after.js`), record.after, 0o600);
-    await pinnedBytes(record.source, record.before, record.mode);
   }
+  return expected;
+}
+
+export async function preflightLegacyCounterHotfix({ stageDir, manifestSha256,
+  files = LEGACY_COUNTER_HOTFIX_FILES,
+  inspectServices = inspectLegacyServiceActivity,
+  inspectBindings = inspectBegetLegacyDataBindings,
+  readHealth = probeLegacyLocalHealth,
+  assertRestartSafe = assertSessionHostRestartSafe,
+  ledgerPath = "/var/lib/dp-beget-bridge/state.sqlite" } = {}) {
+  if (!absolute(ledgerPath)) throw new Error("Absolute legacy ledger path required");
+  const expected = await verifyLegacyCounterHotfixStage({ stageDir, manifestSha256, files });
+  for (const record of expected) await pinnedBytes(record.source, record.before, record.mode);
   const activity = await inspectServices();
   for (const unit of ["dp-beget-session-host.service", "dp-beget-agent.service",
     "dp-beget-mcp.service", "dp-beget-mcp-oauth-spike.service",
@@ -94,7 +102,7 @@ export async function preflightLegacyCounterHotfix({ stageDir, manifestSha256,
     throw new Error("Legacy health no longer matches the original R0003 release");
   }
   for (const record of expected) await pinnedBytes(record.source, record.before, record.mode);
-  await pinnedBytes(manifestPath, manifestSha256, 0o600);
+  await pinnedBytes(path.join(stageDir, "manifest.json"), manifestSha256, 0o600);
   return { stageDir, manifestSha256, files: expected.length,
     activeOperations: 0, scope: "read-only R0003 hotfix readiness; no in-flight request or restart proof" };
 }
