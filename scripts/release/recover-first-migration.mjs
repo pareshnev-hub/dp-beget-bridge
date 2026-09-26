@@ -99,7 +99,8 @@ export async function recoverFirstMigration({ journalPath, marker, permit,
       copies.stopRecordPath !== stopRecordPath || copies.unitRecordPath !== unitRecordPath) {
     throw new Error("Live recovery copies were not prepared");
   }
-  await prepareLedger({ ...boundary, ledgerPath, recordPath: copyRecordPath, stateDatabase });
+  await prepareLedger({ ...boundary, ledgerPath, recordPath: copyRecordPath,
+    planPath, stopRecordPath, unitRecordPath, stateDatabase });
   const ledger = await readLedger(ledgerPath);
   sameTransaction(ledger);
   if (ledger.phase !== "prepared" || ledger.copyRecordPath !== copyRecordPath) {
