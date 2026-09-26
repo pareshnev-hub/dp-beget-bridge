@@ -10,6 +10,7 @@ import { WRITER_START_PERMIT } from "./writer-boot-guard.mjs";
 import { inspectLegacyServiceActivity, LEGACY_UNITS, validateLegacyServiceActivity } from "./legacy-service-activity.mjs";
 import { advanceMigrationJournal, readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
 import { probePublicLegacyOAuth } from "./public-legacy-probe.mjs";
+import { probeBegetClosedOAuthRoute } from "./probe-beget-closed-oauth-route.mjs";
 import { verifyMarker } from "./quiesce-legacy-writers.mjs";
 
 const exec = promisify(execFile);
@@ -57,9 +58,11 @@ export async function closeLegacyIngress({ journalPath, unitDirectory, marker = 
   permit = WRITER_START_PERMIT, inspectGuard = inspectInstalledIngressGuard,
   inspectWriterGuards = inspectInstalledWriterGuards, inspectServices = inspectLegacyServiceActivity,
   assertRouteExclusive, assertPublicLegacy = probePublicLegacyOAuth,
+  assertPublicClosed = probeBegetClosedOAuthRoute,
   stopUnit = systemctlStop, getState = systemctlState } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to close legacy ingress");
-  if (typeof assertRouteExclusive !== "function" || typeof assertPublicLegacy !== "function") {
+  if (typeof assertRouteExclusive !== "function" || typeof assertPublicLegacy !== "function" ||
+      typeof assertPublicClosed !== "function") {
     throw new Error("Fresh exclusive route and public legacy proofs are required before ingress closure");
   }
   const journal = await readMigrationJournal(journalPath);
@@ -95,6 +98,9 @@ export async function closeLegacyIngress({ journalPath, unitDirectory, marker = 
   // Retain the marker and journal for recovery if this second proof fails.
   if (await assertRouteExclusive() !== true) {
     throw new Error("Exclusive public OAuth route changed during ingress closure");
+  }
+  if (await assertPublicClosed() !== true) {
+    throw new Error("Public OAuth path did not close with the dedicated socket");
   }
   return { closed: [...STOP_ORDER], marker };
 }

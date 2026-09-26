@@ -18,7 +18,8 @@ const TARGETS = Object.freeze([
 
 function fail(reason) { throw new Error(`Beget legacy OAuth route: ${reason}`); }
 
-function requestChallenge(target) {
+// Shared bounded, IP-pinned request for active and closed route checks.
+export function requestChallenge(target) {
   const client = target.protocol === "https:" ? https : http;
   return new Promise((resolve, reject) => {
     const request = client.request({ ...target, method: "GET", path: "/mcp", agent: false,
