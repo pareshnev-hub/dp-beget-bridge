@@ -126,8 +126,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Matched OAuth route surfaces | `1112e41` (#166) | Rechecks Traefik/file and host/Docker listeners twice against one container identity; NAT and alternate public ingress still unproven |
 | Route check after closure | `05079f1` (#167) | Closure rechecks exclusive route after stops; a change keeps marker and journal for recovery; production route proof remains open |
 | Pinned public host inventory | `2faa22b` (#168) | Repeated DNS and TLS checks bind the observed IPv4 to the local route surfaces; NAT and alternate ingress still need proof |
+| Interrupted seven-unit restart | `ff9b5d2` (#169) | CI interrupts inert writer startup after the first unit and retries the inactive suffix under a new permit; full state rollback still open |
 
-These seventy-three slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These seventy-four slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 

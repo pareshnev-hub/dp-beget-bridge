@@ -9,6 +9,7 @@ import { inspectInstalledWriterGuards } from "./installed-writer-guard-preflight
 import { WRITER_START_PERMIT } from "./writer-boot-guard.mjs";
 import { inspectLegacyServiceActivity, LEGACY_UNITS, validateLegacyServiceActivity } from "./legacy-service-activity.mjs";
 import { advanceMigrationJournal, readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
+import { probePublicLegacyOAuth } from "./public-legacy-probe.mjs";
 import { verifyMarker } from "./quiesce-legacy-writers.mjs";
 
 const exec = promisify(execFile);
@@ -55,11 +56,11 @@ export async function removePersistentMarker(marker) {
 export async function closeLegacyIngress({ journalPath, unitDirectory, marker = PERSISTENT_MARKER,
   permit = WRITER_START_PERMIT, inspectGuard = inspectInstalledIngressGuard,
   inspectWriterGuards = inspectInstalledWriterGuards, inspectServices = inspectLegacyServiceActivity,
-  assertRouteExclusive,
+  assertRouteExclusive, assertPublicLegacy = probePublicLegacyOAuth,
   stopUnit = systemctlStop, getState = systemctlState } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to close legacy ingress");
-  if (typeof assertRouteExclusive !== "function") {
-    throw new Error("Explicit fresh public OAuth route proof is required before ingress closure");
+  if (typeof assertRouteExclusive !== "function" || typeof assertPublicLegacy !== "function") {
+    throw new Error("Fresh exclusive route and public legacy proofs are required before ingress closure");
   }
   const journal = await readMigrationJournal(journalPath);
   if (journal.phase !== "guarded") throw new Error("Migration must have verified the installed guard");
@@ -78,6 +79,9 @@ export async function closeLegacyIngress({ journalPath, unitDirectory, marker = 
   // before committing the persistent marker and stopping the dedicated socket.
   if (await assertRouteExclusive() !== true) {
     throw new Error("Exclusive public OAuth route not proven before ingress closure");
+  }
+  if (await assertPublicLegacy() !== true) {
+    throw new Error("Public R0003 OAuth challenge not proven before ingress closure");
   }
   // The marker must be durable before any journal claim that ingress is closed.
   // On failure or power loss, it remains in place and boot refuses ingress.

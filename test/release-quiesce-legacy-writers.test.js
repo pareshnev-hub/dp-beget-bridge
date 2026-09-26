@@ -26,6 +26,7 @@ async function fixture(t) {
   const stopped = [];
   await closeLegacyIngress({ journalPath, marker, unitDirectory: "/etc/systemd/system",
     assertRouteExclusive: async () => true,
+    assertPublicLegacy: async () => true,
     inspectGuard: async () => true, inspectWriterGuards: async () => true,
     inspectServices: legacyActivityFixture,
     stopUnit: async unit => { stopped.push(unit); },
