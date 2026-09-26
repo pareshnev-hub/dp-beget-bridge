@@ -5,7 +5,7 @@ import path from "node:path";
 
 const MAIN_ROOT = "/opt/dp-beget-bridge";
 const OAUTH_ROOT = "/opt/dp-beget-bridge-dp012-dcr";
-const FILES = Object.freeze([
+export const LEGACY_COUNTER_HOTFIX_FILES = Object.freeze([
   { root: MAIN_ROOT, name: "agent", relative: "apps/agent/src/server.js",
     before: "bdc299a6bea00950fe42a24ce5c1fd08305142f13f0e4485a1e67beb6b4aeab7",
     after: "4b46578b5f3cc42ca9186a1132af78ee6987f12f96a235d0cde8a59785887ae5" },
@@ -18,7 +18,8 @@ const FILES = Object.freeze([
   { root: OAUTH_ROOT, name: "oauth-mcp", relative: "apps/mcp/src/server.js",
     before: "17a201dd7c01c6c243f816fe32755b16cad22dfcfaf191dc6273366a50c05b85",
     after: "8d2b5c3de3073e61db8634011ffb4a32577bc188d18be30aeee5f40f1d3025e4" }
-]);
+].map(item => Object.freeze(item)));
+const FILES = LEGACY_COUNTER_HOTFIX_FILES;
 
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 const absolute = value => typeof value === "string" && path.isAbsolute(value) &&
