@@ -25,7 +25,8 @@ report. Each health and systemd probe has a timeout; failed probes expose only
 bounded error categories. It identifies a managed release by its version and
 commit in the local `current` pointer, checks the Session Host SQLite schema
 version read-only, and reports whether the default local disk reserve remains.
-`DP_DOCTOR_RELEASE_ROOT`, `DP_DOCTOR_STATE_DATABASE`, and `DP_DOCTOR_STATE_DIR`
+`DP_DOCTOR_RELEASE_ROOT`, `DP_DOCTOR_STATE_DATABASE`, `DP_DOCTOR_STATE_DIR`,
+and `DP_DOCTOR_MIN_FREE_BYTES`
 can select other local installation paths without printing those paths. These
 observations do not verify an artifact signature or prove SQLite integrity.
 The report contains no environment values, endpoint URLs, tokens, terminal

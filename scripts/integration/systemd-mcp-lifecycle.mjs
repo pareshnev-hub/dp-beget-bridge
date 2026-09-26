@@ -402,6 +402,10 @@ try {
       DP_AGENT_URL: `http://127.0.0.1:${agentPort}`,
       DP_MCP_URL: `http://127.0.0.1:${mcpPort}`,
       DP_SESSION_HOST_SOCKET: sessionHostSocket,
+      DP_DOCTOR_RELEASE_ROOT: installedCodeRoot,
+      DP_DOCTOR_STATE_DATABASE: path.join(sessionDataDir, "state.sqlite"),
+      DP_DOCTOR_STATE_DIR: sessionDataDir,
+      DP_DOCTOR_MIN_FREE_BYTES: "1048576",
       DP_AGENT_SYSTEMD_UNIT: agentUnit,
       DP_MCP_SYSTEMD_UNIT: mcpUnit,
       DP_SESSION_HOST_SYSTEMD_UNIT: sessionHostUnit,
@@ -410,6 +414,9 @@ try {
   });
   assert.match(doctor.stdout, /OK  Session Host health: ok/);
   assert.match(doctor.stdout, /OK  Runtime identities:/);
+  assert.match(doctor.stdout, /OK  Installed release: legacy\/unmanaged/);
+  assert.match(doctor.stdout, /OK  Session state schema: v2/);
+  assert.match(doctor.stdout, /OK  Local disk reserve: ok/);
   await waitForSessionHost();
   await waitForHealth(`http://127.0.0.1:${agentPort}/health`, agentUnit);
   await waitForHealth(`http://127.0.0.1:${mcpPort}/health`, mcpUnit);

@@ -113,7 +113,8 @@ await check("Session state schema", async () => {
   return `v${state.schema}`;
 });
 await check("Local disk reserve", async () => {
-  await inspectLocalDisk(process.env.DP_DOCTOR_STATE_DIR || "/var/lib/dp-beget-bridge");
+  const minimum = Number(process.env.DP_DOCTOR_MIN_FREE_BYTES || 256 * 1024 * 1024);
+  await inspectLocalDisk(process.env.DP_DOCTOR_STATE_DIR || "/var/lib/dp-beget-bridge", minimum);
   return "ok";
 });
 
