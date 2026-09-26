@@ -19,10 +19,24 @@ function ids(stdout) {
 // Pure validation of the two independently observed surfaces. Only the
 // dedicated bridge socket may bind 8791; OAuth's own 8789 is loopback-only.
 // Public 80/443 must be published by the shared Traefik container alone.
-export function validateBegetOAuthListenerSnapshot(ssOutput, containers) {
+// All other host TCP listeners must stay on loopback, apart from SSH on 22.
+export function validateBegetOAuthListenerSnapshot(ssOutput, containers, udpOutput) {
   requireCondition(typeof ssOutput === "string" && Array.isArray(containers) &&
-    containers.length > 0, "missing host or Docker inventory");
+    containers.length > 0 && typeof udpOutput === "string" && udpOutput.includes("State "),
+  "missing host or Docker inventory");
+  const udpLoopback = [];
+  for (const raw of udpOutput.split("\n")) {
+    if (!raw.trim() || raw.startsWith("State ")) continue;
+    const columns = raw.trim().split(/\s+/);
+    const address = columns[3];
+    requireCondition(columns[0] === "UNCONN" && columns.length >= 5 &&
+      /:\d+$/.test(address || "") &&
+      (address.startsWith("127.") || address.startsWith("[::1]:")),
+    "unexpected non-loopback UDP listener");
+    udpLoopback.push(address);
+  }
   const seen = new Map();
+  const externalTcp = new Set();
   for (const raw of ssOutput.split("\n")) {
     if (!raw.trim() || raw.startsWith("State ")) continue;
     const columns = raw.trim().split(/\s+/);
@@ -30,7 +44,14 @@ export function validateBegetOAuthListenerSnapshot(ssOutput, containers) {
       "incomplete TCP listener response");
     const local = columns[3];
     const port = /:(\d+)$/.exec(local)?.[1];
-    if (!PUBLIC.has(port) && !PRIVATE.has(port)) continue;
+    requireCondition(port !== undefined, "invalid TCP listener address");
+    if (!PUBLIC.has(port) && !PRIVATE.has(port)) {
+      requireCondition(local.startsWith("127.") || local.startsWith("[::1]:") ||
+        (port === "22" && ["0.0.0.0:22", "[::]:22"].includes(local)),
+      `unexpected non-loopback TCP listener on ${local}`);
+      if (port === "22") externalTcp.add(local);
+      continue;
+    }
     const process = columns.slice(5).join(" ");
     if (port === "8789") {
       requireCondition(local === "127.0.0.1:8789", "OAuth process has another bind address");
@@ -43,6 +64,7 @@ export function validateBegetOAuthListenerSnapshot(ssOutput, containers) {
     }
     requireCondition(!seen.has(local), "duplicate TCP listener");
     seen.set(local, port);
+    if (PUBLIC.has(port)) externalTcp.add(local);
   }
   for (const port of PUBLIC) {
     requireCondition(seen.has(`0.0.0.0:${port}`) && seen.has(`[::]:${port}`),
@@ -78,7 +100,8 @@ export function validateBegetOAuthListenerSnapshot(ssOutput, containers) {
   }
   return { publicPorts: [80, 443], oauthAddress: "127.0.0.1:8789",
     proxyAddress: "172.18.0.1:8791", traefikContainerId: traefik[0].Id,
-    listening: [...seen.keys()].sort() };
+    listening: [...seen.keys()].sort(), externalTcp: [...externalTcp].sort(),
+    udpLoopback: udpLoopback.sort() };
 }
 
 // This is a read-only component of a future exclusive-route proof, not a
@@ -98,7 +121,9 @@ export async function inspectBegetOAuthListeners() {
   "Docker containers changed while inspecting ports");
   const { stdout: listeners } = await exec("ss", ["-ltnp"],
     { timeout: 12000, maxBuffer: 4 * 1024 * 1024 });
-  const result = validateBegetOAuthListenerSnapshot(listeners, containers);
+  const { stdout: udpListeners } = await exec("ss", ["-lunp"],
+    { timeout: 12000, maxBuffer: 4 * 1024 * 1024 });
+  const result = validateBegetOAuthListenerSnapshot(listeners, containers, udpListeners);
   const { stdout: after } = await exec("docker", ["ps", "--quiet"],
     { timeout: 12000, maxBuffer: 4096 });
   requireCondition(JSON.stringify(ids(after)) === JSON.stringify(expectedIds),

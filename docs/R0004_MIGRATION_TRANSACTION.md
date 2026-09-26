@@ -24,6 +24,8 @@ A root systemd-manager inspection also confirmed that the loaded active `dp-bege
 
 The connected work identity then observed identical 401 OAuth challenge headers and identical full response-body hashes at the loopback process, dedicated socket and public IP-pinned HTTPS path. `scripts/release/probe-beget-legacy-oauth-route.mjs` repeats this safe GET with strict time/size limits and full-body equality; it is a scoped **R0003 response parity** check. Its local tests and the historical curl evidence do not demonstrate a live run of the script or exclude future file-watch changes or an alternate host ingress. This module must not be supplied as the independent `assertRouteExclusive` callback.
 
+A complete read-only host socket listing on 2026-09-26 found no external TCP listener besides SSH 22 and Traefik 80/443; the OAuth socket was bound to the Docker bridge only, and the remaining TCP sockets to loopback. UDP listeners were limited to loopback DNS 53. The root-only listener inspector now checks **every** host TCP/UDP listening address, rejects a new external port, and includes the external and UDP sets in both route-boundary snapshots. This closes the known uninspected host-listener surface for the observed layout, but the connected-user output did not identify every process and the executable inspector has not yet run on Beget. The private tunnel and Docker forwarding still require migration-specific lifecycle evidence.
+
 The private R0002 tunnel is another independent ingress. Its unit must also remain closed during a legacy migration. The Session Host tmux server and retained transcripts remain outside the code root and must never be killed as an implicit update step.
 
 ## Transaction sequence
