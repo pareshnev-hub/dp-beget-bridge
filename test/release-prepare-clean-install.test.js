@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { buildArtifact } from "../scripts/release/build-artifact.mjs";
+import { verifyCleanInstallManifest } from "../scripts/release/clean-install-manifest.mjs";
 import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
 import { prepareCleanInstall } from "../scripts/release/prepare-clean-install.mjs";
 import { prepareRelease } from "../scripts/release/prepare-release.mjs";
@@ -50,6 +51,9 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
   assert.equal(result.sha256, sha256);
   assert.equal(result.units, 3);
   assert.equal(result.configFiles, 3);
+  assert.match(result.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.equal((await verifyCleanInstallManifest({ workspace: args.workspace,
+    trustDir, manifestSha256: result.manifestSha256 })).files, 6);
   assert.doesNotMatch(JSON.stringify(result), /DP_AGENT_TOKEN|DP_MCP_ACCESS_TOKEN/);
   const unit = path.join(args.workspace, "clean-install", "units", "dp-beget-agent.service");
   assert.match(await readFile(unit, "utf8"), /WorkingDirectory=\/opt\/dp-versions\/current\n/);
@@ -66,4 +70,8 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     inspect: async () => ({ candidate: { sha256: "a".repeat(64) } }) }),
   /changed after clean-install preflight/);
   await assert.rejects(stat(path.join(workspaceParent, "changed-candidate")), /ENOENT/);
+  const configFile = path.join(args.workspace, "clean-install", "config", "mcp.env");
+  await writeFile(configFile, (await readFile(configFile, "utf8")) + "DP_LOG_LEVEL=debug\n");
+  await assert.rejects(verifyCleanInstallManifest({ workspace: args.workspace, trustDir,
+    manifestSha256: result.manifestSha256 }), /files changed/);
 });
