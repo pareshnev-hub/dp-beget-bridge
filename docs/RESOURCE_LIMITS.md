@@ -14,6 +14,7 @@ DP-010 bounds file streaming, transcript capture and the production systemd prof
 
 - `DP_TERMINAL_MAX_ACTIVE` defaults to 8 active tmux sessions. Concurrent opens share one admission gate and excess requests fail with `session_limit` / HTTP 429 without changing existing sessions.
 - `DP_SESSION_OUTPUT_MAX_BYTES` defaults to 64 MiB per terminal transcript.
+- `DP_TRANSCRIPT_TOTAL_MAX_BYTES` defaults to 2 GiB. Session admission reserves the entire per-terminal ceiling for each running or opening terminal and counts actual retained bytes of stopped and CLOSED sessions. If a new terminal would exceed that budget, it returns `transcript_quota` / HTTP 507. Existing sessions and their data remain untouched; closing and explicitly purging a retained session frees room for new sessions. This controls aggregate transcript bytes but does not yet provide segmented retention or automatic archival.
 - `DP_SESSION_OUTPUT_WARN_BYTES` defaults to 50 MiB and emits one sanitized warning.
 - The tmux capture pipe enforces the byte ceiling and checks free space before each write without requiring an API reader. When it stops for low space, a private marker records `storage_reserve` for Session Host to report on the next read.
 - Reaching the ceiling reports `DEGRADED / transcript_limit`; low free space reports `DEGRADED / storage_reserve`.
