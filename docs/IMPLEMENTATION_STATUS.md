@@ -23,7 +23,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
 | R0002 Core Safety & Persistent Runtime | VERIFIED | All included DP items verified; exact Beget runtime and actual ChatGPT file-contract evidence recorded for `41db306` through the outbound-only private acceptance tunnel; no public listener or Traefik change |
 | R0003 Working Direct / Private Beta | IN PROGRESS (formal gate) | DP-012, DP-013 and DP-014 verified; #80 records the real-client OAuth terminal/file acceptance at `971d67a`. Link the release-wide AUTO-01…04 and N/N-1 evidence before changing this row to VERIFIED. |
-| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; implementation slices through #161 include guarded first-migration closure and pre-exposure rollback recovery. The public install/update/rollback gate is still open. |
+| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; guarded first-migration closure and pre-exposure rollback recovery have merged implementation slices. The public install/update/rollback gate is still open. |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
 | R0006 Optional Catalog Transport Pilot | PLANNED | requires dated feasibility decision; Relay not yet authorized by roadmap |
 | R0007 Catalog Submission & Measured Scale | PLANNED | requires verified pilot and current official submission review |
@@ -127,8 +127,10 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Route check after closure | `05079f1` (#167) | Closure rechecks exclusive route after stops; a change keeps marker and journal for recovery; production route proof remains open |
 | Pinned public host inventory | `2faa22b` (#168) | Repeated DNS and TLS checks bind the observed IPv4 to the local route surfaces; NAT and alternate ingress still need proof |
 | Interrupted seven-unit restart | `ff9b5d2` (#169) | CI interrupts inert writer startup after the first unit and retries the inactive suffix under a new permit; full state rollback still open |
+| Public legacy OAuth rollback probe | `6bebad1` (#170) | Ingress reopening requires a real public R0003 OAuth challenge before removing the rollback marker; no live Beget rollback |
+| Pinned host NAT inventory | this change | Root read-only IPv4/IPv6 NAT, nft destinations and Traefik network identity integrated into repeated route inventory; live execution and complete exclusive route proof still open |
 
-These seventy-four slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These seventy-six slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
