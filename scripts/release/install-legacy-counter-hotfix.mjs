@@ -94,6 +94,28 @@ async function journalRead(filename, stageDir, manifestSha256) {
   return record;
 }
 
+async function archiveRecoveredJournal(stageDir, manifestSha256) {
+  const filename = `${stageDir}.activation.json`;
+  const previous = await journalRead(filename, stageDir, manifestSha256);
+  if (previous.phase !== "recovered") {
+    throw new Error("Prior activation has not completed recovery");
+  }
+  const bytes = await readFile(filename);
+  const archive = `${stageDir}.activation.recovered-${sha256(bytes).slice(0,16)}.json`;
+  const handle = await open(archive, constants.O_WRONLY | constants.O_CREAT |
+    constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  try { await handle.writeFile(bytes); await handle.sync(); }
+  finally { await handle.close(); }
+  const parent = path.dirname(filename);
+  await syncDirectory(parent);
+  if (sha256(await readFile(filename)) !== sha256(bytes)) {
+    throw new Error("Recovered activation journal changed during archival");
+  }
+  await unlink(filename);
+  await syncDirectory(parent);
+  return archive;
+}
+
 async function pinnedLive(filename, expectedHash, expectedMode) {
   const info = await lstat(filename);
   if (!info.isFile() || info.nlink !== 1 || info.uid !== 0 || info.gid !== 0 ||
@@ -273,6 +295,7 @@ export async function recoverLegacyCounterHotfix({ stageDir, manifestSha256,
 // remain private and immutable. On failure, ingress stays closed until a
 // separate recovery action verifies the mixed state and reopens it.
 export async function installLegacyCounterHotfix({ stageDir, manifestSha256,
+  retryRecovered = false,
   preflight = preflightLegacyCounterHotfix,
   inspectRoute = inspectBegetOAuthRouteBoundary,
   publicOriginal = probeBegetLegacyOAuthRoute,
@@ -297,6 +320,7 @@ export async function installLegacyCounterHotfix({ stageDir, manifestSha256,
   // find a quiet window without changing either unit; recheck after closure.
   await drain();
   const journalPath = `${stageDir}.activation.json`;
+  if (retryRecovered) await archiveRecoveredJournal(stageDir, manifestSha256);
   const journal = await journalCreate(journalPath, stageDir, manifestSha256);
   try {
   await journalUpdate(journalPath, journal, "closing-ingress");
@@ -350,14 +374,18 @@ export async function installLegacyCounterHotfix({ stageDir, manifestSha256,
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 5 || !["--install", "--recover"].includes(process.argv[2])) {
-    console.error("Usage: node install-legacy-counter-hotfix.mjs --install|--recover ABSOLUTE_STAGE_DIR MANIFEST_SHA256");
+  if (process.argv.length !== 5 || !["--install", "--recover", "--retry"].includes(process.argv[2])) {
+    console.error("Usage: node install-legacy-counter-hotfix.mjs --install|--recover|--retry ABSOLUTE_STAGE_DIR MANIFEST_SHA256");
     process.exitCode = 1;
-  } else (process.argv[2] === "--install" ? installLegacyCounterHotfix :
-    recoverLegacyCounterHotfix)({ stageDir: process.argv[3],
-    manifestSha256: process.argv[4] }).then(result => console.log(JSON.stringify(result)))
-    .catch(error => {
-      console.error(`Hotfix activation stopped: ${error.message}. Check the durable activation journal before recovery.`);
-      process.exitCode = 1;
-    });
+  } else {
+    const action = process.argv[2] === "--recover" ? recoverLegacyCounterHotfix :
+      installLegacyCounterHotfix;
+    action({ stageDir: process.argv[3], manifestSha256: process.argv[4],
+      retryRecovered: process.argv[2] === "--retry" })
+      .then(result => console.log(JSON.stringify(result)))
+      .catch(error => {
+        console.error(`Hotfix activation stopped: ${error.message}. Check the durable activation journal before recovery.`);
+        process.exitCode = 1;
+      });
+  }
 }
