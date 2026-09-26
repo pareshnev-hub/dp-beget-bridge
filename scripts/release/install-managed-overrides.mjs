@@ -35,7 +35,7 @@ async function trustedDirectory(directory) {
       (await realpath(directory)) !== directory) throw new Error("Untrusted managed unit directory");
 }
 
-async function assertOriginalAppUnits(journal, unitDirectory) {
+export async function assertOriginalAppUnits(journal, unitDirectory) {
   const manifest = JSON.parse(await readRegularFile(path.join(journal.unitBackup.path,
     "backup-manifest.json"), 64 * 1024));
   for (const item of manifest.files.filter(file => MANAGED_APP_UNITS.includes(file.unit))) {
