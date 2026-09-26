@@ -115,8 +115,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Candidate pointer deactivation | `81f2a44` (#152) | Removes only first-migration `current` after old state replacement; leaves ingress marker and writers stopped |
 | Original writer restart | `0da1f68` (#153) | Starts R0003 under closed ingress and scoped permit, requires exact legacy local health; no public reopening |
 | Legacy ingress reopening | `9a27ce4` (#154) | Journals possible public exposure before removing marker; failed public proof recloses ingress and forbids snapshot rewind; route proof still missing |
+| Fixed public R0003 OAuth proof | `97eb185` (#155) | Bounded HTTPS challenge at fixed hostname after old-service restart; exclusive Traefik route proof still missing |
 
-These sixty-two slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These sixty-three slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 

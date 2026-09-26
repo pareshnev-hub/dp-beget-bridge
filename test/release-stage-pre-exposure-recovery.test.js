@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { chmod, copyFile, mkdtemp, mkdir, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { backupStateBundle } from "../scripts/release/backup-state-bundle.mjs";
 import { preparePreExposureRollback, readPreparedRollbackIntent, verifyPreparedRollbackIntent } from
   "../scripts/release/prepare-pre-exposure-rollback.mjs";
@@ -31,6 +33,8 @@ import { readLegacyRestartRecord, restartLegacyAfterRollback } from
 import { readLegacyIngressRecord, reopenLegacyIngress } from
   "../scripts/release/reopen-legacy-ingress.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
+
+const exec = promisify(execFile);
 
 async function fixture(t, phase = "locally-healthy") {
   const root = await mkdtemp(path.join(os.tmpdir(), "dp-stage-recovery-"));
@@ -580,6 +584,42 @@ test("OPS-07: interruption after installing config resumes remaining database", 
   assert.deepEqual((await replaceLiveStateFromLedger({ ...options, ledgerPath })).positions,
     ["installed", "installed"]);
 });
+
+for (const [crashAfter, expected] of [[1, "parked"], [2, "installed"]]) {
+  test(`OPS-07: separate process crash after rename ${crashAfter} resumes from ${expected}`, {
+    skip: process.getuid?.() !== 0
+  }, async t => {
+    const options = await originalUnitViewFixture(t);
+    await restoreOriginalUnitView({ ...options, reload: async () => {} });
+    await writeFile(path.join(options.configRoot, "secret.env"), "CANARY=candidate\n");
+    const candidate = new DatabaseSync(options.database);
+    candidate.prepare("UPDATE state SET value = ?").run("candidate-state");
+    candidate.close();
+    const root = path.dirname(options.outputDir);
+    const recordPath = path.join(root, "live-copy-record.json");
+    const ledgerPath = path.join(root, "replacement-ledger.json");
+    await stageLiveStateRecovery({ ...options, recordPath });
+    await prepareLiveReplacementLedger({ ...options, recordPath, ledgerPath });
+    const childPaths = { ledgerPath, stateDatabase: options.database, marker: options.marker,
+      permit: options.permit, unitDirectory: options.unitDirectory };
+    await assert.rejects(exec(process.execPath, [new URL("./fixtures/crash-live-replacement.mjs",
+      import.meta.url).pathname, JSON.stringify(childPaths), String(crashAfter)],
+    { timeout: 30000, maxBuffer: 4096 }), error => error.code === 82);
+    const interrupted = await inspectLiveReplacementLedger({ ...options, ledgerPath });
+    assert.equal(interrupted.record.phase, "replacing");
+    assert.deepEqual(interrupted.positions, [expected, "pending"]);
+    assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+    const result = await replaceLiveStateFromLedger({ ...options, ledgerPath });
+    assert.equal(result.record.phase, "replaced");
+    assert.deepEqual(result.positions, ["installed", "installed"]);
+    assert.equal(await readFile(path.join(options.configRoot, "secret.env"), "utf8"), "CANARY=private\n");
+    const database = new DatabaseSync(options.database, { readOnly: true });
+    try { assert.equal(database.prepare("SELECT value FROM state").get().value, "old-state"); }
+    finally { database.close(); }
+    assert.equal(await readFile(path.join(interrupted.record.targets[0].parked, "secret.env"), "utf8"),
+      "CANARY=candidate\n");
+  });
+}
 
 async function completedReplacementFixture(t) {
   const options = await originalUnitViewFixture(t);
