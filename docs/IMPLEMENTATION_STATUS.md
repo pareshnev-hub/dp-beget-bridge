@@ -139,9 +139,10 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Candidate preparation space budget | `77a8def` (#181) | Reads signed archive size and workspace filesystem availability before creating a workspace; reserves extraction ceiling, 2 GiB estimated npm space and 512 MiB free; actual candidate and measured npm peak still open |
 | SQLite journal headroom | `b885b6c` (#182) | Sizes WAL, SHM and rollback journal files after stopped-writer proof before bundle allocation; observed Session Host WAL exceeds its base DB on Beget |
 | Shared-volume migration capacity | `782da3a` (#183) | Combined candidate and state budget fails when separate phase checks would both pass but their sum would exhaust the disk; actual signed candidate still unverified |
-| Live legacy database bindings | this change | Root read-only proof checks three running service PIDs, expected data paths, pinned OAuth config default and absence of unlisted SQLite files without printing environment secrets; live root execution still required |
+| Live legacy database bindings | `1f64cd2` (#184) | Root read-only proof checks three running service PIDs, expected data paths, pinned OAuth config default and absence of unlisted SQLite files without printing environment secrets; first root run failed on an undisclosed boundary |
+| Retained SQLite inventory and safe failure stages | this change | Admits only observed retained backup-v0/v1 files and emits a fixed failed unit/stage instead of environment values; repeat live root execution required |
 
-These eighty-seven slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These eighty-eight slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
