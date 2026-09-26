@@ -22,6 +22,8 @@ The subsequent root NAT snapshot showed the Docker host DNAT for 80/443 targetin
 
 A root systemd-manager inspection also confirmed that the loaded active `dp-beget-oauth-proxy.socket` listens on `172.18.0.1:8791` and triggers `dp-beget-oauth-proxy.service`. That service runs `/lib/systemd/systemd-socket-proxyd 127.0.0.1:8789` as `dp-beget-oauth-proxy`; both fragments came from `/etc/systemd/system` and had no drop-ins in the observed layout. `scripts/release/inspect-beget-oauth-proxy.mjs` validates the loaded socket and exact forwarding command, allowing only the known future migration guard, and the composite compares two snapshots of this chain. Local tests are the only executable evidence; neither the systemd inventory nor the public challenge proves that Traefik forwarded to this particular process at the observed instant.
 
+The connected work identity then observed identical 401 OAuth challenge headers and identical full response-body hashes at the loopback process, dedicated socket and public IP-pinned HTTPS path. `scripts/release/probe-beget-legacy-oauth-route.mjs` repeats this safe GET with strict time/size limits and full-body equality; it is a scoped **R0003 response parity** check. Its local tests and the historical curl evidence do not demonstrate a live run of the script or exclude future file-watch changes or an alternate host ingress. This module must not be supplied as the independent `assertRouteExclusive` callback.
+
 The private R0002 tunnel is another independent ingress. Its unit must also remain closed during a legacy migration. The Session Host tmux server and retained transcripts remain outside the code root and must never be killed as an implicit update step.
 
 ## Transaction sequence
