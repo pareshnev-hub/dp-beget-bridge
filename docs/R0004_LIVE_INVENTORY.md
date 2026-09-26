@@ -24,6 +24,8 @@ The dedicated `dp-beget-oauth-proxy.socket` was also loaded and active on `172.1
 
 A second root read-only output on 2026-09-26 found only that OAuth rule in the dynamic YAML rule scan. `ss` showed the OAuth process bound to `127.0.0.1:8789`, the dedicated systemd socket to `172.18.0.1:8791`, and Docker's proxy on `0.0.0.0:443` and `[::]:443`. Docker's published-port list showed only `n8n-traefik-1` on 80/443; the other listed containers had no public OAuth port. Docker-provider router labels and the loaded Traefik provider configuration were not included in that output, so this is a point-in-time listener check, not yet exclusive-route authorization.
 
+A further root read-only Docker inspection on 2026-09-26 listed the running containers' Traefik router rules. The published Docker routers used `pareshnev.com`, `www.pareshnev.com`, `mail.pareshnev.com` or `crarojofimo.beget.app`; none named `bridge-oauth.pareshnev.com`. The shared Traefik compose excerpt included `--providers.docker=true` and `--providers.docker.exposedbydefault=false`. Together with the file-provider rule and listener inventory above, this supports one observed public OAuth path through the dedicated socket. The excerpt does not establish the complete running Traefik provider configuration or capture every non-Docker forwarding path. Recheck the loaded provider configuration, file-provider contents, Docker labels and listeners immediately before migration; do not use this historical inventory as a live assertion callback.
+
 ## First-migration consequences
 
 1. Preserve the four existing unit fragments, the OAuth drop-in, both old code roots, split environment files and service-owned state before changing the systemd working directories.

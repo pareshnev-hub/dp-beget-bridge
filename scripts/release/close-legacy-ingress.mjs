@@ -50,13 +50,17 @@ export async function removePersistentMarker(marker) {
   await syncDirectory(path.dirname(marker));
 }
 
-// No CLI entry point: the route-target proof and migration installer must invoke this
-// only after the unit snapshot, guard install and daemon-reload have been verified.
+// No CLI entry point: a fresh independent route proof and migration installer must
+// invoke this only after the unit snapshot, guard install and reload are verified.
 export async function closeLegacyIngress({ journalPath, unitDirectory, marker = PERSISTENT_MARKER,
   permit = WRITER_START_PERMIT, inspectGuard = inspectInstalledIngressGuard,
   inspectWriterGuards = inspectInstalledWriterGuards, inspectServices = inspectLegacyServiceActivity,
+  assertRouteExclusive,
   stopUnit = systemctlStop, getState = systemctlState } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to close legacy ingress");
+  if (typeof assertRouteExclusive !== "function") {
+    throw new Error("Explicit fresh public OAuth route proof is required before ingress closure");
+  }
   const journal = await readMigrationJournal(journalPath);
   if (journal.phase !== "guarded") throw new Error("Migration must have verified the installed guard");
   await verifyJournalUnitBackup(journal);
@@ -70,6 +74,11 @@ export async function closeLegacyIngress({ journalPath, unitDirectory, marker = 
   }
   try { await lstat(marker); throw new Error("Migration marker already exists; recovery is required"); }
   catch (error) { if (error.code !== "ENOENT") throw error; }
+  // A historical inventory is insufficient: check the live route immediately
+  // before committing the persistent marker and stopping the dedicated socket.
+  if (await assertRouteExclusive() !== true) {
+    throw new Error("Exclusive public OAuth route not proven before ingress closure");
+  }
   // The marker must be durable before any journal claim that ingress is closed.
   // On failure or power loss, it remains in place and boot refuses ingress.
   await createPersistentMarker(marker);

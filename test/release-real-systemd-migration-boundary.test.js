@@ -109,7 +109,10 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
   await installMigrationBootGuards({ journalPath, unitDirectory, stagedIngress, stagedWriters,
     marker, permit });
   for (const unit of [...writers, ingress[0], ingress[2]]) assert.equal(await active(unit), "active");
-  await closeLegacyIngress({ journalPath, unitDirectory, marker, permit });
+  // The disposable runner has no public OAuth route. This injected proof
+  // stands only for its isolated fixture, never for a Beget migration.
+  await closeLegacyIngress({ journalPath, unitDirectory, marker, permit,
+    assertRouteExclusive: async () => true });
   for (const unit of ingress) assert.equal(await active(unit), "inactive");
   // Real systemd refuses an ingress restart while the durable marker exists.
   await systemctl("start", ingress[0]).catch(() => {});
