@@ -2,7 +2,7 @@
 
 DP-008 keeps terminal transcript bytes as local files and stores stream metadata in SQLite schema v2.
 
-R0004 captures new terminal output in a `terminal.log` first segment followed by numbered private siblings (8 MiB per segment by default). The cursor remains one absolute byte offset across the files; a UTF-8 character spanning two files is read whole. Older single-file transcripts remain readable. Segments are retained when a session closes and removed only through explicit purge; no automatic archive or age-based deletion is implied.
+R0004 captures new terminal output in a `terminal.log` first segment followed by numbered private siblings (8 MiB per segment by default). Each already-segmented session retains its original segment size after the configuration changes. The cursor remains one absolute byte offset across the files; a UTF-8 character spanning two files is read whole. Older single-file transcripts remain readable. Segments are retained when a session closes and removed only through explicit purge; no automatic archive or age-based deletion is implied.
 
 ## Cursor
 
