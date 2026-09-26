@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { BridgeError } from "../../../packages/core/src/errors.js";
 import { CAPTURE_STOP_SUFFIX } from "../../../scripts/transcript-capture.mjs";
+import { DEFAULT_TRANSCRIPT_SEGMENT_BYTES, inspectTranscriptSegments,
+  readTranscriptBytes } from "../../../scripts/transcript-segments.mjs";
 import { durationBucket } from "./telemetry.js";
 
 const execFileAsync = promisify(execFile);
@@ -161,16 +163,14 @@ export class TmuxSessionManager {
         let committed = BigInt(stillOpen + this.pendingOpens + 1) * BigInt(perSession);
         for (let index = 0; index < sessions.length; index++) {
           if (!sessions[index].closedAt) continue;
-          let info;
-          try { info = await fs.lstat(this.store.outputPath(sessions[index].id)); }
+          let inventory;
+          try { inventory = await inspectTranscriptSegments(this.store.outputPath(sessions[index].id),
+            this.config.transcriptSegmentBytes || DEFAULT_TRANSCRIPT_SEGMENT_BYTES); }
           catch (error) {
             if (error.code === "ENOENT") continue;
             throw new BridgeError("transcript_quota_invalid", "Transcript quota cannot be verified", 503);
           }
-          if (!info.isFile() || info.nlink !== 1 || !Number.isSafeInteger(info.size) || info.size < 0) {
-            throw new BridgeError("transcript_quota_invalid", "Transcript quota cannot be verified", 503);
-          }
-          committed += BigInt(info.size);
+          committed += BigInt(inventory.size);
           if (committed > BigInt(transcriptBudget)) {
             throw new BridgeError("transcript_quota", "Retained transcript limit reached; close and explicitly purge an old session", 507);
           }
@@ -221,7 +221,7 @@ export class TmuxSessionManager {
         "-o",
         "-t",
         name,
-        `/usr/bin/env node ${shellQuote(CAPTURE_SCRIPT)} ${shellQuote(this.store.outputPath(id))} ${Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024))} ${Math.max(0, Number(this.config.storageMinFreeBytes || 0))}`,
+        `/usr/bin/env node ${shellQuote(CAPTURE_SCRIPT)} ${shellQuote(this.store.outputPath(id))} ${Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024))} ${Math.max(0, Number(this.config.storageMinFreeBytes || 0))} ${Math.min(Math.max(1, Number(this.config.sessionOutputMaxBytes || 64 * 1024 * 1024)), Number(this.config.transcriptSegmentBytes || DEFAULT_TRANSCRIPT_SEGMENT_BYTES))}`,
       ]);
       const saved = await this.store.save(session);
       this.telemetry.trackActivity?.();
@@ -256,7 +256,12 @@ export class TmuxSessionManager {
     const current = session || await this.store.get(id);
     if (!current) throw new BridgeError("session_not_found", "Terminal session not found", 404);
     try {
-      const size = (await fs.stat(this.store.outputPath(id))).size;
+      const inventory = await inspectTranscriptSegments(this.store.outputPath(id),
+        this.config.transcriptSegmentBytes || DEFAULT_TRANSCRIPT_SEGMENT_BYTES);
+      if (inventory.missing) {
+        throw Object.assign(new Error("Transcript is missing"), { code: "ENOENT" });
+      }
+      const size = inventory.size;
       if (size >= this.config.sessionOutputWarnBytes && !this.largeOutputWarnings.has(id)) {
         this.largeOutputWarnings.add(id);
         this.logger.warn("terminal.output_retention_warning", { sessionId: id, size });
@@ -265,6 +270,7 @@ export class TmuxSessionManager {
         earliest: current.transcriptEarliestOffset,
         end: current.transcriptEarliestOffset + size,
         physicalSize: size,
+        segments: inventory.segments,
       };
     } catch (error) {
       if (error.code === "ENOENT") {
@@ -278,9 +284,10 @@ export class TmuxSessionManager {
           earliest: current.transcriptEarliestOffset,
           end: current.transcriptEarliestOffset,
           physicalSize: 0,
+          segments: [],
         };
       }
-      throw error;
+      throw new BridgeError("transcript_invalid", "Transcript inventory cannot be verified", 503);
     }
   }
 
@@ -396,10 +403,9 @@ export class TmuxSessionManager {
       };
     }
 
-    const handle = await fs.open(this.store.outputPath(id), "r");
     try {
-      const first = Buffer.alloc(Math.min(4, range.physicalSize - physicalStart));
-      await handle.read(first, 0, first.length, physicalStart);
+      const first = await readTranscriptBytes(range.segments, physicalStart,
+        Math.min(4, range.physicalSize - physicalStart));
       let skipped = 0;
       while (skipped < first.length && (first[skipped] & 0xc0) === 0x80) skipped += 1;
       if (skipped > 0) {
@@ -408,9 +414,9 @@ export class TmuxSessionManager {
         physicalStart += skipped;
       }
       const readable = range.end - logicalStart;
-      const buffer = Buffer.alloc(Math.min(readable, requestedMax + 3));
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, physicalStart);
-      const safeLength = utf8SafePrefixLength(buffer.subarray(0, bytesRead), Math.min(requestedMax, bytesRead));
+      const buffer = await readTranscriptBytes(range.segments, physicalStart,
+        Math.min(readable, requestedMax + 3));
+      const safeLength = utf8SafePrefixLength(buffer, Math.min(requestedMax, buffer.length));
       const nextOffset = logicalStart + safeLength;
       return {
         sessionId: id,
@@ -428,8 +434,8 @@ export class TmuxSessionManager {
           afterCursor: session.transcriptCaptureState === "DEGRADED" ? encodeCursor(session, range.end) : null,
         },
       };
-    } finally {
-      await handle.close();
+    } catch {
+      throw new BridgeError("transcript_invalid", "Transcript changed during reading", 503);
     }
   }
 
@@ -689,9 +695,17 @@ export class TmuxSessionManager {
   }
 
   async purge(id) {
-    const result = await this.store.purge(id);
-    this.logger.warn("terminal.purged", { sessionId: id });
-    return result;
+    let unlock;
+    const previous = this.openAdmission;
+    this.openAdmission = new Promise(resolve => { unlock = resolve; });
+    await previous;
+    try {
+      const result = await this.store.purge(id);
+      this.logger.warn("terminal.purged", { sessionId: id });
+      return result;
+    } finally {
+      unlock();
+    }
   }
 }
 

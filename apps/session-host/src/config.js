@@ -1,4 +1,5 @@
 import path from "node:path";
+import { MAX_TRANSCRIPT_SEGMENTS } from "../../../scripts/transcript-segments.mjs";
 
 function integer(name, fallback) {
   const value = Number.parseInt(process.env[name] || String(fallback), 10);
@@ -24,11 +25,20 @@ export function loadSessionHostConfig() {
     commandWaitMs: integer("DP_COMMAND_WAIT_MS", 10000),
     sessionOutputWarnBytes: integer("DP_SESSION_OUTPUT_WARN_BYTES", 50 * 1024 * 1024),
     sessionOutputMaxBytes: integer("DP_SESSION_OUTPUT_MAX_BYTES", 64 * 1024 * 1024),
+    transcriptSegmentBytes: integer("DP_TRANSCRIPT_SEGMENT_BYTES", 8 * 1024 * 1024),
     transcriptTotalMaxBytes: integer("DP_TRANSCRIPT_TOTAL_MAX_BYTES", 2 * 1024 * 1024 * 1024),
     storageMinFreeBytes: integer("DP_STORAGE_MIN_FREE_BYTES", 256 * 1024 * 1024),
   };
   if (config.sessionOutputMaxBytes < 1) {
     throw new Error("DP_SESSION_OUTPUT_MAX_BYTES must be at least 1");
+  }
+  if (config.transcriptSegmentBytes < 1 ||
+      config.transcriptSegmentBytes > config.sessionOutputMaxBytes) {
+    throw new Error("DP_TRANSCRIPT_SEGMENT_BYTES must fit within the terminal output ceiling");
+  }
+  if (BigInt(config.sessionOutputMaxBytes) >
+      BigInt(config.transcriptSegmentBytes) * BigInt(MAX_TRANSCRIPT_SEGMENTS + 1)) {
+    throw new Error("DP_SESSION_OUTPUT_MAX_BYTES exceeds the transcript segment count limit");
   }
   if (config.terminalMaxActive < 1) {
     throw new Error("DP_TERMINAL_MAX_ACTIVE must be at least 1");
