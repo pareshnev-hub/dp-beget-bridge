@@ -12,7 +12,6 @@ MainPID=${state === "active" ? "12345" : "0"}
 User=dp-tunnel
 FragmentPath=/etc/systemd/system/dp-beget-tunnel.service
 DropInPaths=
-EnvironmentFiles=
 Environment=
 ExecStart={ path=/opt/dp-beget-tunnel/current/tunnel-client ; argv[]=/opt/dp-beget-tunnel/current/tunnel-client run --config /etc/dp-beget-tunnel/tunnel-client.yaml ; ignore_errors=no ; start_time=[Sat 2026-09-26 18:33:27 UTC] ; stop_time=[n/a] ; pid=12345 ; code=(null) ; status=0/0 }
 `;
@@ -34,7 +33,7 @@ test("the separate R0002 tunnel only targets the base MCP, across stopped and ac
   for (const modified of [
     unit().replace("--config /etc/dp-beget-tunnel/tunnel-client.yaml",
       "--config /etc/dp-beget-tunnel/other.yaml"),
-    unit().replace("EnvironmentFiles=", "EnvironmentFiles=/etc/secret"),
+    unit() + "EnvironmentFiles=/etc/secret\n",
     unit().replace("MainPID=12345", "MainPID=0")
   ]) assert.throws(() => validateBegetTunnelUnit(modified), /alternate OAuth ingress/);
 });

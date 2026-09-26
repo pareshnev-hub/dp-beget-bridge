@@ -7,8 +7,9 @@ const exec = promisify(execFile);
 const UNIT = "dp-beget-tunnel.service";
 const CONFIG = "/etc/dp-beget-tunnel/tunnel-client.yaml";
 const TEMPLATE = fileURLToPath(new URL("../../deploy/tunnel/tunnel-client.yaml.template", import.meta.url));
+const UNIT_TEMPLATE = fileURLToPath(new URL("../../deploy/systemd/dp-beget-tunnel.service", import.meta.url));
 const FIELDS = ["LoadState", "ActiveState", "MainPID", "User", "FragmentPath",
-  "DropInPaths", "ExecStart", "EnvironmentFiles", "Environment"];
+  "DropInPaths", "ExecStart", "Environment"];
 
 function check(ok) {
   if (!ok) throw new Error("Beget tunnel target could include an alternate OAuth ingress");
@@ -43,7 +44,7 @@ export function validateBegetTunnelUnit(output) {
     values.User === "dp-tunnel" && values.FragmentPath === `/etc/systemd/system/${UNIT}` &&
     ["", `/etc/systemd/system/${UNIT}.d/90-dp-r0004-migration-guard.conf`]
       .includes(values.DropInPaths) &&
-    values.EnvironmentFiles === "" && values.Environment === "" &&
+    values.Environment === "" &&
     /^\{ path=\/opt\/dp-beget-tunnel\/current\/tunnel-client ; argv\[\]=\/opt\/dp-beget-tunnel\/current\/tunnel-client run --config \/etc\/dp-beget-tunnel\/tunnel-client\.yaml ; ignore_errors=no ; start_time=\[[^\]\n]+\] ; stop_time=\[[^\]\n]+\] ; pid=\d+ ; code=(?:\(null\)|exited|killed) ; status=(?:0(?:\/0)?|15(?:\/TERM)?) \}$/.test(values.ExecStart) &&
     (values.ActiveState === "active" ? /^[1-9][0-9]*$/.test(values.MainPID) :
       values.MainPID === "0"));
@@ -56,6 +57,13 @@ export async function inspectBegetTunnelTarget() {
   check(info.isFile() && info.nlink === 1 && info.uid === 0 &&
     (info.mode & 0o7777) === 0o640 && info.size < 4096 &&
     await realpath(CONFIG) === CONFIG);
+  const fragment = `/etc/systemd/system/${UNIT}`;
+  const unitInfo = await lstat(fragment);
+  check(unitInfo.isFile() && unitInfo.nlink === 1 && unitInfo.uid === 0 &&
+    (unitInfo.mode & 0o7777) === 0o644 &&
+    await realpath(fragment) === fragment);
+  const expectedUnit = await readFile(UNIT_TEMPLATE);
+  check((await readFile(fragment)).equals(expectedUnit));
   const template = await readFile(TEMPLATE, "utf8");
   const show = async () => (await exec("systemctl", ["show", UNIT,
     `--property=${FIELDS.join(",")}`, "--no-pager"],
@@ -65,5 +73,6 @@ export async function inspectBegetTunnelTarget() {
   const last = validateBegetTunnelUnit(await show());
   check(JSON.stringify(first) === JSON.stringify(last));
   validateBegetTunnelConfig(await readFile(CONFIG, "utf8"), template);
+  check((await readFile(fragment)).equals(expectedUnit));
   return { target: "127.0.0.1:8788/mcp", state: last.state, pid: last.pid };
 }
