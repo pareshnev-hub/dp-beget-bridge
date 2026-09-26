@@ -16,6 +16,8 @@ The further read-only YAML inventory fixed the 23-line file fingerprint to `eeee
 
 `scripts/release/inspect-beget-oauth-listeners.mjs` checks another independent surface: root-visible TCP listeners and Docker-published host ports. It accepts only Traefik's Docker proxy on public 80/443, an optional OAuth loopback listener on `127.0.0.1:8789`, and an optional systemd socket on `172.18.0.1:8791`; it rejects host networking and any other container publishing the protected ports. The two private listeners may be absent while recovery keeps services stopped. This read-only check cannot establish the host NAT rules, loaded Traefik response identity or absence of a second external ingress. Like the file/provider inspector, it is not itself an exclusive-route callback and has no live Beget execution evidence.
 
+`scripts/release/inspect-beget-oauth-route-boundary.mjs` reads both surfaces twice and refuses mismatched Traefik container identities, route fingerprints, Docker router counts or observed listener sets. It returns a scoped inventory record, **not** a `true` exclusive-route result. A complete root preflight must still account for NAT and alternative public ingress, then supply the closure/release and rollback helpers with a fresh independent route proof. No composite inspection has yet run on Beget.
+
 The private R0002 tunnel is another independent ingress. Its unit must also remain closed during a legacy migration. The Session Host tmux server and retained transcripts remain outside the code root and must never be killed as an implicit update step.
 
 ## Transaction sequence
