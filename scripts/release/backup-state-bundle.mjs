@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { backupConfig } from "./backup-config.mjs";
 import { backupSqliteSet } from "./backup-sqlite.mjs";
+import { inspectStateBundleSpace } from "./inspect-state-bundle-space.mjs";
 import { readRegularFile } from "./verify-artifact.mjs";
 
 const exec = promisify(execFile);
@@ -44,7 +45,8 @@ async function syncTree(directory) {
 }
 
 export async function backupStateBundle({ configRoot, databases, outputDir,
-  assertQuiesced = assertBridgeWritersStopped }) {
+  assertQuiesced = assertBridgeWritersStopped,
+  inspectSpace = inspectStateBundleSpace }) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to capture a state bundle");
   if (!path.isAbsolute(outputDir || "") || !Array.isArray(databases) || databases.length === 0) {
     throw new Error("Absolute new output directory and explicit database list are required");
@@ -66,6 +68,7 @@ export async function backupStateBundle({ configRoot, databases, outputDir,
       throw new Error("State bundle database source cannot traverse a link");
     }
   }
+  await inspectSpace({ databases, parent });
   await assertQuiesced();
   await mkdir(output, { mode: 0o700 });
   try {

@@ -14,6 +14,8 @@ Observed: 2026-09-23 through the real-client OAuth full-shell connector as the `
 
 Both existing application code roots reported package version `0.1.0`. `/opt/dp-beget-bridge` and the separate OAuth code root are root-owned mode `0755`. The config directory is root-owned mode `0750`; the Session Host, Agent and MCP state directories have distinct owners and mode `0700`. `/opt` and `/var/lib/dp-beget-bridge` share `/dev/vda1`; the observation does **not** establish free space sufficient for an update snapshot.
 
+A later connected read-only `df -B1` on 2026-09-26 reported `6,643,093,504` bytes available on that shared filesystem (67% used). This is a point-in-time volume measurement. The work identity cannot read every service-owned SQLite source, so this alone cannot prove enough space for grouped state and rollback copies. The new grouped-bundle preflight checks actual database sizes and filesystem availability before creating its output directory; candidate artifact storage needs its own separate capacity gate.
+
 ## Existing OAuth route
 
 The local OAuth discovery endpoint reported issuer `https://bridge-oauth.pareshnev.com`. Its only public A record resolved to `45.12.238.143`, matching the VPS's public IPv4. A TLS connection with SNI and hostname validation succeeded; the certificate reported expiry on 2026-12-21. Public OAuth authorization-server metadata returned HTTP 200 with the same issuer.
