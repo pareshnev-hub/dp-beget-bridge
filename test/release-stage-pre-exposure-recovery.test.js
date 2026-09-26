@@ -11,6 +11,8 @@ import { preparePreExposureRollback, readPreparedRollbackIntent, verifyPreparedR
 import { stageCompletePreExposureRecovery } from "../scripts/release/stage-complete-pre-exposure-recovery.mjs";
 import { advanceMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
 import { stagePreExposureRecovery } from "../scripts/release/stage-pre-exposure-recovery.mjs";
+import { readCandidateRollbackStopRecord, stopCandidateForRollback, verifyCandidateRollbackStopped } from
+  "../scripts/release/stop-candidate-for-rollback.mjs";
 import { verifyStagedRecoveryPair } from "../scripts/release/verify-staged-recovery-pair.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
@@ -249,6 +251,70 @@ test("OPS-07: failed route proof cannot create intent or overwrite an existing o
   await assert.rejects(preparePreExposureRollback({ ...options,
     stagedDirectory: options.outputDir, planPath }), /EEXIST/);
   assert.equal(await readFile(planPath, "utf8"), "keep\n");
+});
+
+test("OPS-07: candidate writers stop under durable rollback intent before state replacement", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await stageCompletePreExposureRecovery(options);
+  const planPath = path.join(path.dirname(options.outputDir), "rollback-intent.json");
+  const stopRecordPath = path.join(path.dirname(options.outputDir), "candidate-stop.json");
+  await preparePreExposureRollback({ ...options, stagedDirectory: options.outputDir, planPath });
+  const stopped = [];
+  let ledgerCalls = 0;
+  const result = await stopCandidateForRollback({ ...options, planPath, stopRecordPath,
+    stateDatabase: options.database, getIngressState: options.getState,
+    getState: async unit => stopped.includes(unit) ? "inactive" : "active",
+    getKillMode: async () => "process", assertPaused: async () => {}, verifyPaused: async () => {},
+    assertLedgerSafe: async () => { ledgerCalls++; assert.equal(stopped.length, ledgerCalls === 1 ? 3 : 4); },
+    stopUnit: async unit => {
+      assert.equal((await readCandidateRollbackStopRecord(stopRecordPath)).phase, "stopping");
+      stopped.push(unit);
+    } });
+  assert.equal(ledgerCalls, 2);
+  assert.equal(result.phase, "stopped");
+  assert.deepEqual(result.stoppedUnits, stopped);
+  assert.equal(stopped.at(-1), "dp-beget-session-host.service");
+  await assert.rejects(verifyCandidateRollbackStopped({ ...options, planPath, stopRecordPath,
+    stateDatabase: options.database, getIngressState: options.getState,
+    getState: async unit => unit === "dp-beget-mcp.service" ? "active" : "inactive",
+    verifyPaused: async () => {}, assertLedgerSafe: async () => {} }), /writer restarted/);
+});
+
+test("OPS-07: ledger failure leaves candidate stop intent uncertain and ingress closed", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await stageCompletePreExposureRecovery(options);
+  const planPath = path.join(path.dirname(options.outputDir), "rollback-intent.json");
+  const stopRecordPath = path.join(path.dirname(options.outputDir), "candidate-stop.json");
+  await preparePreExposureRollback({ ...options, stagedDirectory: options.outputDir, planPath });
+  const stopped = [];
+  await assert.rejects(stopCandidateForRollback({ ...options, planPath, stopRecordPath,
+    stateDatabase: options.database, getIngressState: options.getState,
+    getState: async unit => stopped.includes(unit) ? "inactive" : "active",
+    getKillMode: async () => "process", assertPaused: async () => {}, verifyPaused: async () => {},
+    assertLedgerSafe: async () => { throw new Error("accepted operation remains"); },
+    stopUnit: async unit => { stopped.push(unit); } }), /accepted operation remains/);
+  assert.equal(stopped.length, 3);
+  assert.equal((await readCandidateRollbackStopRecord(stopRecordPath)).phase, "stopping");
+  assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+});
+
+test("OPS-07: missing R0004 pause refuses candidate stop before recording intent", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await stageCompletePreExposureRecovery(options);
+  const planPath = path.join(path.dirname(options.outputDir), "rollback-intent.json");
+  const stopRecordPath = path.join(path.dirname(options.outputDir), "candidate-stop.json");
+  await preparePreExposureRollback({ ...options, stagedDirectory: options.outputDir, planPath });
+  await assert.rejects(stopCandidateForRollback({ ...options, planPath, stopRecordPath,
+    stateDatabase: options.database, getIngressState: options.getState,
+    verifyPaused: async () => { throw new Error("R0004 admission pause missing"); },
+    stopUnit: async () => { throw new Error("must not stop"); } }), /admission pause missing/);
+  await assert.rejects(stat(stopRecordPath), /ENOENT/);
 });
 
 test("OPS-07: a route change after both restorations removes the entire staged pair", {
