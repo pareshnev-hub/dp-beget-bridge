@@ -109,8 +109,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Candidate rollback stop | `0830fcc` (#146) | Journaled writer stops under pause and marker; retained tmux and ledger rechecked; no live state replacement |
 | Original unit view restoration | `65706e7` (#147) | Journaled removal of managed bindings with original fragments and boot guards intact; no live state replacement |
 | Original view recovery proof | `c16d529` (#148) | Reopens restored unit view, stop intent and staged pair under original guards; no live state replacement |
+| Destination-local old-state copies | `d8c64c2` (#149) | Journaled, synced config and SQLite copies beside live destinations; no live rename |
 
-These fifty-five slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These fifty-six slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
