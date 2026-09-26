@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
@@ -30,7 +30,7 @@ test("OPS-06: stopped writers produce one private, restorable config and multi-D
   const outputDir = path.join(root, "snapshot");
   const manifest = await backupStateBundle({ configRoot, databases, outputDir,
     assertQuiesced: async () => { checks++; } });
-  assert.equal(checks, 2);
+  assert.equal(checks, 3);
   assert.deepEqual(manifest.databases, ["agent", "oauth", "session"]);
   assert.equal(manifest.format, "dp-beget-bridge-state-bundle-v2");
   assert.deepEqual(manifest.sources, { configRoot,
@@ -111,12 +111,23 @@ test("OPS-06: insufficient rollback headroom refuses a grouped snapshot before a
     inspectFilesystem: async () => ({ bavail: 1024n * 1024n * 1024n, bsize: 1n }) });
   assert.ok(result.requiredBytes > 512n * 1024n * 1024n);
   assert.match(result.scope, /artifact excluded/);
+  await writeFile(`${source}-wal`, Buffer.alloc(2048));
+  await writeFile(`${source}-shm`, Buffer.alloc(128));
+  const withJournals = await inspectStateBundleSpace({ databases, parent: root,
+    inspectFilesystem: async () => ({ bavail: 1024n * 1024n * 1024n, bsize: 1n }) });
+  assert.equal(withJournals.journalBytes, 2176n);
+  assert.equal(withJournals.requiredBytes, result.requiredBytes + 4n * 2176n);
+  await rm(`${source}-wal`);
+  await rm(`${source}-shm`);
+  await symlink("/etc/hosts", `${source}-wal`);
+  await assert.rejects(inspectStateBundleSpace({ databases, parent: root }), /sidecar cannot be sized safely/);
+  await rm(`${source}-wal`);
   let quiesceChecks = 0;
   const outputDir = path.join(root, "snapshot");
   await assert.rejects(backupStateBundle({ configRoot, databases, outputDir,
     inspectSpace: args => inspectStateBundleSpace({ ...args,
       inspectFilesystem: async () => ({ bavail: result.requiredBytes - 1n, bsize: 1n }) }),
     assertQuiesced: async () => { quiesceChecks++; } }), /Insufficient free space/);
-  assert.equal(quiesceChecks, 0);
+  assert.equal(quiesceChecks, 1);
   await assert.rejects(stat(outputDir), /ENOENT/);
 });

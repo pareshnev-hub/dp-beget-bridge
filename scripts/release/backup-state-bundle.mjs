@@ -68,6 +68,7 @@ export async function backupStateBundle({ configRoot, databases, outputDir,
       throw new Error("State bundle database source cannot traverse a link");
     }
   }
+  await assertQuiesced();
   await inspectSpace({ databases, parent });
   await assertQuiesced();
   await mkdir(output, { mode: 0o700 });

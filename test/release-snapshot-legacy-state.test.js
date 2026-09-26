@@ -46,7 +46,7 @@ test("OPS-07: verified grouped state is bound to the journal after stopped-write
   const result = await snapshotLegacyState({ ...options, inspectWriterGuards: async () => {},
     backupBundle: args => backupStateBundle({ ...args,
     assertQuiesced: async () => { checks++; } }) });
-  assert.equal(checks, 2);
+  assert.equal(checks, 3);
   assert.match(result.snapshotSha256, /^[0-9a-f]{64}$/);
   assert.equal((await readMigrationJournal(options.journalPath)).phase, "snapshotted");
   assert.equal((await inspectMigrationRecovery({ journalPath: options.journalPath, marker: options.marker })).state,
