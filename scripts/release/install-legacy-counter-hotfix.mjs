@@ -292,6 +292,10 @@ export async function installLegacyCounterHotfix({ stageDir, manifestSha256,
   if ((await systemctlShow("dp-beget-session-host.service")).KillMode !== "process") {
     throw new Error("Session Host would kill persistent terminal sessions");
   }
+  // The live proxy service Requires= its socket. Stopping the listening
+  // socket can therefore stop an existing proxy connection as well. First
+  // find a quiet window without changing either unit; recheck after closure.
+  await drain();
   const journalPath = `${stageDir}.activation.json`;
   const journal = await journalCreate(journalPath, stageDir, manifestSha256);
   try {

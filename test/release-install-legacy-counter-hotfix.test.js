@@ -51,7 +51,6 @@ async function fixture(t, failStart = false) {
     checkLedger: () => ({ activeOperationCount: 0 }),
     drain: async () => {
       events.push("drain");
-      assert.equal(states.get(INGRESS[0]).ActiveState, "inactive");
     },
     stop: async unit => {
       events.push(`stop:${unit}`);
@@ -98,7 +97,8 @@ test("hotfix activates reviewed bytes and leaves an exact durable journal", {
     assert.equal(digest(await readFile(path.join(item.root, item.relative))), item.after);
   }
   assert.equal(states.get(INGRESS[0]).ActiveState, "active");
-  assert.ok(events.indexOf("drain") < events.indexOf(`stop:${INGRESS[1]}`));
+  assert.ok(events.indexOf("drain") < events.indexOf(`stop:${INGRESS[0]}`));
+  assert.ok(events.lastIndexOf("drain") < events.indexOf(`stop:${INGRESS[1]}`));
   const journal = JSON.parse(await readFile(`${stageDir}.activation.json`, "utf8"));
   assert.equal(journal.phase, "complete");
 });
