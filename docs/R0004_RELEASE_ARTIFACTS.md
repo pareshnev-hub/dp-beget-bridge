@@ -59,6 +59,8 @@ node scripts/release/pin-release-key.mjs --source /independent/public.pem --sha2
 
 The root-only preparation step uses this pinned key, verifies the candidate **before** creating its workspace, and then re-verifies private staged and extracted bytes. It checks the signed package and lockfile version, runs `npm ci --omit=dev --ignore-scripts` with isolated private cache and configuration, rejects dependency symlinks outside the extracted tree and removes the cache. A CI root job also exercises the real dependency installation. Its output is a mode `0700` quarantine directory, **not** a service-ready release directory: runtime ownership, migration, admission freeze, activation and rollback remain to be implemented.
 
+After signature verification and before creating the workspace, preparation checks available bytes on its parent filesystem. It reserves the signed archive size, the 256 MiB extraction ceiling, 1 GiB each for the installed dependencies and private npm cache, and 512 MiB free afterward. The npm allocations are estimates rather than enforced ceilings; a release rehearsal must measure the actual candidate and ensure the separate grouped state snapshot budget is also available on the shared volume. The candidate input files are already present and are not counted as new writes.
+
 ```bash
 node scripts/release/prepare-release.mjs --artifact /candidate/dp-beget-bridge-1.0.0.tar.gz --manifest /candidate/manifest.json --signature /candidate/manifest.sig --workspace /new/private/release-workspace
 ```

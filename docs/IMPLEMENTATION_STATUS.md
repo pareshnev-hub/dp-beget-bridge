@@ -135,9 +135,10 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Legacy xtables inventory | `7b5ea2d` (#175), `d86e82f` (#176) | Reject any separate IPv4/IPv6 legacy rule without loading absent kernel tables; both root legacy saves returned empty with status 0 on 2026-09-26; fresh composite execution and exclusive route proof still open |
 | Read-only legacy route preflight | `573cf3e` (#177), `fc3b8b5` (#178) | Full root R0003 preflight passed: two matching inventories of ten Docker routers and pinned NAT/listener/proxy surfaces; three-hop 401 body parity; no exclusive-route authorization |
 | Public response after ingress closure | `29d1a5d` (#179) | IP-pinned bounded 502 probe requires no bearer challenge or redirect after socket/tunnel stops; closed state still needs a safe rehearsal and an independent route proof |
-| Grouped snapshot space budget | this change | Reads destination capacity and actual SQLite sizes before creating a bundle; reserves four source-size copies, 64 MiB config ceiling and 512 MiB free; candidate artifact capacity and live private DB sizes remain open |
+| Grouped snapshot space budget | `3711dd5` (#180) | Reads destination capacity and actual SQLite sizes before creating a bundle; reserves four source-size copies, 64 MiB config ceiling and 512 MiB free; live private DB sizes remain open |
+| Candidate preparation space budget | this change | Reads signed archive size and workspace filesystem availability before creating a workspace; reserves extraction ceiling, 2 GiB estimated npm space and 512 MiB free; combined migration budget still open |
 
-These eighty-three slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These eighty-four slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 

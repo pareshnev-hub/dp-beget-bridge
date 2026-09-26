@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { buildArtifact } from "../scripts/release/build-artifact.mjs";
 import { signManifest } from "../scripts/release/sign-manifest.mjs";
 import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
+import { inspectReleasePreparationSpace } from "../scripts/release/inspect-release-preparation-space.mjs";
 import { prepareRelease } from "../scripts/release/prepare-release.mjs";
 import { promotePreparedRelease } from "../scripts/release/promote-prepared-release.mjs";
 import { switchVersion } from "../scripts/release/version-pointer.mjs";
@@ -54,6 +55,12 @@ test("OPS-05: root preparation enforces the separately pinned key before staging
   assert.equal(switched.current, `releases/${promoted.versionDir}`);
   await assert.rejects(promotePreparedRelease({ workspace, releaseRoot, trustDir }));
   await assert.rejects(prepareRelease(params), /EEXIST/);
+  const noSpace = path.join(parent, "no-space");
+  await assert.rejects(prepareRelease({ ...params, workspace: noSpace,
+    inspectSpace: args => inspectReleasePreparationSpace({ ...args,
+      inspectFilesystem: async () => ({ bavail: 1n, bsize: 4096n }) }) }),
+  /Insufficient free space/);
+  await assert.rejects(stat(noSpace), /ENOENT/);
   const tampered = path.join(parent, "tampered");
   await prepareRelease({ ...params, workspace: tampered });
   const tamperedPackage = path.join(tampered, "extracted", `dp-beget-bridge-${result.version}`, "package.json");
@@ -69,6 +76,18 @@ test("OPS-05: root preparation enforces the separately pinned key before staging
   await writeFile(built.artifact, "changed signed bytes");
   await assert.rejects(prepareRelease({ ...params, workspace: path.join(parent, "rejected") }), /size mismatch/);
   await assert.rejects(stat(path.join(parent, "rejected")), /ENOENT/);
+});
+
+test("OPS-05: preparation budget rejects oversized archives and invalid capacity readings", async () => {
+  const parent = path.resolve(os.tmpdir());
+  await assert.rejects(inspectReleasePreparationSpace({ parent, archiveBytes: 64 * 1024 * 1024 + 1,
+    inspectFilesystem: async () => { throw new Error("should not run"); } }), /exceeds extraction ceiling/);
+  await assert.rejects(inspectReleasePreparationSpace({ parent, archiveBytes: 128,
+    inspectFilesystem: async () => ({ bavail: 1, bsize: 4096 }) }), /capacity is unavailable/);
+  const result = await inspectReleasePreparationSpace({ parent, archiveBytes: 128,
+    inspectFilesystem: async () => ({ bavail: 1024n * 1024n, bsize: 4096n }) });
+  assert.equal(result.requiredBytes, 128n + 256n * 1024n * 1024n +
+    2n * 1024n * 1024n * 1024n + 512n * 1024n * 1024n);
 });
 
 test("OPS-05: CI root preparation installs production dependencies from the signed lockfile", {
