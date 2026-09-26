@@ -88,5 +88,7 @@ jobs:
         run: sudo env "PATH=$PATH" DP_TEST_REAL_SYSTEMD=1 node --test test/release-real-systemd-guard-lifecycle.test.js
       - name: Root-only seven-unit migration guard installation
         run: sudo env "PATH=$PATH" node --test test/release-install-migration-boot-guards.test.js
+      - name: Disposable seven-unit systemd migration boundary
+        run: sudo env "PATH=$PATH" DP_TEST_REAL_SYSTEMD=1 node --test test/release-real-systemd-migration-boundary.test.js
       - name: MCP and Agent systemd lifecycle smoke
         run: sudo env "PATH=$PATH" npm run test:integration:systemd
