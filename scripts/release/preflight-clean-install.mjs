@@ -16,7 +16,35 @@ const UNITS = ["dp-beget-session-host.service", "dp-beget-agent.service", "dp-be
 const LEGACY_PATHS = ["/opt/dp-beget-bridge", "/etc/dp-beget-bridge/bridge.env",
   "/etc/dp-beget-bridge/agent.env", "/etc/dp-beget-bridge/mcp.env",
   "/etc/dp-beget-bridge/mcp-oauth-spike.env", "/etc/dp-beget-bridge/session-host.env",
-  "/var/lib/dp-beget-bridge", "/var/lib/dp-beget-bridge-agent", "/var/lib/dp-beget-bridge-mcp"];
+  "/var/lib/dp-beget-bridge", "/var/lib/dp-beget-bridge-agent", "/var/lib/dp-beget-bridge-mcp",
+  "/run/dp-beget-bridge"];
+
+export function inspectDirectListeners(output) {
+  if (typeof output !== "string" || output.length > 1024 * 1024) {
+    throw new Error("Local TCP listener inventory is unavailable");
+  }
+  for (const line of output.split("\n")) {
+    if (!line.trim()) continue;
+    const fields = line.trim().split(/\s+/);
+    if (fields.length < 5 || fields[0] !== "LISTEN" ||
+        !/^\d+$/.test(fields[1]) || !/^\d+$/.test(fields[2]) ||
+        !/^\S+:\d+$/.test(fields[3])) {
+      throw new Error("Local TCP listener inventory is invalid");
+    }
+    const port = Number(fields[3].slice(fields[3].lastIndexOf(":") + 1));
+    if (port === 8787 || port === 8788) {
+      throw new Error("A Direct service port is already occupied");
+    }
+  }
+  return { directPorts: "unoccupied" };
+}
+
+export async function inspectCleanInstallListeners() {
+  const { stdout, stderr } = await exec("ss", ["-H", "-ltn"],
+    { timeout: 5000, maxBuffer: 1024 * 1024 });
+  if (stderr.trim()) throw new Error("Local TCP listener inventory is unavailable");
+  return inspectDirectListeners(stdout);
+}
 
 async function showUnit(unit) {
   const { stdout } = await exec("systemctl", ["show", unit, "--property=LoadState", "--no-pager"],
@@ -39,6 +67,7 @@ async function assertRootOwnedParent(filename) {
 }
 
 export async function inspectCleanInstallTargets({ releaseRoot, workspaceParent,
+  unitDirectory = "/etc/systemd/system",
   getUnit = showUnit, ensureMissing = assertMissing, checkParent = assertRootOwnedParent } = {}) {
   if (typeof releaseRoot !== "string" || typeof workspaceParent !== "string" ||
       !path.isAbsolute(releaseRoot) || !path.isAbsolute(workspaceParent) ||
@@ -52,9 +81,13 @@ export async function inspectCleanInstallTargets({ releaseRoot, workspaceParent,
   }
   await checkParent(releaseRoot);
   await checkParent(path.join(workspaceParent, "candidate-workspace"));
+  await checkParent(path.join(unitDirectory, "reserved-unit"));
   await ensureMissing(releaseRoot);
   for (const unit of UNITS) {
     if (await getUnit(unit) !== "LoadState=not-found\n") throw new Error(`Install unit already exists: ${unit}`);
+    // A fragment or drop-in can exist on disk before systemd daemon-reload.
+    await ensureMissing(path.join(unitDirectory, unit));
+    await ensureMissing(path.join(unitDirectory, `${unit}.d`));
   }
   for (const filename of LEGACY_PATHS) await ensureMissing(filename);
   return { units: "unoccupied", legacyPaths: "absent", releaseRoot: "absent" };
@@ -66,7 +99,8 @@ export async function preflightCleanInstall({ artifact, manifest, signature, dom
   expectedIp, workUser, allowedRoot, workspaceParent, releaseRoot,
   trustDir = DEFAULT_TRUST_DIR, isRoot = () => process.getuid?.() === 0,
   loadKey = loadPinnedReleaseKey, verify = verifyArtifact, inspectHost = preflightHost,
-  inspectTargets = inspectCleanInstallTargets, inspectSpace = inspectReleasePreparationSpace } = {}) {
+  inspectTargets = inspectCleanInstallTargets, inspectPorts = inspectCleanInstallListeners,
+  inspectSpace = inspectReleasePreparationSpace } = {}) {
   if (!isRoot() || [artifact, manifest, signature, allowedRoot, workspaceParent, releaseRoot, trustDir]
     .some(value => typeof value !== "string" || !path.isAbsolute(value) || path.normalize(value) !== value)) {
     throw new Error("Root and normalized absolute clean-install inputs are required");
@@ -82,6 +116,7 @@ export async function preflightCleanInstall({ artifact, manifest, signature, dom
   if (host?.dns !== "pass" || host?.tls !== "pass" || host?.domain !== domain ||
       host?.expectedIp !== expectedIp) throw new Error("Clean-install host prerequisites are unproven");
   await inspectTargets({ releaseRoot, workspaceParent });
+  await inspectPorts();
   const capacity = await inspectSpace({ parent: workspaceParent, archiveBytes: candidate.size });
   if (typeof capacity?.availableBytes !== "bigint" ||
       typeof capacity?.requiredBytes !== "bigint" ||
@@ -90,6 +125,7 @@ export async function preflightCleanInstall({ artifact, manifest, signature, dom
   }
   // Recheck all mutable local targets and endpoints around the space inspection.
   await inspectTargets({ releaseRoot, workspaceParent });
+  await inspectPorts();
   const again = await inspectHost({ domain, expectedIp, workUser, allowedRoot });
   if (JSON.stringify(host) !== JSON.stringify(again)) throw new Error("Install host changed during preflight");
   return { candidate: { version: candidate.version, commit: candidate.commit,
