@@ -10,6 +10,8 @@ The subsequent root output found no other rule in the dynamic YAML scan and no d
 
 The next root Docker-label inventory found no Docker-provider router for `bridge-oauth.pareshnev.com` across running containers: the listed router hosts were `pareshnev.com`, `www.pareshnev.com`, `mail.pareshnev.com` and `crarojofimo.beget.app`. The compose excerpt enables the Docker provider with `exposedbydefault=false`. This narrows the route risk but does not establish that those flags and the file-provider configuration are loaded by the running Traefik instance, nor rule out non-Docker public forwards. The closure helper now requires an independent `assertRouteExclusive` function to return `true` immediately before writing the marker; the installer still needs a concrete live implementation of that proof and a fresh Beget check.
 
+A later root read-only check of the running `n8n-traefik-1` arguments reported `--providers.docker.exposedbydefault=false`, `--providers.file.directory=/dynamic` and `--providers.file.watch=true`. The mounted dynamic directory contained one eligible configuration file, `dp-beget-oauth.yml`, and its only rule was `Host(\`bridge-oauth.pareshnev.com\`)`. This answers the loaded provider-directory question at the observed instant. Watching allows later changes; the complete router and service file, alternate host/NAT routes and a callable production proof still need inspection. The historical output is not suitable as `assertRouteExclusive`.
+
 The private R0002 tunnel is another independent ingress. Its unit must also remain closed during a legacy migration. The Session Host tmux server and retained transcripts remain outside the code root and must never be killed as an implicit update step.
 
 ## Transaction sequence
