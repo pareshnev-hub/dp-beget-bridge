@@ -24,6 +24,12 @@ export function compareBegetOAuthRouteSnapshots(first, second) {
       routeB.dockerRouters !== routeA.dockerRouters ||
       !Array.isArray(hostA?.listening) || !Array.isArray(hostB?.listening) ||
       JSON.stringify(hostB.listening) !== JSON.stringify(hostA.listening) ||
+      !Array.isArray(hostA.externalTcp) ||
+      JSON.stringify(hostB.externalTcp) !== JSON.stringify(hostA.externalTcp) ||
+      !Array.isArray(hostA.udpLoopback) ||
+      JSON.stringify(hostB.udpLoopback) !== JSON.stringify(hostA.udpLoopback) ||
+      hostA.externalTcp.some(value => !["0.0.0.0:22", "[::]:22", "0.0.0.0:80",
+        "[::]:80", "0.0.0.0:443", "[::]:443"].includes(value)) ||
       JSON.stringify(hostB.publicPorts) !== JSON.stringify([80, 443]) ||
       JSON.stringify(hostA.publicPorts) !== JSON.stringify([80, 443]) ||
       [natA, natB].some(value => value?.ipv4Target !== "172.18.0.2" ||
@@ -43,6 +49,8 @@ export function compareBegetOAuthRouteSnapshots(first, second) {
   }
   return { traefikContainerId: id, fileSha256: routeA.fileSha256,
     dockerRouters: routeA.dockerRouters, listening: [...hostA.listening],
+    externalTcp: [...hostA.externalTcp],
+    udpLoopback: [...hostA.udpLoopback],
     publicIp: PUBLIC_IP, natTarget: natA.ipv4Target,
     proxyTarget: proxyA.destination,
     scope: "DNS, TLS, Traefik, host listeners, Docker NAT and loaded proxy units only" };

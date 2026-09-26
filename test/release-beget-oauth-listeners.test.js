@@ -12,6 +12,9 @@ const listeners = [
   'LISTEN 0 4096 [::]:443 [::]:* users:(("docker-proxy",pid=14,fd=7))',
   'LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=15,fd=7))'
 ];
+const udp = "State Recv-Q Send-Q Local Address:Port Peer Address:Port Process\n" +
+  "UNCONN 0 0 127.0.0.54:53 0.0.0.0:*\n" +
+  "UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:*\n";
 function fixture() {
   const traefik = { Id: "a".repeat(64), Name: "/n8n-traefik-1", State: { Running: true },
     HostConfig: { NetworkMode: "n8n_default" }, NetworkSettings: { Ports: {
@@ -24,11 +27,14 @@ function fixture() {
 }
 
 test("OPS-07: only Traefik publishes 80/443 and the OAuth listener is isolated", () => {
-  const report = validateBegetOAuthListenerSnapshot(listeners.join("\n"), fixture());
+  const report = validateBegetOAuthListenerSnapshot(listeners.join("\n"), fixture(), udp);
   assert.deepEqual(report.publicPorts, [80, 443]);
   assert.equal(report.proxyAddress, "172.18.0.1:8791");
+  assert.deepEqual(report.externalTcp, ["0.0.0.0:22", "0.0.0.0:443",
+    "0.0.0.0:80", "[::]:443", "[::]:80"]);
+  assert.deepEqual(report.udpLoopback, ["127.0.0.53%lo:53", "127.0.0.54:53"]);
   const closed = listeners.filter(line => !line.includes(":8789") && !line.includes(":8791"));
-  assert.equal(validateBegetOAuthListenerSnapshot(closed.join("\n"), fixture()).oauthAddress,
+  assert.equal(validateBegetOAuthListenerSnapshot(closed.join("\n"), fixture(), udp).oauthAddress,
     "127.0.0.1:8789");
 });
 
@@ -36,9 +42,16 @@ test("OPS-07: alternate listener or publisher fails before an ingress transition
   for (const newLine of [
     'LISTEN 0 128 0.0.0.0:8789 0.0.0.0:* users:(("node",pid=40,fd=7))',
     'LISTEN 0 128 [::]:8791 [::]:* users:(("systemd",pid=1,fd=7))',
-    'LISTEN 0 128 127.0.0.1:443 0.0.0.0:* users:(("nginx",pid=2,fd=7))'
-  ]) assert.throws(() => validateBegetOAuthListenerSnapshot([...listeners, newLine].join("\n"), fixture()),
+    'LISTEN 0 128 127.0.0.1:443 0.0.0.0:* users:(("nginx",pid=2,fd=7))',
+    'LISTEN 0 128 0.0.0.0:8443 0.0.0.0:* users:(("nginx",pid=2,fd=7))',
+    'LISTEN 0 128 45.12.238.143:9443 0.0.0.0:* users:(("nginx",pid=2,fd=7))',
+    'LISTEN 0 128 172.18.0.1:8792 0.0.0.0:* users:(("node",pid=2,fd=7))'
+  ]) assert.throws(() => validateBegetOAuthListenerSnapshot([...listeners, newLine].join("\n"), fixture(), udp),
     /listener inventory/);
+  assert.throws(() => validateBegetOAuthListenerSnapshot(listeners.join("\n"), fixture(),
+    udp + "UNCONN 0 0 0.0.0.0:443 0.0.0.0:*\n"), /listener inventory/);
+  assert.throws(() => validateBegetOAuthListenerSnapshot(listeners.join("\n"), fixture(),
+    udp + "UNCONN 0 0 [::]:8443 [::]:*\n"), /listener inventory/);
   for (const mutate of [
     f => f[1].NetworkSettings.Ports["8789/tcp"] = [{ HostIp: "0.0.0.0", HostPort: "8789" }],
     f => f[1].NetworkSettings.Ports["443/tcp"] = [{ HostIp: "0.0.0.0", HostPort: "443" }],
@@ -47,7 +60,7 @@ test("OPS-07: alternate listener or publisher fails before an ingress transition
   ]) {
     const f = fixture();
     mutate(f);
-    assert.throws(() => validateBegetOAuthListenerSnapshot(listeners.join("\n"), f),
+    assert.throws(() => validateBegetOAuthListenerSnapshot(listeners.join("\n"), f, udp),
       /listener inventory/);
   }
 });
