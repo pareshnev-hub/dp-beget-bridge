@@ -22,6 +22,8 @@ These checks validate the **current R0003 OAuth route**, not a completed R0004 i
 
 The dedicated `dp-beget-oauth-proxy.socket` was also loaded and active on `172.18.0.1:8791`; it triggers `dp-beget-oauth-proxy.service`, which forwards to `127.0.0.1:8789`. On 2026-09-26, a root read-only grep of `/opt/beget/n8n` reported `/opt/beget/n8n/traefik_dynamic/dp-beget-oauth.yml` with a `Host` rule for `bridge-oauth.pareshnev.com`, service `dp-beget-oauth` and server URL `http://172.18.0.1:8791`. Docker inspection reported `/opt/beget/n8n/traefik_dynamic` mounted at `/dynamic` in `n8n-traefik-1`. This establishes the intended file-provider target in the observed configuration, but the grep did not enumerate Docker-provider labels, every router rule or all alternate public listeners. Exclusive route evidence remains open. See `docs/R0004_MIGRATION_TRANSACTION.md`.
 
+A second root read-only output on 2026-09-26 found only that OAuth rule in the dynamic YAML rule scan. `ss` showed the OAuth process bound to `127.0.0.1:8789`, the dedicated systemd socket to `172.18.0.1:8791`, and Docker's proxy on `0.0.0.0:443` and `[::]:443`. Docker's published-port list showed only `n8n-traefik-1` on 80/443; the other listed containers had no public OAuth port. Docker-provider router labels and the loaded Traefik provider configuration were not included in that output, so this is a point-in-time listener check, not yet exclusive-route authorization.
+
 ## First-migration consequences
 
 1. Preserve the four existing unit fragments, the OAuth drop-in, both old code roots, split environment files and service-owned state before changing the systemd working directories.

@@ -6,6 +6,8 @@ Status: **DESIGN, NOT DEPLOYABLE** (2026-09-23). The running Beget code is R0003
 
 `dp-beget-oauth-proxy.socket` is loaded and active on `172.18.0.1:8791`; it triggers `dp-beget-oauth-proxy.service`, whose `systemd-socket-proxyd` forwards to `127.0.0.1:8789`. The socket and service are separate from the shared Traefik container. The public OAuth hostname and TLS route work. A root read-only inspection on 2026-09-26 located the file-provider route for `bridge-oauth.pareshnev.com` in `/opt/beget/n8n/traefik_dynamic/dp-beget-oauth.yml`: its `dp-beget-oauth` service targets `http://172.18.0.1:8791`, and the directory is mounted at `/dynamic` in `n8n-traefik-1`. This confirms the intended route target. Before treating the socket as an exclusive release gate, enumerate all live file and Docker-provider routers and any alternate public path to `127.0.0.1:8789`; the observed grep and mount list do not establish exclusivity.
 
+The subsequent root output found no other rule in the dynamic YAML scan and no direct public OAuth listener: the OAuth process bound only to `127.0.0.1:8789`, the dedicated socket to `172.18.0.1:8791`, and only the Traefik container published 80/443 among the listed Docker containers. Docker-provider rules and loaded provider settings still need a read-only inventory before asserting public route exclusivity. Recheck these facts immediately before any journaled ingress closure; a historical observation cannot authorize a later live switch.
+
 The private R0002 tunnel is another independent ingress. Its unit must also remain closed during a legacy migration. The Session Host tmux server and retained transcripts remain outside the code root and must never be killed as an implicit update step.
 
 ## Transaction sequence
