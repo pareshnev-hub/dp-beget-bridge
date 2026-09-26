@@ -45,6 +45,23 @@ test("OPS-05: root preparation enforces the separately pinned key before staging
   assert.equal(result.keyFingerprint, fingerprint);
   assert.equal((await stat(workspace)).mode & 0o777, 0o700);
   assert.equal(JSON.parse(await readFile(path.join(result.directory, "package.json"), "utf8")).name, "dp-beget-bridge");
+  const invalidRepo = path.join(base, "missing-compat-repo");
+  await mkdir(invalidRepo);
+  await writeFile(path.join(invalidRepo, "package.json"), JSON.stringify({ name: "dp-beget-bridge", version: "0.1.0" }));
+  await exec("git", ["init", "-q"], { cwd: invalidRepo });
+  await exec("git", ["add", "package.json"], { cwd: invalidRepo });
+  await exec("git", ["-c", "user.name=Release Test", "-c", "user.email=release-test@example.invalid",
+    "commit", "-qm", "Signed candidate without compatibility metadata"], { cwd: invalidRepo });
+  const invalidCommit = (await exec("git", ["rev-parse", "HEAD"], { cwd: invalidRepo })).stdout.trim();
+  const invalid = await buildArtifact({ commit: invalidCommit, repository: invalidRepo,
+    outputDir: path.join(base, "invalid-candidate") });
+  const invalidSignature = path.join(base, "invalid-candidate", "manifest.sig");
+  await signManifest({ ...invalid, privateKey: privateFile, signature: invalidSignature });
+  const invalidWorkspace = path.join(parent, "invalid-workspace");
+  await assert.rejects(prepareRelease({ ...invalid, signature: invalidSignature, trustDir,
+    workspace: invalidWorkspace, installDependencies: async () => assert.fail("dependencies must not install") }),
+  /no state compatibility record/);
+  await assert.rejects(stat(invalidWorkspace), /ENOENT/);
   const releaseRoot = path.join(parent, "versions");
   await mkdir(path.join(releaseRoot, "releases"), { recursive: true, mode: 0o755 });
   const promoted = await promotePreparedRelease({ workspace, releaseRoot, trustDir });
