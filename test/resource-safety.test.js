@@ -181,3 +181,19 @@ test("R0004: a legacy transcript larger than the segment size continues safely",
   assert.equal(await fs.readFile(outputPath, "utf8"), "1234567890");
   await assert.rejects(fs.access(segmentPath(outputPath, 1)), { code: "ENOENT" });
 });
+
+test("R0004: an existing segmented transcript survives a new configured size", async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-capture-resume-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const outputPath = path.join(root, "terminal.log");
+  await fs.writeFile(outputPath, "");
+  const first = await captureTranscript({ outputPath, maximum: 14, segmentBytes: 5,
+    input: Readable.from([Buffer.from("0123456")]) });
+  assert.equal(first.stopped, null);
+  const next = await captureTranscript({ outputPath, maximum: 14, segmentBytes: 7,
+    input: Readable.from([Buffer.from("789abcdef")]) });
+  assert.equal(next.stopped, "transcript_limit");
+  assert.equal(await fs.readFile(outputPath, "utf8"), "01234");
+  assert.equal(await fs.readFile(segmentPath(outputPath, 1), "utf8"), "56789");
+  assert.equal(await fs.readFile(segmentPath(outputPath, 2), "utf8"), "abcd");
+});

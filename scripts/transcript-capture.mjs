@@ -38,6 +38,7 @@ export async function captureTranscript({ outputPath, maximum, minimumFree = 0,
   }
   segmentBytes = Math.min(segmentBytes, maximum);
   const existing = await inspectTranscriptSegments(outputPath, segmentBytes);
+  if (existing.segments.length > 1) segmentBytes = existing.segmentBytes;
   // An older unsplit transcript may exceed the new segment size. Continue it
   // under its original per-session ceiling instead of attempting a negative write.
   if (existing.segments.length === 1 && existing.size > segmentBytes) segmentBytes = maximum;

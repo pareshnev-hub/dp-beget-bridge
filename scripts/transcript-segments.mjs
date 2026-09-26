@@ -38,10 +38,13 @@ export async function inspectTranscriptSegments(outputPath,
   try { first = await regularSize(outputPath); }
   catch (error) {
     if (error.code !== "ENOENT" || numbered.length) throw error;
-    return { segments: [], size: 0, missing: true };
+    return { segments: [], size: 0, missing: true, segmentBytes };
   }
-  if (numbered.length && first !== segmentBytes) {
-    throw new Error("Transcript segments have an incomplete first file");
+  // A retained session keeps its original segment size if the operator later
+  // changes the configured size. The first completed file determines it.
+  const actualSegmentBytes = numbered.length ? first : segmentBytes;
+  if (numbered.length && actualSegmentBytes < 1) {
+    throw new Error("Transcript segments have an empty first file");
   }
   const segments = [{ filename: outputPath, start: 0, size: first }];
   let size = first;
@@ -51,14 +54,15 @@ export async function inspectTranscriptSegments(outputPath,
       throw new Error("Transcript segment is missing");
     }
     const length = await regularSize(filename);
-    if (length > segmentBytes || (index < numbered.length && length !== segmentBytes)) {
+    if (length > actualSegmentBytes ||
+        (index < numbered.length && length !== actualSegmentBytes)) {
       throw new Error("Transcript segment length is invalid");
     }
     segments.push({ filename, start: size, size: length });
     size += length;
     if (!Number.isSafeInteger(size)) throw new Error("Transcript byte count exceeds safe limit");
   }
-  return { segments, size, missing: false };
+  return { segments, size, missing: false, segmentBytes: actualSegmentBytes };
 }
 
 export async function readTranscriptBytes(segments, offset, length) {

@@ -66,7 +66,7 @@ test("R0004: cursor reads a UTF-8 character across segment boundaries", async co
   const bytes = Buffer.from("A🙂B");
   await fs.writeFile(store.outputPath(session.id), bytes.subarray(0, 3));
   await fs.writeFile(segmentPath(store.outputPath(session.id), 1), bytes.subarray(3));
-  manager.config.transcriptSegmentBytes = 3;
+  manager.config.transcriptSegmentBytes = 8; // A changed default must not invalidate existing segments.
   const first = await manager.readOutput(session.id, undefined, 2);
   assert.equal(first.output, "A");
   const second = await manager.readOutput(session.id, first.cursor, 2);
