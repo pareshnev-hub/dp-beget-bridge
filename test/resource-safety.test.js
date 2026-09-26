@@ -11,6 +11,7 @@ import test from "node:test";
 import { FileManager } from "../apps/agent/src/files.js";
 import { createMcpHttpServer } from "../apps/mcp/src/server.js";
 import { PathPolicy } from "../packages/core/src/path-policy.js";
+import { captureTranscript, CAPTURE_STOP_SUFFIX } from "../scripts/transcript-capture.mjs";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -138,4 +139,19 @@ test("STR-03: capture helper streams immediately and stops at the exact byte cei
   const [code] = await once(child, "exit");
   assert.equal(code, 0);
   assert.equal(await fs.readFile(output, "utf8"), "12345");
+});
+
+test("STR-04: capture stops before exhausting the reserve without an output reader", async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-capture-reserve-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const outputPath = path.join(root, "terminal.log");
+  await fs.writeFile(outputPath, "");
+  let checks = 0;
+  const result = await captureTranscript({ outputPath, maximum: 128, minimumFree: 10000,
+    input: Readable.from([Buffer.from("first"), Buffer.from("second")]),
+    inspectFilesystem: async () => ({ bavail: ++checks === 1 ? 20000n : 10000n, bsize: 1n }) });
+  assert.equal(result.stopped, "storage_reserve");
+  assert.equal(checks, 2);
+  assert.equal(await fs.readFile(outputPath, "utf8"), "first");
+  assert.equal(await fs.readFile(`${outputPath}${CAPTURE_STOP_SUFFIX}`, "utf8"), "storage_reserve\n");
 });
