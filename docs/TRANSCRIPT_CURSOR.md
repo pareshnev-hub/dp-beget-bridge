@@ -29,6 +29,19 @@ A stale cursor is never silently clamped. The response identifies the gap and su
 
 `purge_terminal` is the separate destructive operation. It is accepted only for a CLOSED session and permanently removes its metadata, operation rows, transcript, and control records.
 
+For an offline copy, a VPS owner with local access to the Session Host state can run
+`node scripts/archive-terminal.mjs archive --data-dir /var/lib/dp-beget-bridge --session-id SESSION_ID --output-dir NEW_PRIVATE_DIRECTORY`.
+The new directory contains a private copy of the transcript segments and a small
+manifest with the byte cursor identity, sizes and SHA-256 checksums. Check the copy
+with `node scripts/archive-terminal.mjs verify --archive-dir ARCHIVE_DIRECTORY`
+before considering a separate explicit purge. Only CLOSED terminals can be copied.
+Archiving preserves the live transcript and metadata and does not change Session
+Host's quota; the separate copy occupies disk space, is plaintext and must remain
+under owner-only filesystem permissions. After a purge, the archive is available
+offline through its files and manifest, not through `read_terminal`. Checksums
+detect accidental damage, but do not authenticate a copy against a malicious
+local owner. There is no automatic age-based retention or deletion policy yet.
+
 ## Capture ceiling and storage reserve
 
 `DP_SESSION_OUTPUT_MAX_BYTES` defaults to 64 MiB per terminal. The tmux pipe enforces the byte ceiling independently of API readers. When the ceiling is observed, Session Host records `DEGRADED / transcript_limit` and leaves the terminal process running and controllable.
