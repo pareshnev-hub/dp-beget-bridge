@@ -78,6 +78,8 @@ jobs:
         run: sudo env "PATH=$PATH" node --test test/release-open-managed-ingress.test.js test/release-public-admission-probe.test.js
       - name: Root-only pre-exposure recovery staging
         run: sudo env "PATH=$PATH" node --test test/release-stage-pre-exposure-recovery.test.js
+      - name: Root-only live recovery destination preflight
+        run: sudo env "PATH=$PATH" node --test test/release-inspect-recovery-destinations.test.js
       - name: Root-only writer reboot guard conditions
         run: sudo env "PATH=$PATH" node --test test/release-writer-boot-guard.test.js test/release-installed-writer-guard-preflight.test.js
       - name: Root-only seven-unit migration guard installation
