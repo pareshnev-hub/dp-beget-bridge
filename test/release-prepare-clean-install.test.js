@@ -11,6 +11,7 @@ import { verifyCleanInstallManifest } from "../scripts/release/clean-install-man
 import { advanceCleanInstallJournal, readCleanInstallJournal,
   startCleanInstallJournal } from "../scripts/release/clean-install-journal.mjs";
 import { installCleanIdentities } from "../scripts/release/install-clean-identities.mjs";
+import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
 import { prepareCleanInstall } from "../scripts/release/prepare-clean-install.mjs";
 import { prepareRelease } from "../scripts/release/prepare-release.mjs";
@@ -109,6 +110,41 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
   /injected account tool failure/);
   assert.equal((await readCleanInstallJournal(failedJournalPath)).phase, "identities-intent");
   assert.ok((await stat(`${failedJournalPath}.identity-install.lock`)).isFile());
+  await assert.rejects(recoverCompletedCleanIdentities({ journalPath: failedJournalPath,
+    trustDir }), /getent|Command failed/);
+  assert.ok((await stat(`${failedJournalPath}.identity-install.lock`)).isFile());
+  await assert.rejects(stat(`${failedJournalPath}.identity-recovery.lock`), /ENOENT/);
+
+  const completedJournalPath = path.join(workspaceParent, "completed-identities-journal.json");
+  const completed = await startCleanInstallJournal({ journalPath: completedJournalPath,
+    workspace: args.workspace, manifestSha256: result.manifestSha256,
+    releaseRoot: args.releaseRoot, trustDir });
+  await advanceCleanInstallJournal({ journalPath: completedJournalPath,
+    transactionId: completed.transactionId, expectedPhase: "prepared",
+    nextPhase: "identities-intent", trustDir });
+  await assert.rejects(installCleanIdentities({ journalPath: completedJournalPath, trustDir,
+    inspectAvailable: async () => {}, addGroup: async () => {}, addUser: async () => {},
+    advance: async () => { throw new Error("interrupted before journal write"); } }),
+  /interrupted before journal write/);
+  assert.equal((await readCleanInstallJournal(completedJournalPath)).phase, "identities-intent");
+  const recovered = await recoverCompletedCleanIdentities({ journalPath: completedJournalPath,
+    trustDir, inspectCreated: async () => ({ identities: "journal-bound" }),
+    advance: options => advanceCleanInstallJournal({ ...options,
+      inspectCreated: async () => ({ identities: "journal-bound" }) }) });
+  assert.equal(recovered.phase, "identities-ready");
+  await assert.rejects(stat(`${completedJournalPath}.identity-install.lock`), /ENOENT/);
+  await assert.rejects(stat(`${completedJournalPath}.identity-recovery.lock`), /ENOENT/);
+  await writeFile(`${completedJournalPath}.identity-install.lock`, "wrong transaction\n",
+    { mode: 0o600 });
+  await assert.rejects(recoverCompletedCleanIdentities({ journalPath: completedJournalPath,
+    trustDir, inspectCreated: async () => ({ identities: "journal-bound" }) }),
+  /lock does not match/);
+  await writeFile(`${completedJournalPath}.identity-install.lock`, `${completed.transactionId}\n`);
+  assert.equal((await recoverCompletedCleanIdentities({ journalPath: completedJournalPath,
+    trustDir, inspectCreated: async () => ({ identities: "journal-bound" }) })).phase,
+  "identities-ready");
+  await assert.rejects(recoverCompletedCleanIdentities({ journalPath: completedJournalPath,
+    trustDir }), /ENOENT/);
   await assert.rejects(prepareCleanInstall(args), /EEXIST/);
   assert.ok((await stat(unit)).isFile(), "an existing candidate cannot be cleaned up by a failed retry");
   await assert.rejects(prepareCleanInstall({ ...args,
