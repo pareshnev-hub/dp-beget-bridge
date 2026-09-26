@@ -39,11 +39,21 @@ export function assertSupportedOs(osRelease) {
 function probeTls(domain, ip) {
   return new Promise((resolve, reject) => {
     const socket = tls.connect({ host: ip, port: 443, servername: domain, rejectUnauthorized: true });
-    const fail = () => { socket.destroy(); reject(new Error("HTTPS certificate or connection check failed")); };
-    socket.setTimeout(5000, fail);
+    let done = false;
+    const timer = setTimeout(() => fail(), 5000);
+    const fail = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      socket.destroy();
+      reject(new Error("HTTPS certificate or connection check failed"));
+    };
     socket.once("error", fail);
     socket.once("secureConnect", () => {
       if (!socket.authorized) { fail(); return; }
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
       socket.end();
       resolve();
     });
@@ -51,16 +61,28 @@ function probeTls(domain, ip) {
 }
 
 export async function checkDnsAndTls({ domain, expectedIp,
-  resolve4 = dns.resolve4, resolve6 = dns.resolve6, checkTls = probeTls }) {
+  resolve4 = dns.resolve4, resolve6 = dns.resolve6, checkTls = probeTls,
+  dnsTimeoutMs = 5000 }) {
   domain = validateHostname(domain);
+  if (!Number.isSafeInteger(dnsTimeoutMs) || dnsTimeoutMs < 1 || dnsTimeoutMs > 30000) {
+    throw new Error("Invalid DNS probe timeout");
+  }
   if (isIP(expectedIp) !== 4 || excludedIps.check(expectedIp, "ipv4")) {
     throw new Error("Expected public IPv4 address is required");
   }
   const lookup = async resolve => {
-    try { return await resolve(domain); }
-    catch (error) {
+    let timer;
+    try {
+      return await Promise.race([
+        resolve(domain),
+        new Promise((_, reject) => { timer = setTimeout(() =>
+          reject(new Error("DNS lookup timed out")), dnsTimeoutMs); }),
+      ]);
+    } catch (error) {
       if (["ENODATA", "ENOTFOUND", "ENODOMAIN"].includes(error.code)) return [];
-      throw new Error("DNS lookup failed");
+      throw new Error(error.message === "DNS lookup timed out" ? error.message : "DNS lookup failed");
+    } finally {
+      clearTimeout(timer);
     }
   };
   const [ipv4, ipv6] = await Promise.all([lookup(resolve4), lookup(resolve6)]);
@@ -77,7 +99,8 @@ export async function preflightHost({ domain, expectedIp, workUser, allowedRoot 
   assertSupportedOs(await readFile("/etc/os-release", "utf8"));
   if (Number(process.versions.node.split(".")[0]) < 22) throw new Error("Node.js 22 or newer is required");
   if (!workUser || !/^[a-z_][a-z0-9_-]*[$]?$/.test(workUser)) throw new Error("A work user is required");
-  const { stdout: uidText } = await exec("id", ["-u", workUser]);
+  const { stdout: uidText } = await exec("id", ["-u", workUser],
+    { timeout: 5000, maxBuffer: 4096 });
   if (Number(uidText.trim()) === 0) throw new Error("Root cannot be the work identity");
   if (!path.isAbsolute(allowedRoot || "")) throw new Error("Allowed root must be an absolute directory");
   const root = path.resolve(allowedRoot);
@@ -86,7 +109,7 @@ export async function preflightHost({ domain, expectedIp, workUser, allowedRoot 
     throw new Error("Allowed root must be a real directory without symlink components");
   }
   for (const binary of ["tmux", "systemctl", "openssl", "tar", "git"]) {
-    try { await exec("which", [binary]); }
+    try { await exec("which", [binary], { timeout: 5000, maxBuffer: 4096 }); }
     catch { throw new Error(`Missing host dependency: ${binary}`); }
   }
   return await checkDnsAndTls({ domain: hostname, expectedIp });
