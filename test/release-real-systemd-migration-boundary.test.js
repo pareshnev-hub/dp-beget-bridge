@@ -129,11 +129,26 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
 
   // Rehearse the old-writer restart boundary under the same seven loaded
   // guards. In this fixture the units do no work and no state is restored.
+  await assert.rejects(withWriterStartPermit({ marker, permit, action: async () => {
+    await systemctl("start", writers[0]);
+    assert.equal(await active(writers[0]), "active");
+    throw new Error("injected old writer start interruption");
+  } }), /injected old writer start interruption/);
+  await assertWriterPermitAbsent(permit);
+  assert.equal(await active(writers[0]), "active");
+  for (const unit of writers.slice(1)) assert.equal(await active(unit), "inactive");
+  await systemctl("start", writers[1]).catch(() => {});
+  assert.equal(await active(writers[1]), "inactive");
+  for (const unit of ingress) assert.equal(await active(unit), "inactive");
+
+  // Only the already-active prefix survives the interruption. A new permit
+  // restarts the remaining writers without opening dedicated public ingress.
   await withWriterStartPermit({ marker, permit, action: async () => {
-    for (const unit of writers) {
+    for (const unit of writers.slice(1)) {
       await systemctl("start", unit);
       assert.equal(await active(unit), "active");
     }
+    assert.equal(await active(writers[0]), "active");
     for (const unit of ingress) assert.equal(await active(unit), "inactive");
     await systemctl("start", ingress[0]).catch(() => {});
     assert.equal(await active(ingress[0]), "inactive");
