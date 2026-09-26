@@ -42,6 +42,11 @@ async function setup(t) {
 function fakePhases(args, transactionId, calls, failAt) {
   const run = name => async options => {
     calls.push(name);
+    if (name === "prepareLedger") {
+      assert.equal(options.planPath, args.planPath);
+      assert.equal(options.stopRecordPath, args.stopRecordPath);
+      assert.equal(options.unitRecordPath, args.unitRecordPath);
+    }
     if (name === failAt) throw new Error("injected rollback failure");
     if (name === "reopenIngress") {
       assert.equal(options.recordPath, args.ingressRecordPath);

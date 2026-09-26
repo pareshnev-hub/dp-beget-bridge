@@ -11,6 +11,7 @@ import { restoreOriginalUnitView, readOriginalUnitViewRecord } from "./restore-o
 import { stageCompletePreExposureRecovery } from "./stage-complete-pre-exposure-recovery.mjs";
 import { stageLiveStateRecovery, readLiveStateCopyRecord } from "./stage-live-state-recovery.mjs";
 import { stopCandidateForRollback, readCandidateRollbackStopRecord } from "./stop-candidate-for-rollback.mjs";
+import { DEFAULT_ADMISSION_PAUSE_PATH } from "../../packages/core/src/admission-gate.js";
 
 const SESSION_DATABASE = "/var/lib/dp-beget-bridge/state.sqlite";
 function absolute(filename) {
@@ -24,6 +25,7 @@ function absolute(filename) {
 // this entry point never guesses whether a partially applied step can resume.
 export async function recoverFirstMigration({ journalPath, marker, permit,
   unitDirectory = "/etc/systemd/system", releaseRoot, versionDir,
+  admissionFlag = DEFAULT_ADMISSION_PAUSE_PATH,
   recoveryRoot, planPath, stopRecordPath, unitRecordPath, copyRecordPath,
   ledgerPath, pointerRecordPath, restartRecordPath, ingressRecordPath,
   assertRouteExclusive,
@@ -49,7 +51,7 @@ export async function recoverFirstMigration({ journalPath, marker, permit,
   const records = [recoveryRoot, planPath, stopRecordPath, unitRecordPath,
     copyRecordPath, ledgerPath, pointerRecordPath, restartRecordPath, ingressRecordPath];
   if (process.getuid?.() !== 0 || typeof assertRouteExclusive !== "function" ||
-      ![journalPath, unitDirectory, releaseRoot, ...records].every(absolute) ||
+      ![journalPath, unitDirectory, releaseRoot, admissionFlag, ...records].every(absolute) ||
       new Set(records).size !== records.length) {
     throw new Error("Root, separate absolute recovery records and independent route proof are required");
   }
@@ -63,7 +65,7 @@ export async function recoverFirstMigration({ journalPath, marker, permit,
   if (status.state !== "incomplete-transaction" || status.phase !== "locally-healthy") {
     throw new Error("Migration recovery has an unresolved marker or journal transition");
   }
-  const boundary = { journalPath, marker, permit, unitDirectory, assertRouteExclusive };
+  const boundary = { journalPath, marker, permit, unitDirectory, admissionFlag, assertRouteExclusive };
   const stateDatabase = SESSION_DATABASE;
   const sameTransaction = record => {
     if (record?.migrationTransactionId !== journal.transactionId) {
@@ -97,7 +99,8 @@ export async function recoverFirstMigration({ journalPath, marker, permit,
       copies.stopRecordPath !== stopRecordPath || copies.unitRecordPath !== unitRecordPath) {
     throw new Error("Live recovery copies were not prepared");
   }
-  await prepareLedger({ ...boundary, ledgerPath, recordPath: copyRecordPath, stateDatabase });
+  await prepareLedger({ ...boundary, ledgerPath, recordPath: copyRecordPath,
+    planPath, stopRecordPath, unitRecordPath, stateDatabase });
   const ledger = await readLedger(ledgerPath);
   sameTransaction(ledger);
   if (ledger.phase !== "prepared" || ledger.copyRecordPath !== copyRecordPath) {
