@@ -135,12 +135,13 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Legacy xtables inventory | `7b5ea2d` (#175), `d86e82f` (#176) | Reject any separate IPv4/IPv6 legacy rule without loading absent kernel tables; both root legacy saves returned empty with status 0 on 2026-09-26; fresh composite execution and exclusive route proof still open |
 | Read-only legacy route preflight | `573cf3e` (#177), `fc3b8b5` (#178) | Full root R0003 preflight passed: two matching inventories of ten Docker routers and pinned NAT/listener/proxy surfaces; three-hop 401 body parity; no exclusive-route authorization |
 | Public response after ingress closure | `29d1a5d` (#179) | IP-pinned bounded 502 probe requires no bearer challenge or redirect after socket/tunnel stops; closed state still needs a safe rehearsal and an independent route proof |
-| Grouped snapshot space budget | `3711dd5` (#180) | Reads destination capacity and actual SQLite sizes before creating a bundle; reserves four source-size copies, 64 MiB config ceiling and 512 MiB free; live private DB sizes remain open |
-| Candidate preparation space budget | `77a8def` (#181) | Reads signed archive size and workspace filesystem availability before creating a workspace; reserves extraction ceiling, 2 GiB estimated npm space and 512 MiB free; combined migration budget still open |
+| Grouped snapshot space budget | `3711dd5` (#180) | Reads destination capacity and actual SQLite sizes before creating a bundle; reserves four source-size copies, 64 MiB config ceiling and 512 MiB free; root inventory of three expected private DBs now recorded |
+| Candidate preparation space budget | `77a8def` (#181) | Reads signed archive size and workspace filesystem availability before creating a workspace; reserves extraction ceiling, 2 GiB estimated npm space and 512 MiB free; actual candidate and measured npm peak still open |
 | SQLite journal headroom | `b885b6c` (#182) | Sizes WAL, SHM and rollback journal files after stopped-writer proof before bundle allocation; observed Session Host WAL exceeds its base DB on Beget |
-| Shared-volume migration capacity | this change | Combined candidate and state budget fails when separate phase checks would both pass but their sum would exhaust the disk; root sizes of three expected SQLite files are now recorded, candidate and service bindings still unverified |
+| Shared-volume migration capacity | `782da3a` (#183) | Combined candidate and state budget fails when separate phase checks would both pass but their sum would exhaust the disk; actual signed candidate still unverified |
+| Live legacy database bindings | this change | Root read-only proof checks three running service PIDs, expected data paths, pinned OAuth config default and absence of unlisted SQLite files without printing environment secrets; live root execution still required |
 
-These eighty-six slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These eighty-seven slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
