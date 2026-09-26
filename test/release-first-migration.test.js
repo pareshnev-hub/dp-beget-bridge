@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { advanceMigrationJournal, readMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
 import { runFirstMigration } from "../scripts/release/run-first-migration.mjs";
+import { begetFirstMigrationProofs } from "../scripts/release/beget-first-migration-proofs.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
 const oldCommit = "a".repeat(40);
@@ -65,6 +66,39 @@ test("first migration runs ordered, journaled steps with live-bound SQLite sourc
   assert.deepEqual(log, ["installGuards", "closeIngress", "quiesce", "snapshot",
     "installManaged", "activate", "openIngress"]);
   assert.equal((await readMigrationJournal(args.journalPath)).phase, "completed");
+});
+
+test("Beget route and counter proofs stay bound to the ingress-closed journal", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const args = await setup(t);
+  const calls = [];
+  const phaseActions = phases(args, calls);
+  const proofs = begetFirstMigrationProofs({ journalPath: args.journalPath,
+    marker: path.join(args.workspace, "ingress-closed.marker"),
+    route: async () => { calls.push("route"); return true; },
+    drain: async ({ journalPath, marker, assertRouteExclusive }) => {
+      assert.equal(journalPath, args.journalPath);
+      assert.equal(marker, path.join(args.workspace, "ingress-closed.marker"));
+      assert.equal((await readMigrationJournal(journalPath)).phase, "ingress-closed");
+      calls.push("drain");
+      return await assertRouteExclusive();
+    } });
+  const closeIngress = async options => {
+    assert.equal(await options.assertRouteExclusive(), true);
+    await phaseActions.closeIngress(options);
+    assert.equal(await options.assertRouteExclusive(), true);
+  };
+  const openIngress = async options => {
+    assert.equal(await options.assertRouteExclusive(), true);
+    await phaseActions.openIngress(options);
+  };
+  assert.equal((await runFirstMigration({ ...args, ...proofs,
+    ...phaseActions, closeIngress, openIngress })).phase, "completed");
+  assert.deepEqual(calls.filter(value => value === "route"),
+    ["route", "route", "route", "route"]);
+  assert.equal(calls.indexOf("drain") > calls.indexOf("closeIngress"), true);
+  assert.equal(calls.indexOf("snapshot") > calls.indexOf("drain"), true);
 });
 
 test("first migration refuses missing proofs and changed bindings before installing guards", {
