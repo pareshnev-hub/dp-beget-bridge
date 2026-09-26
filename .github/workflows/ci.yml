@@ -65,7 +65,7 @@ jobs:
       - name: Root-only first-migration systemd snapshot
         run: sudo env "PATH=$PATH" node --test test/release-unit-backup.test.js test/release-unit-backup-verification.test.js test/release-ingress-boot-guard.test.js test/release-installed-ingress-guard-preflight.test.js test/release-legacy-service-activity.test.js test/release-migration-journal.test.js test/release-migration-recovery.test.js test/release-close-legacy-ingress.test.js
       - name: Root-only legacy writer quiescence
-        run: sudo env "PATH=$PATH" node --test test/release-quiesce-legacy-writers.test.js
+        run: sudo env "PATH=$PATH" node --test test/release-quiesce-legacy-writers.test.js test/release-instrumented-legacy-drain.test.js
       - name: Root-only journaled grouped snapshot
         run: sudo env "PATH=$PATH" node --test test/release-snapshot-legacy-state.test.js
       - name: Root-only managed unit preparation

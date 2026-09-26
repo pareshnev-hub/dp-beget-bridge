@@ -19,8 +19,13 @@ test("R0003 health proof addresses three distinct loopback ports and the Session
 test("R0004 health and wrong product cannot be mistaken for legacy recovery", () => {
   assert.throws(() => validateLegacyHealth({ status: "ok", product: "DP Beget Bridge",
     admission: "paused" }, "DP Beget Bridge"), /not R0003/);
+  assert.deepEqual(validateLegacyHealth({ status: "ok", product: "DP Beget Bridge",
+    inFlightRequests: 0 }, "DP Beget Bridge"),
+  { status: "ok", product: "DP Beget Bridge", inFlightRequests: 0 });
   assert.throws(() => validateLegacyHealth({ status: "ok", product: "DP Beget Bridge",
-    inFlightRequests: 0 }, "DP Beget Bridge"), /not R0003/);
+    inFlightRequests: -1 }, "DP Beget Bridge"), /not R0003/);
+  assert.throws(() => validateLegacyHealth({ status: "ok", product: "DP Beget Bridge" },
+    "DP Beget Bridge", { requireCounter: true }), /not R0003/);
   assert.throws(() => validateLegacyHealth({ status: "ok", product: "DP Beget Bridge" },
     "DP Beget Bridge Session Host"), /not R0003/);
 });
