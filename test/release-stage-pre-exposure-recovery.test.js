@@ -665,6 +665,26 @@ test("OPS-07: interrupted pointer unlink resumes from durable removing intent", 
     recordPath: options.pointerRecordPath })).phase, "removed");
 });
 
+test("OPS-07: process death after candidate unlink resumes without reopening ingress", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await completedReplacementFixture(t);
+  const paths = { recordPath: options.pointerRecordPath, ledgerPath: options.ledgerPath,
+    stateDatabase: options.database, releaseRoot: options.releaseRoot,
+    versionDir: options.versionDir, marker: options.marker, permit: options.permit,
+    unitDirectory: options.unitDirectory };
+  await assert.rejects(exec(process.execPath, [new URL(
+    "../scripts/integration/crash-candidate-pointer-fixture.mjs", import.meta.url).pathname,
+  JSON.stringify(paths)], { timeout: 30000, maxBuffer: 4096 }), error => error.code === 82);
+  assert.equal((await readCandidatePointerRollbackRecord(options.pointerRecordPath)).phase, "removing");
+  await assert.rejects(stat(path.join(options.releaseRoot, "current")), /ENOENT/);
+  assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+  assert.equal((await deactivateCandidatePointer({ ...options,
+    recordPath: options.pointerRecordPath })).phase, "removed");
+  assert.deepEqual((await inspectLiveReplacementLedger({ ...options,
+    ledgerPath: options.ledgerPath })).positions, ["installed", "installed"]);
+});
+
 test("OPS-07: changed first-migration pointer or previous release blocks rollback", {
   skip: process.getuid?.() !== 0
 }, async t => {
