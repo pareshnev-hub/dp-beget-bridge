@@ -23,7 +23,7 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | R0001 / 0.1.x technical preview | IMPLEMENTED | 12 preview tests pass; not public-ready; audit baseline `f22032e` |
 | R0002 Core Safety & Persistent Runtime | VERIFIED | All included DP items verified; exact Beget runtime and actual ChatGPT file-contract evidence recorded for `41db306` through the outbound-only private acceptance tunnel; no public listener or Traefik change |
 | R0003 Working Direct / Private Beta | IN PROGRESS (formal gate) | DP-012, DP-013 and DP-014 verified; #80 records the real-client OAuth terminal/file acceptance at `971d67a`. Link the release-wide AUTO-01…04 and N/N-1 evidence before changing this row to VERIFIED. |
-| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; implementation slices through #129 cover signed artifacts, trust, backups, first-migration phases through guarded ingress release, and verified pre-exposure recovery staging. The public install/update/rollback gate is still open. |
+| R0004 Public Direct 1.0 | IN PROGRESS | #87 is the release queue; implementation slices through #136 cover signed artifacts, trust, backups, guarded first-migration phases and pre-exposure recovery staging. The public install/update/rollback gate is still open. |
 | R0005 Large Transfer Hardening | PLANNED | requires R0004 and bounded transfer-state design |
 | R0006 Optional Catalog Transport Pilot | PLANNED | requires dated feasibility decision; Relay not yet authorized by roadmap |
 | R0007 Catalog Submission & Measured Scale | PLANNED | requires verified pilot and current official submission review |
@@ -90,8 +90,15 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Fixed public admission probe | `9bf38ea` (#127) | HTTPS `/mcp` requires exact `503 admission_paused` JSON; route exclusivity remains independent |
 | Verified pre-exposure recovery staging | `167bf36` (#128) | Fully checks grouped restore in a new directory with ingress closed; does not replace live state |
 | Bound snapshot source paths | `2e0dcc3` (#129) | Private v2 grouped manifest records config and database origins; no live restore controller |
+| Bound SQLite ownership | `b266751` (#130) | SQLite v2 manifest records source UID/GID/mode; restored private copies preserve ownership |
+| Writer reboot guard staging | `96b3bf2` (#131) | Four service guards block reboot starts under persistent marker without ephemeral permit |
+| Loaded writer guard preflight | `573b3e1` (#132) | Closure requires all writer guards loaded and absent permit before marker creation |
+| Managed writer guard compatibility | `af85fce` (#133) | Managed app binding installation accounts for exact writer guard drop-ins |
+| Scoped candidate writer permit | `4f86fc5` (#134) | Ephemeral startup permit encloses ordered starts and local health; ingress release rejects leftover permit |
+| Journaled seven-unit guard install | `3055e21` (#135) | Staged guard install, sync, reload and loaded preflights; no live Beget change |
+| Guards through stopped-state snapshot | `11fca72` (#136) | Quiescence and grouped snapshot verify loaded writer guards and absent permit; independent legacy drain proof still required |
 
-These thirty-six slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These forty-three slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 

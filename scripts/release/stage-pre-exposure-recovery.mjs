@@ -4,10 +4,13 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { PERSISTENT_MARKER } from "./ingress-boot-guard.mjs";
 import { inspectInstalledIngressGuard } from "./installed-ingress-guard-preflight.mjs";
+import { inspectInstalledWriterGuards } from "./installed-writer-guard-preflight.mjs";
 import { readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
 import { verifyMarker } from "./quiesce-legacy-writers.mjs";
 import { restoreStateBundle } from "./restore-state-bundle.mjs";
 import { verifyJournalStateBundle } from "./snapshot-legacy-state.mjs";
+import { WRITER_START_PERMIT } from "./writer-boot-guard.mjs";
+import { assertWriterPermitAbsent } from "./writer-start-permit.mjs";
 
 const exec = promisify(execFile);
 const INGRESS = ["dp-beget-oauth-proxy.socket", "dp-beget-oauth-proxy.service", "dp-beget-tunnel.service"];
@@ -21,7 +24,7 @@ async function systemctlState(unit) {
 }
 
 async function assertClosed({ journalPath, marker, unitDirectory, assertRouteExclusive, inspectGuard, getState,
-  transactionId, phase }) {
+  inspectWriterGuards, permit, transactionId, phase }) {
   const journal = await readMigrationJournal(journalPath);
   if (journal.transactionId !== transactionId || journal.phase !== phase) {
     throw new Error("Migration changed during recovery staging");
@@ -30,6 +33,8 @@ async function assertClosed({ journalPath, marker, unitDirectory, assertRouteExc
   catch (error) { if (error.code !== "ENOENT") throw error; }
   await verifyMarker(marker);
   await inspectGuard({ unitDirectory, marker });
+  await inspectWriterGuards({ unitDirectory, marker, permit, managed: phase !== "snapshotted" });
+  await assertWriterPermitAbsent(permit);
   for (const unit of INGRESS) {
     if (await getState(unit) !== "inactive") throw new Error(`Ingress remains active: ${unit}`);
   }
@@ -41,8 +46,9 @@ async function assertClosed({ journalPath, marker, unitDirectory, assertRouteExc
 // removes the ingress guard. A later rollback controller must recheck the
 // boundary immediately before replacing any live state.
 export async function stagePreExposureRecovery({ journalPath, marker = PERSISTENT_MARKER,
-  unitDirectory = "/etc/systemd/system", outputDir, assertRouteExclusive,
+  unitDirectory = "/etc/systemd/system", outputDir, assertRouteExclusive, permit = WRITER_START_PERMIT,
   inspectGuard = inspectInstalledIngressGuard, getState = systemctlState,
+  inspectWriterGuards = inspectInstalledWriterGuards,
   restore = restoreStateBundle } = {}) {
   if (process.getuid?.() !== 0 || !path.isAbsolute(outputDir || "") ||
       path.normalize(outputDir) !== outputDir || typeof assertRouteExclusive !== "function") {
@@ -54,7 +60,8 @@ export async function stagePreExposureRecovery({ journalPath, marker = PERSISTEN
   }
   await verifyJournalUnitBackup(journal);
   await verifyJournalStateBundle(journal);
-  const boundary = { journalPath, marker, unitDirectory, assertRouteExclusive, inspectGuard, getState,
+  const boundary = { journalPath, marker, unitDirectory, assertRouteExclusive, inspectGuard,
+    inspectWriterGuards, permit, getState,
     transactionId: journal.transactionId, phase: journal.phase };
   await assertClosed(boundary);
   const result = await restore({ backupDir: journal.snapshotPath, outputDir });
