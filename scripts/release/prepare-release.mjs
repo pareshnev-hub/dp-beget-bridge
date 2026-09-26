@@ -5,12 +5,14 @@ import { fileURLToPath } from "node:url";
 import { extractVerifiedArtifact } from "./extract-verified-artifact.mjs";
 import { installQuarantinedDependencies } from "./install-quarantined-dependencies.mjs";
 import { inspectReleasePreparationSpace } from "./inspect-release-preparation-space.mjs";
+import { inspectMigrationSpace } from "./inspect-migration-space.mjs";
 import { loadPinnedReleaseKey, DEFAULT_TRUST_DIR } from "./pin-release-key.mjs";
 import { stageVerifiedArtifact } from "./stage-verified-artifact.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
 export async function prepareRelease({ artifact, manifest, signature, workspace, trustDir = DEFAULT_TRUST_DIR,
-  installDependencies = installQuarantinedDependencies, inspectSpace = inspectReleasePreparationSpace }) {
+  installDependencies = installQuarantinedDependencies, inspectSpace = inspectReleasePreparationSpace,
+  migration, inspectMigration = inspectMigrationSpace }) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to prepare a release");
   if (!path.isAbsolute(workspace || "")) throw new Error("A new absolute private workspace is required");
   const target = path.resolve(workspace);
@@ -27,7 +29,10 @@ export async function prepareRelease({ artifact, manifest, signature, workspace,
     await lstat(target);
     throw Object.assign(new Error("EEXIST: release workspace already exists"), { code: "EEXIST" });
   } catch (error) { if (error.code !== "ENOENT") throw error; }
-  await inspectSpace({ parent, archiveBytes: identity.size });
+  if (migration) {
+    await inspectMigration({ workspaceParent: parent, snapshotParent: migration.snapshotParent,
+      databases: migration.databases, archiveBytes: identity.size });
+  } else await inspectSpace({ parent, archiveBytes: identity.size });
   await mkdir(target, { mode: 0o700 });
   try {
     const staged = await stageVerifiedArtifact({ artifact, manifest, signature, trustedKey: keyFile,
