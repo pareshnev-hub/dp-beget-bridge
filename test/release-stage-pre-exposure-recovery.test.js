@@ -26,6 +26,8 @@ import { inspectLiveReplacementLedger, prepareLiveReplacementLedger, replaceLive
   "../scripts/release/live-state-replacement-ledger.mjs";
 import { deactivateCandidatePointer, readCandidatePointerRollbackRecord } from
   "../scripts/release/deactivate-candidate-pointer.mjs";
+import { readLegacyRestartRecord, restartLegacyAfterRollback } from
+  "../scripts/release/restart-legacy-after-rollback.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
 async function fixture(t, phase = "locally-healthy") {
@@ -637,6 +639,68 @@ test("OPS-07: pointer rollback record cannot alter recovered configuration", {
   const options = await completedReplacementFixture(t);
   const unsafe = path.join(options.configRoot, "pointer-rollback.json");
   await assert.rejects(deactivateCandidatePointer({ ...options, recordPath: unsafe }),
+    /outside live state/);
+  await assert.rejects(stat(unsafe), /ENOENT/);
+});
+
+async function legacyRestartFixture(t) {
+  const options = await completedReplacementFixture(t);
+  await deactivateCandidatePointer({ ...options, recordPath: options.pointerRecordPath });
+  const active = new Set();
+  return { ...options, recordPath: path.join(path.dirname(options.outputDir), "legacy-restart.json"),
+    pointerRecordPath: options.pointerRecordPath,
+    getState: async unit => active.has(unit) ? "active" : "inactive",
+    startUnit: async unit => { active.add(unit); },
+    withPermit: async ({ action }) => action(),
+    assertLegacyHealthy: async () => ({ services: 4, products: ["DP Beget Bridge",
+      "DP Beget Bridge", "DP Beget Bridge", "DP Beget Bridge Session Host"] }),
+    active };
+}
+
+test("OPS-07: original services restart in order after data and pointer rollback", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await legacyRestartFixture(t);
+  const order = [];
+  const result = await restartLegacyAfterRollback({ ...options, startUnit: async unit => {
+    options.active.add(unit); order.push(unit);
+  } });
+  assert.equal(result.phase, "started");
+  assert.deepEqual(order, ["dp-beget-session-host.service", "dp-beget-agent.service",
+    "dp-beget-mcp.service", "dp-beget-mcp-oauth-spike.service"]);
+  assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+  assert.equal((await restartLegacyAfterRollback(options)).phase, "started");
+});
+
+test("OPS-07: interrupted old-service startup resumes only an active prefix", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await legacyRestartFixture(t);
+  await assert.rejects(restartLegacyAfterRollback({ ...options, startUnit: async unit => {
+    options.active.add(unit);
+    if (unit === "dp-beget-agent.service") throw new Error("service start interrupted");
+  } }), /service start interrupted/);
+  assert.equal((await readLegacyRestartRecord(options.recordPath)).phase, "starting");
+  assert.equal((await restartLegacyAfterRollback(options)).phase, "started");
+});
+
+test("OPS-07: candidate health never certifies restored R0003 services", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await legacyRestartFixture(t);
+  await assert.rejects(restartLegacyAfterRollback({ ...options,
+    assertLegacyHealthy: async () => ({ services: 4, products: ["wrong"] }) }),
+  /Four exact R0003/);
+  assert.equal((await readLegacyRestartRecord(options.recordPath)).phase, "starting");
+  assert.equal((await restartLegacyAfterRollback(options)).phase, "started");
+});
+
+test("OPS-07: restart record cannot alter restored configuration", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await legacyRestartFixture(t);
+  const unsafe = path.join(options.configRoot, "legacy-restart.json");
+  await assert.rejects(restartLegacyAfterRollback({ ...options, recordPath: unsafe }),
     /outside live state/);
   await assert.rejects(stat(unsafe), /ENOENT/);
 });
