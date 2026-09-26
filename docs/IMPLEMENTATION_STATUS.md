@@ -145,9 +145,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Bracketed route and database preflight | #187 | Rechecks running database bindings on both sides of a public OAuth challenge and matched route inventories; scoped R0003 evidence only, no drain or exclusive-route assertion |
 | Segmented terminal transcripts | `085d030` (#206), `e081e39` (#208) | New 8 MiB segments share one cursor and aggregate quota; retained segments survive a configured size change; three CI jobs passed on each PR. Automatic archival and age policy remain open |
 | Bounded local diagnostics | `2ed50b8` (#207) | Doctor emits optional JSON health report with bounded probes and redacted failures; installed version/schema and auth-step diagnostics remain open |
-| Explicit private terminal archive | this change | Copies CLOSED transcript segments and cursor metadata into a checksummed owner-only directory without purging the live session; automated age retention and quota accounting for separate archive copies remain open |
+| Explicit private terminal archive | `3f46710` (#209) | Copies CLOSED transcript segments and cursor metadata into a checksummed owner-only directory without purging the live session; all three CI jobs passed. R0004 uses explicit owner purge rather than automatic age deletion; archive copies consume disk outside Session Host quota |
 
-These implementation slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, automated archival, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These implementation slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 

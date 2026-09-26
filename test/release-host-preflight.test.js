@@ -27,3 +27,15 @@ test("OPS-04: wrong DNS fails before TLS and a broken certificate fails the pref
   await assert.rejects(checkDnsAndTls({ ...options, resolve4: async () => [options.expectedIp],
     resolve6: async () => ["2001:db8::1"] }), /DNS must point/);
 });
+
+test("R0004: a stalled DNS lookup fails before contacting TLS", async () => {
+  let tlsCalls = 0;
+  const started = Date.now();
+  await assert.rejects(checkDnsAndTls({
+    domain: "bridge.example.com", expectedIp: "1.1.1.1", dnsTimeoutMs: 20,
+    resolve4: () => new Promise(() => {}), resolve6: async () => [],
+    checkTls: async () => { tlsCalls++; }
+  }), /DNS lookup timed out/);
+  assert.equal(tlsCalls, 0);
+  assert.ok(Date.now() - started < 1000);
+});

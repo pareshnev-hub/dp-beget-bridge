@@ -40,7 +40,8 @@ Host's quota; the separate copy occupies disk space, is plaintext and must remai
 under owner-only filesystem permissions. After a purge, the archive is available
 offline through its files and manifest, not through `read_terminal`. Checksums
 detect accidental damage, but do not authenticate a copy against a malicious
-local owner. There is no automatic age-based retention or deletion policy yet.
+local owner. R0004's retention policy is owner-controlled: no automatic
+age-based archival or deletion. The owner manages offline copies separately.
 
 ## Capture ceiling and storage reserve
 

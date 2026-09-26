@@ -312,7 +312,7 @@ A Linux VPS owner can install, update, diagnose, roll back and remove Direct Mod
 - Signed release manifest/artifacts.
 - Staged update, health check, atomic version switch and rollback.
 - Backup of configuration/state before migrations.
-- Segmented transcript retention, quotas, purge/archive controls and free-space reserve.
+- Segmented transcript retention, quotas, explicit purge/archive controls and free-space reserve. R0004 retains local output until the owner explicitly purges it; automatic age-based deletion is not part of this release.
 - Safe uninstall/reset that does not silently destroy user data.
 - Website/docs/privacy/support/release notes with truthful product status.
 - Optional telemetry collector and minimal admin statistics.
