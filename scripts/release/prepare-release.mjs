@@ -1,15 +1,16 @@
 #!/usr/bin/env node
-import { mkdir, realpath, rm, stat } from "node:fs/promises";
+import { lstat, mkdir, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractVerifiedArtifact } from "./extract-verified-artifact.mjs";
 import { installQuarantinedDependencies } from "./install-quarantined-dependencies.mjs";
+import { inspectReleasePreparationSpace } from "./inspect-release-preparation-space.mjs";
 import { loadPinnedReleaseKey, DEFAULT_TRUST_DIR } from "./pin-release-key.mjs";
 import { stageVerifiedArtifact } from "./stage-verified-artifact.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
 export async function prepareRelease({ artifact, manifest, signature, workspace, trustDir = DEFAULT_TRUST_DIR,
-  installDependencies = installQuarantinedDependencies }) {
+  installDependencies = installQuarantinedDependencies, inspectSpace = inspectReleasePreparationSpace }) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to prepare a release");
   if (!path.isAbsolute(workspace || "")) throw new Error("A new absolute private workspace is required");
   const target = path.resolve(workspace);
@@ -21,7 +22,12 @@ export async function prepareRelease({ artifact, manifest, signature, workspace,
   }
   const { keyFile, fingerprint } = await loadPinnedReleaseKey({ trustDir });
   // No workspace is created until the candidate passes its pinned-key check.
-  await verifyArtifact({ artifact, manifest, signature, trustedKey: keyFile });
+  const identity = await verifyArtifact({ artifact, manifest, signature, trustedKey: keyFile });
+  try {
+    await lstat(target);
+    throw Object.assign(new Error("EEXIST: release workspace already exists"), { code: "EEXIST" });
+  } catch (error) { if (error.code !== "ENOENT") throw error; }
+  await inspectSpace({ parent, archiveBytes: identity.size });
   await mkdir(target, { mode: 0o700 });
   try {
     const staged = await stageVerifiedArtifact({ artifact, manifest, signature, trustedKey: keyFile,
