@@ -140,9 +140,10 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | SQLite journal headroom | `b885b6c` (#182) | Sizes WAL, SHM and rollback journal files after stopped-writer proof before bundle allocation; observed Session Host WAL exceeds its base DB on Beget |
 | Shared-volume migration capacity | `782da3a` (#183) | Combined candidate and state budget fails when separate phase checks would both pass but their sum would exhaust the disk; actual signed candidate still unverified |
 | Live legacy database bindings | `1f64cd2` (#184) | Root read-only proof checks three running service PIDs, expected data paths, pinned OAuth config default and absence of unlisted SQLite files without printing environment secrets; first root run failed on an undisclosed boundary |
-| Retained SQLite inventory and safe failure stages | this change | Admits only observed retained backup-v0/v1 files and emits a fixed failed unit/stage instead of environment values; repeat live root execution required |
+| Retained SQLite inventory and safe failure stages | `f94e2a1` (#185) | Admits only observed Session Host backup-v0/v1 files and emits a fixed failed unit/stage instead of environment values; repeat live root execution reached OAuth inventory |
+| Observed OAuth migration backup inventory | this change | Admits the observed `auth.sqlite.backup-v1` file under the pinned OAuth directory; additional SQLite files still fail closed; repeat live root execution required |
 
-These eighty-eight slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These eighty-nine slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
