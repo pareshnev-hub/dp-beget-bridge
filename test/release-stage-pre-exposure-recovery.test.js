@@ -9,6 +9,7 @@ import { backupStateBundle } from "../scripts/release/backup-state-bundle.mjs";
 import { stageCompletePreExposureRecovery } from "../scripts/release/stage-complete-pre-exposure-recovery.mjs";
 import { advanceMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
 import { stagePreExposureRecovery } from "../scripts/release/stage-pre-exposure-recovery.mjs";
+import { verifyStagedRecoveryPair } from "../scripts/release/verify-staged-recovery-pair.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
 async function fixture(t, phase = "locally-healthy") {
@@ -161,6 +162,49 @@ test("OPS-07: stages matching old state and original systemd units together", {
     "CANARY=private\n");
   assert.match(await readFile(path.join(result.directory, "units", "dp-beget-session-host.service"), "utf8"),
     /Description=dp-beget-session-host.service/);
+  const reopened = await verifyStagedRecoveryPair(options);
+  assert.equal(reopened.transactionId, result.transactionId);
+  assert.equal(reopened.destinations.databases[0].ino, result.destinations.databases[0].ino);
+});
+
+test("OPS-07: changed staged SQLite or original unit bytes refuse later recovery", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await stageCompletePreExposureRecovery(options);
+  const stagedSqlite = path.join(options.outputDir, "state", "sqlite", "legacy.sqlite");
+  await writeFile(stagedSqlite, "altered database\n");
+  await assert.rejects(verifyStagedRecoveryPair(options), /Staged recovery file metadata changed|Staged recovery file changed/);
+  const { restoreStateBundle } = await import("../scripts/release/restore-state-bundle.mjs");
+  await rm(path.join(options.outputDir, "state"), { recursive: true });
+  await restoreStateBundle({ backupDir: options.snapshotPath,
+    outputDir: path.join(options.outputDir, "state") });
+  await writeFile(path.join(options.outputDir, "units", "dp-beget-agent.service"), "altered unit\n");
+  await assert.rejects(verifyStagedRecoveryPair(options), /Staged recovery file metadata changed|Staged recovery file changed/);
+});
+
+test("OPS-07: reopened pair refuses a lost closed-ingress boundary", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await stageCompletePreExposureRecovery(options);
+  await assert.rejects(verifyStagedRecoveryPair({ ...options, getState: async () => "active" }),
+    /Ingress remains active/);
+});
+
+test("OPS-07: reopened pair detects an extra staged config file and route drift", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await stageCompletePreExposureRecovery(options);
+  const staged = path.join(options.outputDir, "state", "config", "extra.env");
+  await writeFile(staged, "UNEXPECTED=1\n");
+  await assert.rejects(verifyStagedRecoveryPair(options), /Staged recovery inventory changed/);
+  await rm(staged);
+  let proofs = 0;
+  await assert.rejects(verifyStagedRecoveryPair({ ...options,
+    assertRouteExclusive: async () => ++proofs === 1 }), /route not proven/);
+  assert.equal(proofs, 2);
 });
 
 test("OPS-07: a route change after both restorations removes the entire staged pair", {
