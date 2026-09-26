@@ -1,0 +1,8 @@
+{
+  "format": "dp-beget-state-compatibility-v1",
+  "schemas": {
+    "sessionHost": 2,
+    "agent": 1,
+    "oauth": 2
+  }
+}

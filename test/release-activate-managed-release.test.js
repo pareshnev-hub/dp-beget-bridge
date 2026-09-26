@@ -21,6 +21,8 @@ async function fixture(t) {
   const destination = path.join(releaseRoot, "releases", versionDir);
   await mkdir(destination, { recursive: true });
   await writeFile(path.join(destination, "package.json"), JSON.stringify({ name: "dp-beget-bridge", version: "1.0.0" }));
+  await writeFile(path.join(destination, "release-compatibility.json"),
+    await readFile(new URL("../release-compatibility.json", import.meta.url)));
   const journalPath = path.join(root, "journal.json");
   const artifactSha256 = "c".repeat(64);
   await startMigrationJournal(journalPath, { oldCommit: "a".repeat(40), newCommit: "b".repeat(40),

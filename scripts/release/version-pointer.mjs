@@ -2,8 +2,29 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readFile, readlink, realpath, rename, rmdir, symlink, unlink } from "node:fs/promises";
 import path from "node:path";
+import { readRegularFile } from "./verify-artifact.mjs";
 
 const VERSION_DIR = /^((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[a-zA-Z0-9.-]+)?)-([0-9a-f]{40})$/;
+const SCHEMAS = ["sessionHost", "agent", "oauth"];
+
+async function rollbackSchemas(root, target) {
+  const filename = path.join(root, target, "release-compatibility.json");
+  const info = await lstat(filename);
+  if (!info.isFile() || info.nlink !== 1) throw new Error("Release has no trusted state compatibility record");
+  let record;
+  try { record = JSON.parse(await readRegularFile(filename, 4096)); }
+  catch { throw new Error("Invalid release state compatibility record"); }
+  const schemas = record?.schemas;
+  if (record?.format !== "dp-beget-state-compatibility-v1" ||
+      Object.keys(record).sort().join() !== "format,schemas" ||
+      typeof schemas !== "object" || schemas === null || Array.isArray(schemas) ||
+      Object.keys(schemas).sort().join() !== [...SCHEMAS].sort().join() ||
+      SCHEMAS.some(name => !Number.isSafeInteger(schemas[name]) || schemas[name] < 1 ||
+        schemas[name] > 1000)) {
+    throw new Error("Invalid release state compatibility record");
+  }
+  return schemas;
+}
 
 async function releaseDirectory(root, name) {
   const match = VERSION_DIR.exec(name);
@@ -70,6 +91,13 @@ export async function switchVersion({ releaseRoot, versionDir, checkHealthy, syn
     const current = await managedLink(root, "current");
     await managedLink(root, "previous");
     if (current === next) throw new Error("Release is already active");
+    const newSchemas = await rollbackSchemas(root, next);
+    if (current) {
+      const oldSchemas = await rollbackSchemas(root, current);
+      if (SCHEMAS.some(name => newSchemas[name] !== oldSchemas[name])) {
+        throw new Error("State schema change requires a separate verified migration and rollback transaction");
+      }
+    }
     let mutationStarted = false;
     try {
       mutationStarted = true;
