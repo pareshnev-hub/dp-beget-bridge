@@ -8,6 +8,7 @@ import { inspectReleasePreparationSpace } from "./inspect-release-preparation-sp
 import { inspectMigrationSpace } from "./inspect-migration-space.mjs";
 import { loadPinnedReleaseKey, DEFAULT_TRUST_DIR } from "./pin-release-key.mjs";
 import { stageVerifiedArtifact } from "./stage-verified-artifact.mjs";
+import { readStateCompatibility } from "./state-compatibility.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
 export async function prepareRelease({ artifact, manifest, signature, workspace, trustDir = DEFAULT_TRUST_DIR,
@@ -41,6 +42,7 @@ export async function prepareRelease({ artifact, manifest, signature, workspace,
     if (staged.commit !== extracted.commit || staged.sha256 !== extracted.sha256) {
       throw new Error("Staged and extracted release identities differ");
     }
+    await readStateCompatibility(extracted.directory);
     await installDependencies({ directory: extracted.directory, version: extracted.version, workspace: target });
     return { version: extracted.version, commit: extracted.commit, sha256: extracted.sha256,
       keyFingerprint: fingerprint, directory: extracted.directory };
