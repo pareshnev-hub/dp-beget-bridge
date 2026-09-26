@@ -61,6 +61,8 @@ The root-only preparation step uses this pinned key, verifies the candidate **be
 
 After signature verification and before creating the workspace, preparation checks available bytes on its parent filesystem. It reserves the signed archive size, the 256 MiB extraction ceiling, 1 GiB each for the installed dependencies and private npm cache, and 512 MiB free afterward. The npm allocations are estimates rather than enforced ceilings; a release rehearsal must measure the actual candidate and ensure the separate grouped state snapshot budget is also available on the shared volume. The candidate input files are already present and are not counted as new writes.
 
+The `prepareRelease` API additionally accepts `migration: { snapshotParent, databases }` for a first migration on a shared filesystem. Before creating its workspace, this path verifies that both parent directories are on the same device, sizes the declared SQLite files and existing sidecars, then requires the **sum** of candidate and grouped snapshot allowances to fit the lower of two capacity readings. It conservatively counts each phase's 512 MiB free reserve. The standalone `prepare-release` CLI does not accept a migration inventory; a future migration controller must supply and repeat the combined check with the exact candidate, data paths and current filesystem state. A missing or outdated database inventory cannot be treated as migration approval.
+
 ```bash
 node scripts/release/prepare-release.mjs --artifact /candidate/dp-beget-bridge-1.0.0.tar.gz --manifest /candidate/manifest.json --signature /candidate/manifest.sig --workspace /new/private/release-workspace
 ```

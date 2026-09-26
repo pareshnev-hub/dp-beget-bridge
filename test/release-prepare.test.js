@@ -61,6 +61,14 @@ test("OPS-05: root preparation enforces the separately pinned key before staging
       inspectFilesystem: async () => ({ bavail: 1n, bsize: 4096n }) }) }),
   /Insufficient free space/);
   await assert.rejects(stat(noSpace), /ENOENT/);
+  const noMigrationSpace = path.join(parent, "no-migration-space");
+  const stateSource = path.join(parent, "state.sqlite");
+  await writeFile(stateSource, Buffer.alloc(128));
+  await assert.rejects(prepareRelease({ ...params, workspace: noMigrationSpace,
+    migration: { snapshotParent: parent, databases: [{ name: "state", source: stateSource }] },
+    inspectMigration: async () => { throw new Error("combined capacity unavailable"); } }),
+  /combined capacity unavailable/);
+  await assert.rejects(stat(noMigrationSpace), /ENOENT/);
   const tampered = path.join(parent, "tampered");
   await prepareRelease({ ...params, workspace: tampered });
   const tamperedPackage = path.join(tampered, "extracted", `dp-beget-bridge-${result.version}`, "package.json");
