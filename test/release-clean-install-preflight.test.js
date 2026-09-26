@@ -5,7 +5,8 @@ import { inspectCleanInstallTargets, inspectDirectListeners,
 
 const valid = { artifact: "/private/archive.tar.gz", manifest: "/private/manifest.json",
   signature: "/private/manifest.sig", domain: "bridge.example.com", expectedIp: "1.1.1.1",
-  workUser: "operator", allowedRoot: "/srv/operator", workspaceParent: "/root/staging",
+  workUser: "operator", workGroup: "operator", agentUser: "dp-agent",
+  mcpUser: "dp-mcp", ipcGroup: "dp-ipc", allowedRoot: "/srv/operator", workspaceParent: "/root/staging",
   releaseRoot: "/opt/dp-beget-bridge-releases", trustDir: "/etc/release-trust",
   isRoot: () => true, loadKey: async () => ({ keyFile: "/etc/release-trust/public.pem",
     fingerprint: "a".repeat(64) }),
@@ -13,6 +14,7 @@ const valid = { artifact: "/private/archive.tar.gz", manifest: "/private/manifes
   inspectHost: async () => ({ domain: "bridge.example.com", expectedIp: "1.1.1.1",
     dns: "pass", tls: "pass" }),
   inspectPorts: async () => ({ directPorts: "unoccupied" }),
+  inspectIdentities: async () => ({ reservedIdentities: "unoccupied" }),
 };
 
 test("OPS-01: occupied IPv4 or IPv6 Direct ports block clean installation", () => {
@@ -50,11 +52,14 @@ test("OPS-01/02: read-only clean install refuses existing services, data, and re
 
 test("OPS-01/04: signed candidate and clean endpoints are checked twice without installation", async () => {
   let targetChecks = 0;
+  let identityChecks = 0;
   const result = await preflightCleanInstall({ ...valid,
     inspectTargets: async () => { targetChecks++; },
+    inspectIdentities: async () => { identityChecks++; },
     inspectSpace: async () => ({ availableBytes: 999n, requiredBytes: 500n }) });
   assert.equal(result.candidate.commit, "b".repeat(40));
   assert.equal(targetChecks, 2);
+  assert.equal(identityChecks, 2);
   assert.match(result.scope, /read-only/);
   assert.deepEqual(result.capacity, { availableBytes: "999", requiredBytes: "500" });
   await assert.rejects(preflightCleanInstall({ ...valid,
