@@ -40,6 +40,8 @@ Two read-only probes through the connected Beget work identity on 2026-09-26 req
 
 A connected read-only `ss -ltn` and `ss -lun` inspection listed all host listeners at the observed instant. The only non-loopback TCP ports were SSH `0.0.0.0:22`/`[::]:22`, Traefik `0.0.0.0:80`/`[::]:80` and `0.0.0.0:443`/`[::]:443`, and the dedicated Docker bridge socket `172.18.0.1:8791`. All other TCP binds were loopback, including OAuth 8789 and the separate tunnel 8790; both UDP sockets were loopback DNS on port 53. `scripts/release/inspect-beget-oauth-listeners.mjs` now rejects any new non-loopback TCP or UDP listener outside the observed layout and compares the external/UDP sets on repeated boundary inspections. The connected work identity could list socket addresses but not root-only process ownership; the root-only inspector still needs its first live execution.
 
+A further connected user check found `/proc/net/ip_tables_names` exists but is readable only by root, while `/proc/net/ip6_tables_names` was absent before any root legacy inspection. An unprivileged `ip6tables-legacy-save` attempted `modprobe` and failed with permission denied. The inspector therefore checks for each existing proc table list and invokes its legacy save binary with `-M /bin/false` to prevent module loading. The unprivileged result does not establish whether IPv4 legacy tables contain rules; root evidence remains required.
+
 ## First-migration consequences
 
 1. Preserve the four existing unit fragments, the OAuth drop-in, both old code roots, split environment files and service-owned state before changing the systemd working directories.

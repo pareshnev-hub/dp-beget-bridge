@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { lstat } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
@@ -40,6 +41,22 @@ export function validateBegetLegacyIptables(ipv4, ipv6) {
     }
     check(!inTable, `${family} legacy iptables has an incomplete table`);
   }
+  return true;
+}
+
+export async function inspectBegetLegacyBackends({ stat = lstat, run = exec } = {}) {
+  const options = { timeout: 12000, maxBuffer: 4 * 1024 * 1024 };
+  const legacy = async (family, binary) => {
+    try { await stat(`/proc/net/${family}_tables_names`); }
+    catch (error) {
+      if (error.code === "ENOENT") return "";
+      throw error;
+    }
+    return (await run(binary, ["-M", "/bin/false"], options)).stdout;
+  };
+  const legacy4 = await legacy("ip", "iptables-legacy-save");
+  const legacy6 = await legacy("ip6", "ip6tables-legacy-save");
+  validateBegetLegacyIptables(legacy4, legacy6);
   return true;
 }
 
@@ -108,9 +125,9 @@ export async function inspectBegetOAuthNat() {
   const { stdout: v4 } = await exec("iptables-save", ["-t", "nat"], options);
   const { stdout: v6 } = await exec("ip6tables-save", ["-t", "nat"], options);
   const { stdout: nft } = await exec("nft", ["-a", "list", "ruleset"], options);
-  const { stdout: legacy4 } = await exec("iptables-legacy-save", [], options);
-  const { stdout: legacy6 } = await exec("ip6tables-legacy-save", [], options);
-  validateBegetLegacyIptables(legacy4, legacy6);
+  // The legacy save binaries otherwise attempt modprobe on an uninitialized
+  // table. An absent proc table list is never initialized just to inspect.
+  await inspectBegetLegacyBackends();
   const result = validateBegetOAuthNatSnapshot(v4, v6, nft, containers[0]);
   const { stdout: after } = await exec("docker", ["inspect", "n8n-traefik-1"], options);
   const final = JSON.parse(after);

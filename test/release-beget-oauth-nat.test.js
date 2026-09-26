@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateBegetOAuthNatSnapshot, validateBegetLegacyIptables } from
+import { validateBegetOAuthNatSnapshot, validateBegetLegacyIptables,
+  inspectBegetLegacyBackends } from
   "../scripts/release/inspect-beget-oauth-nat.mjs";
 
 function fixture() {
@@ -94,4 +95,22 @@ test("OPS-07: a second iptables backend cannot introduce alternate NAT or TPROXY
   }
   assert.throws(() => validateBegetLegacyIptables("*nat\n:DOCKER - [0:0]\n", ""),
     /incomplete table/);
+});
+
+test("OPS-07: absent legacy backend is not initialized; present backend cannot modprobe", async () => {
+  const called = [];
+  const stat = async path => {
+    called.push(path);
+    if (path.endsWith("/ip6_tables_names")) throw Object.assign(new Error("absent"), { code: "ENOENT" });
+  };
+  const run = async (binary, args) => {
+    called.push([binary, ...args]);
+    return { stdout: "*nat\n:PREROUTING ACCEPT [0:0]\nCOMMIT\n" };
+  };
+  assert.equal(await inspectBegetLegacyBackends({ stat, run }), true);
+  assert.deepEqual(called, ["/proc/net/ip_tables_names",
+    ["iptables-legacy-save", "-M", "/bin/false"], "/proc/net/ip6_tables_names"]);
+  await assert.rejects(inspectBegetLegacyBackends({ stat: async () => {},
+    run: async () => ({ stdout: "*mangle\n-A PREROUTING -j TPROXY\nCOMMIT\n" }) }),
+  /legacy iptables contains a rule/);
 });
