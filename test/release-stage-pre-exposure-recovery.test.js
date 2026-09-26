@@ -28,6 +28,8 @@ import { deactivateCandidatePointer, readCandidatePointerRollbackRecord } from
   "../scripts/release/deactivate-candidate-pointer.mjs";
 import { readLegacyRestartRecord, restartLegacyAfterRollback } from
   "../scripts/release/restart-legacy-after-rollback.mjs";
+import { readLegacyIngressRecord, reopenLegacyIngress } from
+  "../scripts/release/reopen-legacy-ingress.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
 async function fixture(t, phase = "locally-healthy") {
@@ -703,6 +705,81 @@ test("OPS-07: restart record cannot alter restored configuration", {
   await assert.rejects(restartLegacyAfterRollback({ ...options, recordPath: unsafe }),
     /outside live state/);
   await assert.rejects(stat(unsafe), /ENOENT/);
+});
+
+async function legacyIngressFixture(t) {
+  const options = await legacyRestartFixture(t);
+  await restartLegacyAfterRollback(options);
+  const journal = await readMigrationJournal(options.journalPath);
+  const manifest = JSON.parse(await readFile(path.join(journal.unitBackup.path, "backup-manifest.json"), "utf8"));
+  for (const unit of ["dp-beget-oauth-proxy.socket", "dp-beget-oauth-proxy.service",
+    "dp-beget-tunnel.service"]) {
+    await copyFile(path.join(journal.unitBackup.path, "files", unit), path.join(options.unitDirectory, unit));
+    await chmod(path.join(options.unitDirectory, unit),
+      manifest.files.find(item => item.path === unit).mode);
+  }
+  return { ...options, ingressRecordPath: path.join(path.dirname(options.outputDir), "legacy-ingress.json"),
+    restartRecordPath: options.recordPath,
+    assertPublicLegacy: async () => true, inspectGuard: async () => {},
+    stopUnit: async unit => { options.active.delete(unit); },
+    startUnit: async unit => { options.active.add(unit); } };
+}
+
+test("OPS-07: R0003 ingress opens only after exposure intent and public proof", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await legacyIngressFixture(t);
+  const result = await reopenLegacyIngress({ ...options, recordPath: options.ingressRecordPath,
+    removeMarker: async marker => {
+      assert.equal((await readMigrationJournal(options.journalPath)).phase, "ingress-open");
+      assert.equal((await readLegacyIngressRecord(options.ingressRecordPath)).phase, "exposing");
+      await rm(marker);
+    } });
+  assert.equal(result.phase, "exposed");
+  assert.equal((await readMigrationJournal(options.journalPath)).phase, "ingress-open");
+  await assert.rejects(stat(options.marker), /ENOENT/);
+  assert.equal(options.active.has("dp-beget-oauth-proxy.socket"), true);
+  assert.equal(options.active.has("dp-beget-tunnel.service"), true);
+  assert.equal((await reopenLegacyIngress({ ...options,
+    recordPath: options.ingressRecordPath })).phase, "exposed");
+});
+
+test("OPS-07: failed public legacy proof recloses ingress and forbids state rewind", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await legacyIngressFixture(t);
+  await assert.rejects(reopenLegacyIngress({ ...options, recordPath: options.ingressRecordPath,
+    assertPublicLegacy: async () => false }), /Public R0003 response not proven/);
+  assert.equal((await readLegacyIngressRecord(options.ingressRecordPath)).phase, "exposing");
+  assert.equal((await readMigrationJournal(options.journalPath)).phase, "ingress-open");
+  assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+  assert.equal(options.active.has("dp-beget-oauth-proxy.socket"), false);
+  await assert.rejects(stageCompletePreExposureRecovery(options), /forbidden after possible public exposure/);
+  await assert.rejects(reopenLegacyIngress({ ...options,
+    recordPath: options.ingressRecordPath }), /manual inspection/);
+});
+
+test("OPS-07: route failure before exposure leaves marker and journal untouched", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await legacyIngressFixture(t);
+  await assert.rejects(reopenLegacyIngress({ ...options,
+    recordPath: options.ingressRecordPath, assertRouteExclusive: async () => false }),
+  /route not proven/);
+  await assert.rejects(stat(options.ingressRecordPath), /ENOENT/);
+  assert.equal((await readMigrationJournal(options.journalPath)).phase, "locally-healthy");
+  assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+});
+
+test("OPS-07: changed dedicated ingress fragment blocks exposure before intent", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await legacyIngressFixture(t);
+  await writeFile(path.join(options.unitDirectory, "dp-beget-oauth-proxy.socket"), "altered\n");
+  await assert.rejects(reopenLegacyIngress({ ...options,
+    recordPath: options.ingressRecordPath }), /Original ingress fragment changed/);
+  await assert.rejects(stat(options.ingressRecordPath), /ENOENT/);
+  assert.equal((await readMigrationJournal(options.journalPath)).phase, "locally-healthy");
 });
 
 test("OPS-07: daemon-reload failure retains restoring intent and ingress marker", {
