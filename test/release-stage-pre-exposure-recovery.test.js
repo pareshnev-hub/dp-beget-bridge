@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { copyFile, mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
@@ -482,6 +482,24 @@ test("OPS-07: changed prepared database refuses replacement ledger inspection", 
   await writeFile(copies.databases[0].copy, "corrupt\n");
   await assert.rejects(inspectLiveReplacementLedger({ ...options, ledgerPath }),
     /Replacement copy changed/);
+  await copyFile(path.join(options.outputDir, "state", "sqlite", "legacy.sqlite"),
+    copies.databases[0].copy);
+  const mode = (await stat(copies.databases[0].copy)).mode & 0o777;
+  await chmod(copies.databases[0].copy, mode === 0o600 ? 0o640 : 0o600);
+  await assert.rejects(inspectLiveReplacementLedger({ ...options, ledgerPath }),
+    /Replacement ownership changed/);
+});
+
+test("OPS-07: replacement ledger cannot be placed inside its staged recovery pair", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  const recordPath = path.join(path.dirname(options.outputDir), "live-copy-record.json");
+  await stageLiveStateRecovery({ ...options, recordPath });
+  await assert.rejects(prepareLiveReplacementLedger({ ...options, recordPath,
+    ledgerPath: path.join(options.outputDir, "replacement-ledger.json") }),
+  /outside staged/);
 });
 
 test("OPS-07: daemon-reload failure retains restoring intent and ingress marker", {

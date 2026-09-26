@@ -3,6 +3,8 @@ import { constants } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { readLiveStateCopyRecord, verifyPreparedLiveStateCopies } from "./stage-live-state-recovery.mjs";
+import { readMigrationJournal } from "./migration-journal.mjs";
+import { readPreparedRollbackIntent } from "./prepare-pre-exposure-rollback.mjs";
 import { readRegularFile } from "./verify-artifact.mjs";
 import { verifyOriginalUnitViewBoundary, verifyOriginalUnitViewRestored } from
   "./verify-original-unit-view.mjs";
@@ -79,10 +81,12 @@ function validate(record) {
       record.targets[0]?.kind !== "config" ||
       record.targets.slice(1).some(item => item.kind !== "database") ||
       record.targets.some(item => !item || Object.keys(item).sort().join(",") !==
-        "copy,kind,live,name,newDev,newDigest,newIno,oldDev,oldIno,parked" ||
+        "copy,kind,live,name,newDev,newDigest,newGid,newIno,newMode,newUid,oldDev,oldIno,parked" ||
         ![item.copy, item.live, item.parked].every(absolute) ||
         !SHA.test(item.newDigest || "") ||
-        ![item.newDev, item.newIno, item.oldDev, item.oldIno].every(Number.isSafeInteger) ||
+        ![item.newDev, item.newIno, item.newUid, item.newGid,
+          item.oldDev, item.oldIno].every(Number.isSafeInteger) ||
+        !Number.isInteger(item.newMode) || item.newMode < 0 || item.newMode > 0o777 ||
         (item.kind === "database" && !/^[a-z][a-z0-9_-]{0,31}$/.test(item.name || ""))) ||
       new Set(record.targets.flatMap(item => [item.live, item.copy, item.parked])).size !==
         record.targets.length * 3) {
@@ -117,6 +121,9 @@ async function targetPosition(item) {
   else if (!live && next(copy) && old(parked)) { position = "parked"; newPath = item.copy; }
   else if (next(live) && !copy && old(parked)) { position = "installed"; newPath = item.live; }
   else throw new Error(`Unrecognized replacement position: ${item.name}`);
+  const newInfo = position === "installed" ? live : copy;
+  if (newInfo.uid !== item.newUid || newInfo.gid !== item.newGid ||
+      newInfo.mode !== item.newMode) throw new Error(`Replacement ownership changed: ${item.name}`);
   if (await fingerprint(newPath, item.kind) !== item.newDigest) {
     throw new Error(`Replacement copy changed: ${item.name}`);
   }
@@ -183,6 +190,13 @@ export async function prepareLiveReplacementLedger({ ledgerPath, recordPath,
   if (!view.destinations.databases.some(item => item.path === stateDatabase)) {
     throw new Error("Operation ledger database is outside the snapshot destinations");
   }
+  const intent = await readPreparedRollbackIntent(copies.planPath);
+  const journal = await readMigrationJournal(intent.journalPath);
+  if ([view.stagedDirectory, journal.snapshotPath, journal.unitBackup.path,
+    boundary.unitDirectory || "/etc/systemd/system", copies.configCopy].some(directory =>
+    ledgerPath === directory || ledgerPath.startsWith(`${directory}${path.sep}`))) {
+    throw new Error("Replacement ledger must be outside staged, backup and live unit directories");
+  }
   const suffix = randomUUID();
   const targets = [{ name: "config", kind: "config", live: view.destinations.configRoot,
     copy: copies.configCopy }, ...copies.databases.map(item => ({ name: item.name,
@@ -198,6 +212,7 @@ export async function prepareLiveReplacementLedger({ ledgerPath, recordPath,
     if (!old || !next || old.dev !== next.dev) throw new Error("Recovery copies cannot be renamed atomically");
     item.oldDev = old.dev; item.oldIno = old.ino;
     item.newDev = next.dev; item.newIno = next.ino;
+    item.newUid = next.uid; item.newGid = next.gid; item.newMode = next.mode;
     item.newDigest = await fingerprint(item.copy, item.kind);
   }
   if (targets.some(item => ledgerPath === item.live || ledgerPath === item.copy ||
