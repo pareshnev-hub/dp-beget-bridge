@@ -140,12 +140,44 @@ export class TmuxSessionManager {
     await previous;
     try {
       const sessions = await this.store.list();
-      const open = sessions.filter((session) => !session.closedAt);
-      const alive = await Promise.all(open.map((session) => this.isAlive(session.id)));
+      const alive = await Promise.all(sessions.map(session =>
+        session.closedAt ? false : this.isAlive(session.id)));
       const active = alive.filter(Boolean).length;
       const maximum = Math.max(1, Number(this.config.terminalMaxActive || 8));
       if (active + this.pendingOpens >= maximum) {
         throw new BridgeError("session_limit", "Active terminal session limit reached", 429);
+      }
+      const transcriptBudget = this.config.transcriptTotalMaxBytes;
+      if (transcriptBudget !== undefined) {
+        const perSession = this.config.sessionOutputMaxBytes;
+        if (!Number.isSafeInteger(transcriptBudget) || transcriptBudget < 1 ||
+            !Number.isSafeInteger(perSession) || perSession < 1) {
+          throw new BridgeError("transcript_quota_invalid", "Transcript quota is invalid", 503);
+        }
+        // OPEN metadata keeps its full allowance even if tmux temporarily
+        // appears stopped: a recovered terminal may still write its full tail.
+        // CLOSED sessions retain only their actual bytes.
+        const stillOpen = sessions.filter(session => !session.closedAt).length;
+        let committed = BigInt(stillOpen + this.pendingOpens + 1) * BigInt(perSession);
+        for (let index = 0; index < sessions.length; index++) {
+          if (!sessions[index].closedAt) continue;
+          let info;
+          try { info = await fs.lstat(this.store.outputPath(sessions[index].id)); }
+          catch (error) {
+            if (error.code === "ENOENT") continue;
+            throw new BridgeError("transcript_quota_invalid", "Transcript quota cannot be verified", 503);
+          }
+          if (!info.isFile() || info.nlink !== 1 || !Number.isSafeInteger(info.size) || info.size < 0) {
+            throw new BridgeError("transcript_quota_invalid", "Transcript quota cannot be verified", 503);
+          }
+          committed += BigInt(info.size);
+          if (committed > BigInt(transcriptBudget)) {
+            throw new BridgeError("transcript_quota", "Retained transcript limit reached; close and explicitly purge an old session", 507);
+          }
+        }
+        if (committed > BigInt(transcriptBudget)) {
+          throw new BridgeError("transcript_quota", "Retained transcript limit reached; close and explicitly purge an old session", 507);
+        }
       }
       this.pendingOpens += 1;
       let released = false;
