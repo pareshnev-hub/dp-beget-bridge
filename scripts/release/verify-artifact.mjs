@@ -90,10 +90,10 @@ export async function checkArtifact(artifact, record) {
 async function main(args) {
   const options = {};
   for (let i = 0; i < args.length; i += 2) {
-    const key = args[i]?.replace(/^--/, "");
+    const key = args[i] === "--trusted-key" ? "trustedKey" : args[i]?.replace(/^--/, "");
     if (!args[i]?.startsWith("--") || !["artifact", "manifest", "signature", "trustedKey"].includes(key) ||
         !args[i + 1] || Object.hasOwn(options, key)) {
-      throw new Error("Usage: verify-artifact --artifact FILE --manifest FILE --signature FILE --trustedKey FILE");
+      throw new Error("Usage: verify-artifact --artifact FILE --manifest FILE --signature FILE --trusted-key FILE");
     }
     options[key] = args[i + 1];
   }
