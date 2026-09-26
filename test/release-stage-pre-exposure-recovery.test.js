@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
@@ -9,7 +9,12 @@ import { backupStateBundle } from "../scripts/release/backup-state-bundle.mjs";
 import { preparePreExposureRollback, readPreparedRollbackIntent, verifyPreparedRollbackIntent } from
   "../scripts/release/prepare-pre-exposure-rollback.mjs";
 import { stageCompletePreExposureRecovery } from "../scripts/release/stage-complete-pre-exposure-recovery.mjs";
-import { advanceMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
+import { advanceMigrationJournal, readMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
+import { readOriginalUnitViewRecord, restoreOriginalUnitView } from
+  "../scripts/release/restore-original-unit-view.mjs";
+import { MANAGED_APP_UNITS, MANAGED_DROP_IN, managedUnitContent } from
+  "../scripts/release/stage-managed-unit-overrides.mjs";
+import { WRITER_GUARD_DROP_IN, writerGuardContent } from "../scripts/release/writer-boot-guard.mjs";
 import { stagePreExposureRecovery } from "../scripts/release/stage-pre-exposure-recovery.mjs";
 import { readCandidateRollbackStopRecord, stopCandidateForRollback, verifyCandidateRollbackStopped } from
   "../scripts/release/stop-candidate-for-rollback.mjs";
@@ -315,6 +320,86 @@ test("OPS-07: missing R0004 pause refuses candidate stop before recording intent
     verifyPaused: async () => { throw new Error("R0004 admission pause missing"); },
     stopUnit: async () => { throw new Error("must not stop"); } }), /admission pause missing/);
   await assert.rejects(stat(stopRecordPath), /ENOENT/);
+});
+
+async function originalUnitViewFixture(t) {
+  const options = await fixture(t);
+  await stageCompletePreExposureRecovery(options);
+  const root = path.dirname(options.outputDir);
+  const planPath = path.join(root, "rollback-intent.json");
+  const stopRecordPath = path.join(root, "candidate-stop.json");
+  const unitRecordPath = path.join(root, "original-unit-view.json");
+  await preparePreExposureRollback({ ...options, stagedDirectory: options.outputDir, planPath });
+  const stopped = [];
+  await stopCandidateForRollback({ ...options, planPath, stopRecordPath,
+    stateDatabase: options.database, getIngressState: options.getState,
+    getState: async unit => stopped.includes(unit) ? "inactive" : "active",
+    getKillMode: async () => "process", assertPaused: async () => {}, verifyPaused: async () => {},
+    assertLedgerSafe: async () => {}, stopUnit: async unit => { stopped.push(unit); } });
+  const releaseRoot = path.join(root, "releases");
+  const unitDirectory = path.join(root, "live-units");
+  await mkdir(unitDirectory);
+  const journal = await readMigrationJournal(options.journalPath);
+  for (const unit of MANAGED_APP_UNITS) {
+    await copyFile(path.join(journal.unitBackup.path, "files", unit), path.join(unitDirectory, unit));
+    const directory = path.join(unitDirectory, `${unit}.d`);
+    await mkdir(directory);
+    if (unit === "dp-beget-mcp-oauth-spike.service") {
+      await writeFile(path.join(directory, "10-dp012-dcr.conf"), "[Service]\n");
+    }
+    await writeFile(path.join(directory, WRITER_GUARD_DROP_IN),
+      writerGuardContent(options.marker, options.permit));
+    await writeFile(path.join(directory, MANAGED_DROP_IN), managedUnitContent(releaseRoot));
+  }
+  return { ...options, planPath, stopRecordPath, unitRecordPath, releaseRoot, unitDirectory,
+    stateDatabase: options.database, getIngressState: options.getState,
+    getState: async () => "inactive", verifyPaused: async () => {}, assertLedgerSafe: async () => {},
+    getWriterState: async () => "inactive",
+    inspectManaged: async () => {}, inspectWriterGuards: async () => {} };
+}
+
+test("OPS-07: original unit view removes only managed bindings after stopped proof", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  const result = await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  assert.equal(result.phase, "restored");
+  assert.deepEqual(result.units, MANAGED_APP_UNITS);
+  for (const unit of MANAGED_APP_UNITS) {
+    const directory = path.join(options.unitDirectory, `${unit}.d`);
+    await assert.rejects(stat(path.join(directory, MANAGED_DROP_IN)), /ENOENT/);
+    assert.match(await readFile(path.join(directory, WRITER_GUARD_DROP_IN), "utf8"), /ConditionPathExists/);
+  }
+});
+
+test("OPS-07: daemon-reload failure retains restoring intent and ingress marker", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await assert.rejects(restoreOriginalUnitView({ ...options,
+    reload: async () => { throw new Error("systemd reload failed"); } }), /systemd reload failed/);
+  assert.equal((await readOriginalUnitViewRecord(options.unitRecordPath)).phase, "restoring");
+  assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+});
+
+test("OPS-07: a writer restart after reload blocks restored unit claim", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await assert.rejects(restoreOriginalUnitView({ ...options, reload: async () => {},
+    getWriterState: async unit => unit === "dp-beget-agent.service" ? "active" : "inactive" }),
+  /Writer restarted during unit recovery/);
+  assert.equal((await readOriginalUnitViewRecord(options.unitRecordPath)).phase, "restoring");
+});
+
+test("OPS-07: changed original fragment blocks unit recovery before writing intent", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await writeFile(path.join(options.unitDirectory, "dp-beget-agent.service"), "tampered\n");
+  await assert.rejects(restoreOriginalUnitView({ ...options, reload: async () => {} }),
+    /legacy app units differ/);
+  await assert.rejects(stat(options.unitRecordPath), /ENOENT/);
 });
 
 test("OPS-07: a route change after both restorations removes the entire staged pair", {
