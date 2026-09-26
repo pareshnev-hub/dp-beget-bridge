@@ -602,7 +602,7 @@ for (const [crashAfter, expected] of [[1, "parked"], [2, "installed"]]) {
     await prepareLiveReplacementLedger({ ...options, recordPath, ledgerPath });
     const childPaths = { ledgerPath, stateDatabase: options.database, marker: options.marker,
       permit: options.permit, unitDirectory: options.unitDirectory };
-    await assert.rejects(exec(process.execPath, [new URL("./fixtures/crash-live-replacement.mjs",
+    await assert.rejects(exec(process.execPath, [new URL("../scripts/integration/crash-live-replacement-fixture.mjs",
       import.meta.url).pathname, JSON.stringify(childPaths), String(crashAfter)],
     { timeout: 30000, maxBuffer: 4096 }), error => error.code === 82);
     const interrupted = await inspectLiveReplacementLedger({ ...options, ledgerPath });

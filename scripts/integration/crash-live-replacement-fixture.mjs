@@ -1,5 +1,5 @@
 import { rename } from "node:fs/promises";
-import { replaceLiveStateFromLedger } from "../../scripts/release/live-state-replacement-ledger.mjs";
+import { replaceLiveStateFromLedger } from "../release/live-state-replacement-ledger.mjs";
 
 // CI child process: exit immediately after a real rename, before its directory
 // sync or any in-memory exception handler can run. The parent must recover.
