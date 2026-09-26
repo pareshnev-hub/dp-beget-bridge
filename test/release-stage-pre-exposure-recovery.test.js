@@ -47,7 +47,7 @@ async function fixture(t, phase = "locally-healthy") {
     await advanceMigrationJournal(journalPath, "switched", "locally-healthy");
   }
   if (phase === "ingress-open") await advanceMigrationJournal(journalPath, "locally-healthy", "ingress-open");
-  return { journalPath, marker, snapshotPath, outputDir: path.join(root, "restored"),
+  return { journalPath, marker, snapshotPath, configRoot, database, outputDir: path.join(root, "restored"),
     permit: path.join(permitRoot, "writer-start-allowed"),
     inspectGuard: async () => {}, inspectWriterGuards: async () => {},
     getState: async () => "inactive", assertRouteExclusive: async () => true };
@@ -156,6 +156,7 @@ test("OPS-07: stages matching old state and original systemd units together", {
   const result = await stageCompletePreExposureRecovery(options);
   assert.equal(result.transactionId, result.state.transactionId);
   assert.equal(result.units.files, 7);
+  assert.equal(result.destinations.databases[0].path, options.database);
   assert.equal(await readFile(path.join(result.directory, "state", "config", "secret.env"), "utf8"),
     "CANARY=private\n");
   assert.match(await readFile(path.join(result.directory, "units", "dp-beget-session-host.service"), "utf8"),
@@ -180,6 +181,24 @@ test("OPS-07: failed unit restoration removes staged state as a single pair", {
   await assert.rejects(stageCompletePreExposureRecovery({ ...options,
     stageUnits: async () => { throw new Error("original unit backup changed"); } }),
   /original unit backup changed/);
+  await assert.rejects(stat(options.outputDir), /ENOENT/);
+});
+
+test("OPS-07: mismatched live configuration removes the staged state and units", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await writeFile(path.join(options.configRoot, "candidate.env"), "NEW=1\n");
+  await assert.rejects(stageCompletePreExposureRecovery(options), /configuration inventory differs/);
+  await assert.rejects(stat(options.outputDir), /ENOENT/);
+});
+
+test("OPS-07: a live SQLite sidecar blocks the complete recovery pair", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await writeFile(`${options.database}-wal`, "pending changes\n");
+  await assert.rejects(stageCompletePreExposureRecovery(options), /sidecar needs explicit recovery/);
   await assert.rejects(stat(options.outputDir), /ENOENT/);
 });
 

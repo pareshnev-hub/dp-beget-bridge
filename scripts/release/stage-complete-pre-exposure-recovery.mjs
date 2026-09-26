@@ -1,5 +1,6 @@
 import { lstat, mkdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
+import { inspectRecoveryDestinations } from "./inspect-recovery-destinations.mjs";
 import { readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
 import { restoreSystemdUnitBackup } from "./restore-systemd-unit-backup.mjs";
 import { assertPreExposureRecoveryBoundary, stagePreExposureRecovery } from "./stage-pre-exposure-recovery.mjs";
@@ -14,6 +15,7 @@ function overlaps(first, second) {
 // journaled controller must inspect live destinations and repeat the boundary
 // checks immediately before any mutation.
 export async function stageCompletePreExposureRecovery({ outputDir, stageUnits = restoreSystemdUnitBackup,
+  inspectDestinations = inspectRecoveryDestinations,
   ...boundary } = {}) {
   if (process.getuid?.() !== 0 || !path.isAbsolute(outputDir || "") ||
       path.normalize(outputDir) !== outputDir || typeof boundary.assertRouteExclusive !== "function") {
@@ -39,6 +41,8 @@ export async function stageCompletePreExposureRecovery({ outputDir, stageUnits =
     const units = await stageUnits({ backupDir: journal.unitBackup.path,
       outputDir: path.join(outputDir, "units"),
       expectedManifestSha256: journal.unitBackup.manifestSha256 });
+    const destinations = await inspectDestinations({ stagedDirectory: state.directory,
+      sources: state.sources, databases: state.databases });
     await assertPreExposureRecoveryBoundary({ ...boundary,
       transactionId: journal.transactionId, phase: journal.phase });
     await verifyJournalUnitBackup(journal);
@@ -47,7 +51,7 @@ export async function stageCompletePreExposureRecovery({ outputDir, stageUnits =
       throw new Error("Staged original units do not match the migration journal");
     }
     return { transactionId: journal.transactionId, phase: journal.phase, directory: outputDir,
-      state, units };
+      state, units, destinations };
   } catch (error) {
     await rm(outputDir, { recursive: true, force: true });
     throw error;
