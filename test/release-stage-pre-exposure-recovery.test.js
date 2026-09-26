@@ -13,8 +13,10 @@ import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup
 async function fixture(t, phase = "locally-healthy") {
   const root = await mkdtemp(path.join(os.tmpdir(), "dp-stage-recovery-"));
   const markerRoot = await mkdtemp("/var/lib/dp-stage-recovery-");
+  const permitRoot = await mkdtemp("/run/dp-stage-recovery-");
   t.after(() => rm(root, { recursive: true, force: true }));
   t.after(() => rm(markerRoot, { recursive: true, force: true }));
+  t.after(() => rm(permitRoot, { recursive: true, force: true }));
   const marker = path.join(markerRoot, "migration-incomplete");
   await writeFile(marker, "dp-beget-bridge-migration-incomplete-v1\n", { mode: 0o600 });
   const configRoot = path.join(root, "config");
@@ -45,7 +47,9 @@ async function fixture(t, phase = "locally-healthy") {
   }
   if (phase === "ingress-open") await advanceMigrationJournal(journalPath, "locally-healthy", "ingress-open");
   return { journalPath, marker, snapshotPath, outputDir: path.join(root, "restored"),
-    inspectGuard: async () => {}, getState: async () => "inactive", assertRouteExclusive: async () => true };
+    permit: path.join(permitRoot, "writer-start-allowed"),
+    inspectGuard: async () => {}, inspectWriterGuards: async () => {},
+    getState: async () => "inactive", assertRouteExclusive: async () => true };
 }
 
 test("OPS-07: pre-exposure staging verifies real grouped state without changing live data", {
@@ -89,5 +93,57 @@ test("OPS-07: a route change after copying removes staged state", {
   let calls = 0;
   await assert.rejects(stagePreExposureRecovery({ ...options,
     assertRouteExclusive: async () => ++calls === 1 }), /route not proven/);
+  await assert.rejects(stat(options.outputDir), /ENOENT/);
+});
+
+test("OPS-07: recovery staging requires writer boot guards in the journaled unit phase", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  for (const [phase, managed] of [["snapshotted", false], ["switched", true], ["locally-healthy", true]]) {
+    const options = await fixture(t, phase);
+    let checks = 0;
+    await stagePreExposureRecovery({ ...options,
+      inspectWriterGuards: async args => { assert.equal(args.managed, managed); checks++; } });
+    assert.equal(checks, 2);
+  }
+});
+
+test("OPS-07: missing writer guard or leftover permit blocks recovery before copy", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await assert.rejects(stagePreExposureRecovery({ ...options,
+    inspectWriterGuards: async () => { throw new Error("writer guard not loaded"); } }),
+  /writer guard not loaded/);
+  await assert.rejects(stat(options.outputDir), /ENOENT/);
+  await writeFile(options.permit, "unexpected permit\n");
+  await assert.rejects(stagePreExposureRecovery(options), /permit remains active/);
+  await assert.rejects(stat(options.outputDir), /ENOENT/);
+});
+
+test("OPS-07: writer guard change after copy removes staged state", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  let checks = 0;
+  await assert.rejects(stagePreExposureRecovery({ ...options,
+    inspectWriterGuards: async () => {
+      if (++checks === 2) throw new Error("writer guard changed");
+    } }), /writer guard changed/);
+  assert.equal(checks, 2);
+  await assert.rejects(stat(options.outputDir), /ENOENT/);
+});
+
+test("OPS-07: permit appearing during recovery removes staged state", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await assert.rejects(stagePreExposureRecovery({ ...options,
+    restore: async args => {
+      const { restoreStateBundle } = await import("../scripts/release/restore-state-bundle.mjs");
+      const result = await restoreStateBundle(args);
+      await writeFile(options.permit, "unexpected permit\n");
+      return result;
+    } }), /permit remains active/);
   await assert.rejects(stat(options.outputDir), /ENOENT/);
 });
