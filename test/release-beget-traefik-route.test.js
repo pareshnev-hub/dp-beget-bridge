@@ -27,6 +27,12 @@ test("OPS-07: pinned Beget route snapshot accepts only an unrelated Docker host"
   containers[1].Config.Labels["traefik.http.routers.n8n.rule"] =
     "Host(`crarojofimo.beget.app`) && (Path(`/ymc`) || PathPrefix(`/ymc/`))";
   assert.equal(validateBegetTraefikSnapshot(traefik, containers), 1);
+  containers[1].Config.Labels["traefik.http.routers.n8n.tls.certresolver"] = "mytlschallenge";
+  assert.equal(validateBegetTraefikSnapshot(traefik, containers), 1);
+  for (const property of ["entrypoints", "middlewares", "priority", "tls"]) {
+    containers[1].Config.Labels[`traefik.http.routers.n8n.${property}`] = "observed";
+  }
+  assert.equal(validateBegetTraefikSnapshot(traefik, containers), 1);
 });
 
 test("OPS-07: missing or changed live provider/mount refuses route snapshot", () => {
@@ -53,6 +59,9 @@ test("OPS-07: conflicting, default, wildcard and case-duplicate Docker routes fa
     labels => { labels["traefik.http.routers.n8n.rule"] += " || Host(`bridge-oauth.pareshnev.com`)"; },
     labels => { delete labels["traefik.http.routers.n8n.rule"]; },
     labels => { labels["traefik.http.routers.other.service"] = "n8n"; },
+    labels => { labels["traefik.http.routers.other.tls.certresolver"] = "mytlschallenge"; },
+    labels => { labels["traefik.http.routers..rule"] = "Host(`crarojofimo.beget.app`)"; },
+    labels => { labels["traefik.http.routers.n8n.tls.domains[0].main"] = "unknown"; },
     labels => { labels["traefik.tcp.routers.other.rule"] = "HostSNI(`*`)"; },
     labels => { labels["Traefik.Enable"] = "false"; }
   ]) {
