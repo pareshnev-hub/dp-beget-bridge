@@ -19,6 +19,7 @@ test("OPS-06: root process inventory binds three service databases without discl
     await writeFile(path.join(item.directory, item.filename), Buffer.alloc(64));
   }
   await writeFile(path.join(expected[0].directory, "state.sqlite.backup-v1"), Buffer.alloc(32));
+  await writeFile(path.join(expected[0].directory, "state.sqlite.backup-v0"), Buffer.alloc(16));
   const itemFor = pid => expected[Number(pid) - 1];
   const oauthSource = Buffer.from("authDataDir: /var/lib/dp-beget-bridge-mcp/auth");
   const options = { expected, requireRoot: () => true, show: async unit => String(expected.findIndex(e => e.unit === unit) + 1),
@@ -35,12 +36,12 @@ test("OPS-06: root process inventory binds three service databases without discl
   assert.equal(result.databases.reduce((sum, item) => sum + item.size, 0), 192);
   assert.doesNotMatch(JSON.stringify(result), /do-not-output-this-secret/);
   await writeFile(path.join(expected[2].directory, "unknown.sqlite"), "untracked");
-  await assert.rejects(inspectBegetLegacyDataBindings(options), /Uninventoried SQLite state/);
+  await assert.rejects(inspectBegetLegacyDataBindings(options), /oauth, sqlite-inventory/);
   await rm(path.join(expected[2].directory, "unknown.sqlite"));
   await assert.rejects(inspectBegetLegacyDataBindings({ ...options,
     readEnvironment: async () => Buffer.from("DP_DATA_DIR=/tmp/wrong\0SECRET=do-not-output-this-secret\0") }),
-  error => !error.message.includes("do-not-output-this-secret") && /unexpected state directory/.test(error.message));
+  error => !error.message.includes("do-not-output-this-secret") && /session, data-directory/.test(error.message));
   await assert.rejects(inspectBegetLegacyDataBindings({ ...options,
     readEnvironment: async () => { throw new Error("do-not-output-this-secret"); } }),
-  error => !error.message.includes("do-not-output-this-secret") && /cannot be inspected safely/.test(error.message));
+  error => !error.message.includes("do-not-output-this-secret") && /session, environment-inspection/.test(error.message));
 });

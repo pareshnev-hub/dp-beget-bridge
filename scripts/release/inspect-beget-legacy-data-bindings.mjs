@@ -9,6 +9,11 @@ import { fileURLToPath } from "node:url";
 const exec = promisify(execFile);
 const OAUTH_CODE_ROOT = "/opt/dp-beget-bridge-dp012-dcr";
 const OAUTH_CONFIG_SHA256 = "02621a54095afaf18f028c1a561b39db296e871ccaf8c92d497ddb2479b5e9de";
+class SafeBindingError extends Error {
+  constructor(unit, stage) {
+    super(`Legacy data binding check failed: ${/^[a-z0-9.-]{1,80}$/.test(unit) ? unit : "unknown-unit"}, ${stage}`);
+  }
+}
 const EXPECTED = [
   { unit: "dp-beget-session-host.service", key: "DP_SESSION_DATA_DIR",
     directory: "/var/lib/dp-beget-bridge", filename: "state.sqlite" },
@@ -70,45 +75,60 @@ export async function inspectBegetLegacyDataBindings({ show = showUnit,
   if (!requireRoot()) throw new Error("Root is required for a live service data-binding proof");
   const records = [];
   for (const { unit, key, directory, filename, mode } of expected) {
-    const pid = await show(unit);
-    let bytes;
-    let fields;
+    let stage = "service-state";
     try {
-      bytes = await readEnvironment(pid);
-      fields = selectFields(bytes, [key, ...(mode ? ["DP_MCP_AUTH_MODE"] : [])]);
-    } catch { throw new Error("Service data binding cannot be inspected safely"); }
-    finally { if (Buffer.isBuffer(bytes)) bytes.fill(0); }
-    if (mode) {
-      // The deployed OAuth unit does not set DP_AUTH_DATA_DIR: its pinned
-      // config.js supplies this default. Bind that default to the actual
-      // running process cwd and the exact observed source fingerprint.
-      const source = await readOAuthConfig();
-      if ((await processCwd(pid)) !== oauthCodeRoot ||
-          createHash("sha256").update(source).digest("hex") !== oauthConfigSha256) {
-        throw new Error("OAuth process code identity changed");
+      const pid = await show(unit);
+      stage = "environment-inspection";
+      let bytes;
+      let fields;
+      try {
+        bytes = await readEnvironment(pid);
+        fields = selectFields(bytes, [key, ...(mode ? ["DP_MCP_AUTH_MODE"] : [])]);
+      } catch { throw new Error("Service data binding cannot be inspected safely"); }
+      finally { if (Buffer.isBuffer(bytes)) bytes.fill(0); }
+      if (mode) {
+        stage = "oauth-code-identity";
+        // The deployed OAuth unit does not set DP_AUTH_DATA_DIR: its pinned
+        // config.js supplies this default. Bind that default to the actual
+        // running process cwd and the exact observed source fingerprint.
+        const source = await readOAuthConfig();
+        if ((await processCwd(pid)) !== oauthCodeRoot ||
+            createHash("sha256").update(source).digest("hex") !== oauthConfigSha256) {
+          throw new Error("OAuth process code identity changed");
+        }
       }
-    }
-    const boundDirectory = fields[key] ?? (mode ? directory : undefined);
-    if (boundDirectory !== directory || (mode && fields.DP_MCP_AUTH_MODE !== mode) ||
-        !path.isAbsolute(directory) || (await resolvePath(directory)) !== directory) {
-      throw new Error("Legacy service uses an unexpected state directory or mode");
-    }
-    const info = await inspectFile(path.join(directory, filename));
-    if (!info.isFile() || info.nlink !== 1 || !Number.isSafeInteger(info.size) || info.size < 0 ||
-        (await resolvePath(path.join(directory, filename))) !== path.join(directory, filename)) {
-      throw new Error("Legacy service database is missing or unsafe");
-    }
-    const allowed = new Set([filename, `${filename}-wal`, `${filename}-shm`, `${filename}-journal`]);
-    if (filename === "state.sqlite") for (const suffix of ["", "-wal", "-shm", "-journal"]) {
-      allowed.add(`state.sqlite.backup-v1${suffix}`);
-    }
-    const names = await listDirectory(directory);
-    if (!Array.isArray(names) || names.some(name =>
-      /\.(?:sqlite|sqlite3|db|db3)(?:$|[.-])/.test(name) && !allowed.has(name))) {
-      throw new Error("Uninventoried SQLite state in legacy service directory");
-    }
-    if (await show(unit) !== pid) throw new Error("Legacy service restarted during data inventory");
-    records.push({ unit, database: path.join(directory, filename), size: info.size });
+      stage = "data-directory";
+      const boundDirectory = fields[key] ?? (mode ? directory : undefined);
+      if (boundDirectory !== directory || (mode && fields.DP_MCP_AUTH_MODE !== mode) ||
+          !path.isAbsolute(directory) || (await resolvePath(directory)) !== directory) {
+        throw new Error("Legacy service uses an unexpected state directory or mode");
+      }
+      stage = "database-file";
+      const info = await inspectFile(path.join(directory, filename));
+      if (!info.isFile() || info.nlink !== 1 || !Number.isSafeInteger(info.size) || info.size < 0 ||
+          (await resolvePath(path.join(directory, filename))) !== path.join(directory, filename)) {
+        throw new Error("Legacy service database is missing or unsafe");
+      }
+      const allowed = new Set([filename, `${filename}-wal`, `${filename}-shm`, `${filename}-journal`]);
+      if (filename === "state.sqlite") for (const version of [0, 1]) {
+        for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+          allowed.add(`state.sqlite.backup-v${version}${suffix}`);
+        }
+      }
+      stage = "sqlite-inventory";
+      const names = await listDirectory(directory);
+      if (!Array.isArray(names) || names.some(name =>
+        /\.(?:sqlite|sqlite3|db|db3)(?:$|[.-])/.test(name) && !allowed.has(name))) {
+        throw new Error("Uninventoried SQLite state in legacy service directory");
+      }
+      for (const name of names.filter(name => /\.(?:sqlite|sqlite3|db|db3)(?:$|[.-])/.test(name))) {
+        const file = await inspectFile(path.join(directory, name));
+        if (!file.isFile() || file.nlink !== 1) throw new Error("Unsafe SQLite file in legacy directory");
+      }
+      stage = "service-stability";
+      if (await show(unit) !== pid) throw new Error("Legacy service restarted during data inventory");
+      records.push({ unit, database: path.join(directory, filename), size: info.size });
+    } catch { throw new SafeBindingError(unit, stage); }
   }
   return { databases: records, scope: "three pinned live process data bindings; no admission drain proof" };
 }
@@ -119,8 +139,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.exitCode = 1;
   } else inspectBegetLegacyDataBindings().then(result => {
     console.log(JSON.stringify(result));
-  }).catch(() => {
-    console.error("Legacy service data-binding proof failed; no environment values printed");
+  }).catch(error => {
+    console.error(error instanceof SafeBindingError ? error.message :
+      "Legacy service data-binding proof failed; no environment values printed");
     process.exitCode = 1;
   });
 }
