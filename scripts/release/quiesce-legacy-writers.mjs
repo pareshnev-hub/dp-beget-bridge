@@ -5,6 +5,9 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { assertSessionHostRestartSafe } from "../deploy/session-host-restart-preflight.mjs";
 import { PERSISTENT_MARKER, guardContent } from "./ingress-boot-guard.mjs";
+import { inspectInstalledWriterGuards } from "./installed-writer-guard-preflight.mjs";
+import { WRITER_START_PERMIT } from "./writer-boot-guard.mjs";
+import { assertWriterPermitAbsent } from "./writer-start-permit.mjs";
 import { advanceMigrationJournal, readMigrationJournal, verifyJournalUnitBackup } from "./migration-journal.mjs";
 
 const exec = promisify(execFile);
@@ -47,7 +50,9 @@ export async function verifyMarker(marker) {
 // bounded proof that already accepted requests have finished before any writer stops.
 export async function quiesceLegacyWriters({ journalPath, marker = PERSISTENT_MARKER, stateDatabase,
   assertNoInFlight, stopUnit = systemctlStop, getState = unit => systemctlShow(unit, "ActiveState"),
-  getKillMode = unit => systemctlShow(unit, "KillMode"), assertLedgerSafe = assertSessionHostRestartSafe } = {}) {
+  getKillMode = unit => systemctlShow(unit, "KillMode"), assertLedgerSafe = assertSessionHostRestartSafe,
+  unitDirectory = "/etc/systemd/system", permit = WRITER_START_PERMIT,
+  inspectWriterGuards = inspectInstalledWriterGuards } = {}) {
   if (process.getuid?.() !== 0 || typeof assertNoInFlight !== "function" ||
       !path.isAbsolute(stateDatabase || "")) {
     throw new Error("Root, absolute ledger path and independent in-flight proof are required");
@@ -56,6 +61,8 @@ export async function quiesceLegacyWriters({ journalPath, marker = PERSISTENT_MA
   if (journal.phase !== "ingress-closed") throw new Error("Ingress must be journaled closed first");
   await verifyJournalUnitBackup(journal);
   await verifyMarker(marker);
+  await inspectWriterGuards({ unitDirectory, marker, permit });
+  await assertWriterPermitAbsent(permit);
   for (const unit of INGRESS) {
     if (await getState(unit) !== "inactive") throw new Error(`Ingress remains active: ${unit}`);
   }

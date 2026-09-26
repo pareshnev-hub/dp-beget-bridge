@@ -13,8 +13,10 @@ import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "dp-state-journal-"));
   const markerRoot = await mkdtemp("/var/lib/dp-snapshot-test-");
+  const permitRoot = await mkdtemp("/run/dp-snapshot-test-");
   t.after(() => rm(root, { recursive: true, force: true }));
   t.after(() => rm(markerRoot, { recursive: true, force: true }));
+  t.after(() => rm(permitRoot, { recursive: true, force: true }));
   const { backupDir } = await unitBackupFixture(t);
   const journalPath = path.join(root, "journal.json");
   const marker = path.join(markerRoot, "migration-incomplete");
@@ -33,7 +35,7 @@ async function fixture(t) {
   database.prepare("INSERT INTO data VALUES (?)").run("canary");
   database.close();
   return { root, journalPath, marker, configRoot, databases: [{ name: "agent", source }],
-    outputDir: path.join(root, "snapshot") };
+    outputDir: path.join(root, "snapshot"), permit: path.join(permitRoot, "writer-start-allowed") };
 }
 
 test("OPS-07: verified grouped state is bound to the journal after stopped-writer proof", {
@@ -41,7 +43,8 @@ test("OPS-07: verified grouped state is bound to the journal after stopped-write
 }, async t => {
   const options = await fixture(t);
   let checks = 0;
-  const result = await snapshotLegacyState({ ...options, backupBundle: args => backupStateBundle({ ...args,
+  const result = await snapshotLegacyState({ ...options, inspectWriterGuards: async () => {},
+    backupBundle: args => backupStateBundle({ ...args,
     assertQuiesced: async () => { checks++; } }) });
   assert.equal(checks, 2);
   assert.match(result.snapshotSha256, /^[0-9a-f]{64}$/);
@@ -57,8 +60,43 @@ test("OPS-07: failed bundle leaves journal quiesced and ingress marker in place"
   skip: process.getuid?.() !== 0
 }, async t => {
   const options = await fixture(t);
-  await assert.rejects(snapshotLegacyState({ ...options,
+  await assert.rejects(snapshotLegacyState({ ...options, inspectWriterGuards: async () => {},
     backupBundle: async () => { throw new Error("writer restarted"); } }), /writer restarted/);
   assert.equal((await readMigrationJournal(options.journalPath)).phase, "quiesced");
   assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+});
+
+test("OPS-07: missing writer guard blocks snapshot before copy", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await assert.rejects(snapshotLegacyState({ ...options,
+    inspectWriterGuards: async () => { throw new Error("writer guard not loaded"); },
+    backupBundle: async () => { throw new Error("copy should not run"); } }), /writer guard not loaded/);
+  assert.equal((await readMigrationJournal(options.journalPath)).phase, "quiesced");
+});
+
+test("OPS-07: changed writer guard during backup leaves snapshot unjournaled", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  let inspections = 0;
+  await assert.rejects(snapshotLegacyState({ ...options,
+    inspectWriterGuards: async () => {
+      if (++inspections === 2) throw new Error("writer guard changed");
+    },
+    backupBundle: args => backupStateBundle({ ...args, assertQuiesced: async () => {} }) }),
+  /writer guard changed/);
+  assert.equal(inspections, 2);
+  assert.equal((await readMigrationJournal(options.journalPath)).phase, "quiesced");
+});
+
+test("OPS-07: writer permit created during backup leaves snapshot unjournaled", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await fixture(t);
+  await assert.rejects(snapshotLegacyState({ ...options, inspectWriterGuards: async () => {},
+    backupBundle: async () => { await writeFile(options.permit, "unexpected permit\n"); } }),
+  /permit remains active/);
+  assert.equal((await readMigrationJournal(options.journalPath)).phase, "quiesced");
 });

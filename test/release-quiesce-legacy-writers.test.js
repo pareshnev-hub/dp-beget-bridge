@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { closeLegacyIngress } from "../scripts/release/close-legacy-ingress.mjs";
@@ -11,8 +11,10 @@ import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "dp-quiesce-journal-"));
   const markerRoot = await mkdtemp("/var/lib/dp-quiesce-test-");
+  const permitRoot = await mkdtemp("/run/dp-quiesce-test-");
   t.after(() => rm(root, { recursive: true, force: true }));
   t.after(() => rm(markerRoot, { recursive: true, force: true }));
+  t.after(() => rm(permitRoot, { recursive: true, force: true }));
   const { backupDir } = await unitBackupFixture(t);
   const journalPath = path.join(root, "journal.json");
   const marker = path.join(markerRoot, "migration-incomplete");
@@ -27,15 +29,16 @@ async function fixture(t) {
     inspectServices: legacyActivityFixture,
     stopUnit: async unit => { stopped.push(unit); },
     getState: async unit => stopped.includes(unit) ? "inactive" : "active" });
-  return { journalPath, marker, stateDatabase, stopped };
+  return { journalPath, marker, stateDatabase, stopped, permit: path.join(permitRoot, "writer-start-allowed") };
 }
 
 test("OPS-07: quiescence proves drained requests and safe ledger before Session Host stop", {
   skip: process.getuid?.() !== 0
 }, async t => {
-  const { journalPath, marker, stateDatabase, stopped } = await fixture(t);
+  const { journalPath, marker, stateDatabase, stopped, permit } = await fixture(t);
   const steps = [];
-  const result = await quiesceLegacyWriters({ journalPath, marker, stateDatabase,
+  const result = await quiesceLegacyWriters({ journalPath, marker, stateDatabase, permit,
+    inspectWriterGuards: async () => {},
     assertNoInFlight: async () => { steps.push("drained"); },
     getKillMode: async () => "process",
     stopUnit: async unit => {
@@ -53,8 +56,9 @@ test("OPS-07: quiescence proves drained requests and safe ledger before Session 
 test("OPS-07: failed ledger leaves ingress closed and Session Host running", {
   skip: process.getuid?.() !== 0
 }, async t => {
-  const { journalPath, marker, stateDatabase, stopped } = await fixture(t);
-  await assert.rejects(quiesceLegacyWriters({ journalPath, marker, stateDatabase,
+  const { journalPath, marker, stateDatabase, stopped, permit } = await fixture(t);
+  await assert.rejects(quiesceLegacyWriters({ journalPath, marker, stateDatabase, permit,
+    inspectWriterGuards: async () => {},
     assertNoInFlight: async () => {}, getKillMode: async () => "process",
     stopUnit: async unit => { stopped.push(unit); },
     getState: async unit => stopped.includes(unit) ? "inactive" : "active",
@@ -70,4 +74,27 @@ test("OPS-07: missing drain proof refuses to stop writers", { skip: process.getu
   await assert.rejects(quiesceLegacyWriters({ journalPath, marker, stateDatabase }),
     /independent in-flight proof/);
   assert.equal((await readMigrationJournal(journalPath)).phase, "ingress-closed");
+});
+
+test("OPS-07: missing writer boot guard blocks quiescence before any stop", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const { journalPath, marker, stateDatabase, stopped, permit } = await fixture(t);
+  await assert.rejects(quiesceLegacyWriters({ journalPath, marker, stateDatabase, permit,
+    inspectWriterGuards: async () => { throw new Error("writer guard not loaded"); },
+    assertNoInFlight: async () => { throw new Error("drain should not run"); } }), /writer guard not loaded/);
+  assert.equal((await readMigrationJournal(journalPath)).phase, "ingress-closed");
+  assert.equal(stopped.length, 3);
+});
+
+test("OPS-07: leftover writer start permit blocks quiescence before any stop", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const { journalPath, marker, stateDatabase, stopped, permit } = await fixture(t);
+  await writeFile(permit, "unexpected permit\n", { mode: 0o600 });
+  await assert.rejects(quiesceLegacyWriters({ journalPath, marker, stateDatabase, permit,
+    inspectWriterGuards: async () => {},
+    assertNoInFlight: async () => { throw new Error("drain should not run"); } }), /permit remains active/);
+  assert.equal((await readMigrationJournal(journalPath)).phase, "ingress-closed");
+  assert.equal(stopped.length, 3);
 });
