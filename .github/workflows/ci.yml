@@ -55,7 +55,7 @@ jobs:
           sudo apt-get install -y tmux
       - run: npm ci
       - name: Root-only pinned release preparation
-        run: sudo env "PATH=$PATH" node --test test/release-trust-key.test.js test/release-prepare.test.js
+        run: sudo env "PATH=$PATH" node --test test/release-trust-key.test.js test/release-prepare.test.js test/release-prepare-first-migration.test.js
       - name: Signed release dependency preparation
         run: sudo env "PATH=$PATH" DP_TEST_REAL_DEPENDENCIES=1 node --test test/release-prepare.test.js
       - name: Root-only grouped state snapshot and restore
