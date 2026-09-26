@@ -2,6 +2,7 @@ import { inspectBegetTraefikOAuthRoute, BEGET_OAUTH_ROUTE_SHA256 } from
   "./inspect-beget-traefik-route.mjs";
 import { inspectBegetOAuthListeners } from "./inspect-beget-oauth-listeners.mjs";
 import { inspectBegetOAuthNat } from "./inspect-beget-oauth-nat.mjs";
+import { inspectBegetOAuthProxy } from "./inspect-beget-oauth-proxy.mjs";
 import { checkDnsAndTls } from "./host-preflight.mjs";
 
 const OAUTH_DOMAIN = "bridge-oauth.pareshnev.com";
@@ -10,8 +11,8 @@ const PUBLIC_IP = "45.12.238.143";
 // Compare separate provider and host observations. The second pair detects
 // common changes while gathering the first; this cannot make host state atomic.
 export function compareBegetOAuthRouteSnapshots(first, second) {
-  const [routeA, hostA, publicA, natA] = first || [];
-  const [routeB, hostB, publicB, natB] = second || [];
+  const [routeA, hostA, publicA, natA, proxyA] = first || [];
+  const [routeB, hostB, publicB, natB, proxyB] = second || [];
   const id = routeA?.traefikContainerId;
   if (!/^[0-9a-f]{64}$/.test(id || "") ||
       [hostA?.traefikContainerId, routeB?.traefikContainerId,
@@ -30,6 +31,12 @@ export function compareBegetOAuthRouteSnapshots(first, second) {
         value.ipv6Dnat !== false || !Array.isArray(value.loopbackTargets) ||
         value.loopbackTargets.length !== 2) ||
       JSON.stringify(natA?.loopbackTargets) !== JSON.stringify(natB?.loopbackTargets) ||
+      [proxyA, proxyB].some(value => value?.socketAddress !== "172.18.0.1:8791" ||
+        value.destination !== "127.0.0.1:8789" ||
+        !["active", "inactive"].includes(value.socketState) ||
+        !["active", "inactive"].includes(value.serviceState) ||
+        typeof value.guardInstalled !== "boolean") ||
+      JSON.stringify(proxyA) !== JSON.stringify(proxyB) ||
       [publicA, publicB].some(value => value?.domain !== OAUTH_DOMAIN ||
         value.expectedIp !== PUBLIC_IP || value.dns !== "pass" || value.tls !== "pass")) {
     throw new Error("Beget OAuth route surfaces changed or belong to different containers");
@@ -37,7 +44,8 @@ export function compareBegetOAuthRouteSnapshots(first, second) {
   return { traefikContainerId: id, fileSha256: routeA.fileSha256,
     dockerRouters: routeA.dockerRouters, listening: [...hostA.listening],
     publicIp: PUBLIC_IP, natTarget: natA.ipv4Target,
-    scope: "DNS, TLS, Traefik providers, host listeners and pinned Docker NAT only" };
+    proxyTarget: proxyA.destination,
+    scope: "DNS, TLS, Traefik, host listeners, Docker NAT and loaded proxy units only" };
 }
 
 // Root-only read-only inventory; intentionally no assertRouteExclusive result.
@@ -46,9 +54,9 @@ export function compareBegetOAuthRouteSnapshots(first, second) {
 export async function inspectBegetOAuthRouteBoundary() {
   const first = [await inspectBegetTraefikOAuthRoute(), await inspectBegetOAuthListeners(),
     await checkDnsAndTls({ domain: OAUTH_DOMAIN, expectedIp: PUBLIC_IP }),
-    await inspectBegetOAuthNat()];
+    await inspectBegetOAuthNat(), await inspectBegetOAuthProxy()];
   const second = [await inspectBegetTraefikOAuthRoute(), await inspectBegetOAuthListeners(),
     await checkDnsAndTls({ domain: OAUTH_DOMAIN, expectedIp: PUBLIC_IP }),
-    await inspectBegetOAuthNat()];
+    await inspectBegetOAuthNat(), await inspectBegetOAuthProxy()];
   return compareBegetOAuthRouteSnapshots(first, second);
 }

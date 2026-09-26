@@ -15,10 +15,12 @@ function snapshots() {
   const nat = { traefikContainerId: route.traefikContainerId,
     ipv4Target: "172.18.0.2", ipv4PublicPorts: [80, 443], ipv6Dnat: false,
     loopbackTargets: ["172.18.0.6:5432", "172.18.0.4:5678"] };
+  const proxy = { socketAddress: "172.18.0.1:8791", destination: "127.0.0.1:8789",
+    socketState: "active", serviceState: "active", guardInstalled: false };
   return [[{ ...route }, { ...host, listening: [...host.listening] }, { ...external },
-    { ...nat, ipv4PublicPorts: [...nat.ipv4PublicPorts] }],
+    { ...nat, ipv4PublicPorts: [...nat.ipv4PublicPorts] }, { ...proxy }],
   [{ ...route }, { ...host, listening: [...host.listening] }, { ...external },
-    { ...nat, ipv4PublicPorts: [...nat.ipv4PublicPorts] }]];
+    { ...nat, ipv4PublicPorts: [...nat.ipv4PublicPorts] }, { ...proxy }]];
 }
 
 test("OPS-07: consecutive route and listener snapshots bind to one Traefik container", () => {
@@ -26,9 +28,10 @@ test("OPS-07: consecutive route and listener snapshots bind to one Traefik conta
   const report = compareBegetOAuthRouteSnapshots(first, second);
   assert.equal(report.traefikContainerId, "a".repeat(64));
   assert.equal(report.scope,
-    "DNS, TLS, Traefik providers, host listeners and pinned Docker NAT only");
+    "DNS, TLS, Traefik, host listeners, Docker NAT and loaded proxy units only");
   assert.equal(report.publicIp, "45.12.238.143");
   assert.equal(report.natTarget, "172.18.0.2");
+  assert.equal(report.proxyTarget, "127.0.0.1:8789");
   assert.deepEqual(report.listening, first[1].listening);
 });
 
@@ -46,7 +49,9 @@ test("OPS-07: cross-surface identity and changed listener/configuration fail clo
     value => { value[0][3].traefikContainerId = "b".repeat(64); },
     value => { value[1][3].ipv4Target = "172.18.0.9"; },
     value => { value[1][3].loopbackTargets = ["172.18.0.8:5432", "172.18.0.4:5678"]; },
-    value => { value[0][3].ipv6Dnat = true; }
+    value => { value[0][3].ipv6Dnat = true; },
+    value => { value[1][4].destination = "127.0.0.1:8790"; },
+    value => { value[0][4].guardInstalled = true; }
   ]) {
     const value = snapshots();
     mutate(value);
