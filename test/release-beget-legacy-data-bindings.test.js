@@ -20,6 +20,7 @@ test("OPS-06: root process inventory binds three service databases without discl
   }
   await writeFile(path.join(expected[0].directory, "state.sqlite.backup-v1"), Buffer.alloc(32));
   await writeFile(path.join(expected[0].directory, "state.sqlite.backup-v0"), Buffer.alloc(16));
+  await writeFile(path.join(expected[2].directory, "auth.sqlite.backup-v1"), Buffer.alloc(36));
   const itemFor = pid => expected[Number(pid) - 1];
   const oauthSource = Buffer.from("authDataDir: /var/lib/dp-beget-bridge-mcp/auth");
   const options = { expected, requireRoot: () => true, show: async unit => String(expected.findIndex(e => e.unit === unit) + 1),
@@ -38,6 +39,9 @@ test("OPS-06: root process inventory binds three service databases without discl
   await writeFile(path.join(expected[2].directory, "unknown.sqlite"), "untracked");
   await assert.rejects(inspectBegetLegacyDataBindings(options), /oauth, sqlite-inventory/);
   await rm(path.join(expected[2].directory, "unknown.sqlite"));
+  await writeFile(path.join(expected[2].directory, "auth.sqlite.backup-v0"), "unexpected");
+  await assert.rejects(inspectBegetLegacyDataBindings(options), /oauth, sqlite-inventory/);
+  await rm(path.join(expected[2].directory, "auth.sqlite.backup-v0"));
   await assert.rejects(inspectBegetLegacyDataBindings({ ...options,
     readEnvironment: async () => Buffer.from("DP_DATA_DIR=/tmp/wrong\0SECRET=do-not-output-this-secret\0") }),
   error => !error.message.includes("do-not-output-this-secret") && /session, data-directory/.test(error.message));

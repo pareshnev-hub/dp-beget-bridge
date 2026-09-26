@@ -115,6 +115,10 @@ export async function inspectBegetLegacyDataBindings({ show = showUnit,
           allowed.add(`state.sqlite.backup-v${version}${suffix}`);
         }
       }
+      if (mode === "oauth" && filename === "auth.sqlite") {
+        // Observed retained v1 backup from the legacy OAuth schema migration.
+        allowed.add("auth.sqlite.backup-v1");
+      }
       stage = "sqlite-inventory";
       const names = await listDirectory(directory);
       if (!Array.isArray(names) || names.some(name =>
