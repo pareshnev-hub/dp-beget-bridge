@@ -1,6 +1,6 @@
 # R0004 read-only Beget inventory
 
-Observed: 2026-09-23 through the real-client OAuth full-shell connector as the `dp-preview` work identity. The purpose-built terminals were closed after the checks. No R0004 code, service unit, configuration, key, database or public route was deployed or changed.
+Observed: 2026-09-23 through the real-client OAuth full-shell connector as the `dp-preview` work identity; route-target output supplied from a root terminal on 2026-09-26. The purpose-built connector terminals were closed after the checks. No R0004 code, service unit, configuration, key, database or public route was deployed or changed.
 
 ## Existing R0003 deployment
 
@@ -20,7 +20,7 @@ The local OAuth discovery endpoint reported issuer `https://bridge-oauth.pareshn
 
 These checks validate the **current R0003 OAuth route**, not a completed R0004 install or an approved 1.0 hostname. The R0004 host-preflight module itself was not executed on Beget, because R0004 code is not installed there.
 
-The dedicated `dp-beget-oauth-proxy.socket` was also loaded and active on `172.18.0.1:8791`; it triggers `dp-beget-oauth-proxy.service`, which forwards to `127.0.0.1:8789`. The exact Traefik target for the hostname was not readable from the work identity and must be verified before treating this socket as the exclusive public ingress gate. See `docs/R0004_MIGRATION_TRANSACTION.md`.
+The dedicated `dp-beget-oauth-proxy.socket` was also loaded and active on `172.18.0.1:8791`; it triggers `dp-beget-oauth-proxy.service`, which forwards to `127.0.0.1:8789`. On 2026-09-26, a root read-only grep of `/opt/beget/n8n` reported `/opt/beget/n8n/traefik_dynamic/dp-beget-oauth.yml` with a `Host` rule for `bridge-oauth.pareshnev.com`, service `dp-beget-oauth` and server URL `http://172.18.0.1:8791`. Docker inspection reported `/opt/beget/n8n/traefik_dynamic` mounted at `/dynamic` in `n8n-traefik-1`. This establishes the intended file-provider target in the observed configuration, but the grep did not enumerate Docker-provider labels, every router rule or all alternate public listeners. Exclusive route evidence remains open. See `docs/R0004_MIGRATION_TRANSACTION.md`.
 
 ## First-migration consequences
 
