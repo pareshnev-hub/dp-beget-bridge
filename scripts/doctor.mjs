@@ -1,5 +1,7 @@
 import http from "node:http";
 import { execFileSync } from "node:child_process";
+import { inspectLocalDisk, inspectLocalRelease,
+  inspectLocalState } from "./release/local-diagnostics.mjs";
 
 const checks = [];
 const startupWaitMs = Number(process.env.DP_DOCTOR_WAIT_MS || "15000");
@@ -100,6 +102,20 @@ await check("Runtime identities", () => {
     throw new Error("Invalid runtime identities");
   }
   return users.join(", ");
+});
+await check("Installed release", async () => {
+  const release = await inspectLocalRelease(process.env.DP_DOCTOR_RELEASE_ROOT || "/opt/dp-beget-bridge");
+  return release.mode === "managed" ? `${release.version} ${release.commit}` : "legacy/unmanaged";
+});
+await check("Session state schema", async () => {
+  const state = await inspectLocalState(process.env.DP_DOCTOR_STATE_DATABASE ||
+    "/var/lib/dp-beget-bridge/state.sqlite");
+  return `v${state.schema}`;
+});
+await check("Local disk reserve", async () => {
+  const minimum = Number(process.env.DP_DOCTOR_MIN_FREE_BYTES || 256 * 1024 * 1024);
+  await inspectLocalDisk(process.env.DP_DOCTOR_STATE_DIR || "/var/lib/dp-beget-bridge", minimum);
+  return "ok";
 });
 
 if (json) console.log(JSON.stringify({ format: "dp-beget-doctor-v1", checks }));
