@@ -1,13 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { chmod, mkdtemp, mkdir, readlink, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { backupSystemdUnits } from "../scripts/release/backup-systemd-units.mjs";
 import { activateManagedRelease } from "../scripts/release/activate-managed-release.mjs";
 import { pauseAdmission } from "../scripts/release/admission-pause.mjs";
+import { buildArtifact } from "../scripts/release/build-artifact.mjs";
 import { closeLegacyIngress } from "../scripts/release/close-legacy-ingress.mjs";
 import { stageIngressBootGuard } from "../scripts/release/ingress-boot-guard.mjs";
 import { inspectLegacyServiceActivity } from "../scripts/release/legacy-service-activity.mjs";
@@ -17,10 +19,14 @@ import { inspectInstalledManagedUnits } from "../scripts/release/installed-manag
 import { readMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
 import { quiesceLegacyWriters } from "../scripts/release/quiesce-legacy-writers.mjs";
 import { openManagedIngress } from "../scripts/release/open-managed-ingress.mjs";
+import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
+import { prepareRelease } from "../scripts/release/prepare-release.mjs";
+import { promotePreparedRelease } from "../scripts/release/promote-prepared-release.mjs";
 import { recoverFirstMigration } from "../scripts/release/recover-first-migration.mjs";
 import { reopenLegacyIngress } from "../scripts/release/reopen-legacy-ingress.mjs";
 import { restartLegacyAfterRollback } from "../scripts/release/restart-legacy-after-rollback.mjs";
 import { snapshotLegacyState } from "../scripts/release/snapshot-legacy-state.mjs";
+import { signManifest } from "../scripts/release/sign-manifest.mjs";
 import { stageManagedUnitOverrides } from "../scripts/release/stage-managed-unit-overrides.mjs";
 import { stopCandidateForRollback } from "../scripts/release/stop-candidate-for-rollback.mjs";
 import { stageWriterBootGuard } from "../scripts/release/writer-boot-guard.mjs";
@@ -71,6 +77,25 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
     await rm(root, { recursive: true, force: true });
     await rm(runtime, { recursive: true, force: true });
   });
+  // The fixture uses a temporary signing key and a pinned public key in a
+  // private root directory. This exercises the actual artifact-to-pointer
+  // path; production key custody and real service handlers are separate gates.
+  const commit = (await exec("git", ["rev-parse", "HEAD"])).stdout.trim();
+  const built = await buildArtifact({ commit, outputDir: path.join(root, "signed-candidate") });
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const releasePrivate = path.join(root, "release-private");
+  await mkdir(releasePrivate, { mode: 0o700 });
+  const privateFile = path.join(releasePrivate, "private.pem");
+  const publicFile = path.join(releasePrivate, "public.pem");
+  const publicBytes = publicKey.export({ type: "spki", format: "pem" });
+  await writeFile(privateFile, privateKey.export({ type: "pkcs8", format: "pem" }), { flag: "wx", mode: 0o600 });
+  await writeFile(publicFile, publicBytes, { flag: "wx", mode: 0o600 });
+  const signature = path.join(root, "signed-candidate", "manifest.sig");
+  await signManifest({ ...built, privateKey: privateFile, signature });
+  const trustDir = path.join(releasePrivate, "trust");
+  await pinReleaseKey({ source: publicFile,
+    expectedSha256: createHash("sha256").update(publicBytes).digest("hex"), trustDir });
+  const artifactSha256 = JSON.parse(await readFile(built.manifest, "utf8")).artifact.sha256;
   for (const directory of workdirs) {
     await mkdir(directory, { mode: 0o755 });
     created.push(directory);
@@ -114,8 +139,8 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
   const journalPath = path.join(root, "migration-journal.json");
   const marker = path.join(root, "migration-incomplete");
   const permit = path.join(runtime, "writer-start-allowed");
-  await startMigrationJournal(journalPath, { oldCommit: "a".repeat(40), newCommit: "b".repeat(40),
-    artifactSha256: "c".repeat(64), unitBackupDir: backupDir });
+  await startMigrationJournal(journalPath, { oldCommit: "a".repeat(40), newCommit: commit,
+    artifactSha256, unitBackupDir: backupDir });
   const stagedIngress = path.join(root, "staged-ingress");
   const stagedWriters = path.join(root, "staged-writers");
   await stageIngressBootGuard({ outputDir: stagedIngress, marker });
@@ -210,18 +235,23 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
   for (const unit of ingress) assert.equal(await active(unit), "inactive");
   assert.ok((await stat(marker)).isFile());
 
-  // A signed release is represented by inert, versioned package metadata.
-  // Real systemd starts only the fixture oneshot units; no public endpoint
-  // or real R0004 health handler is present on this isolated runner.
-  const versionDir = `0.1.0-${"b".repeat(40)}`;
-  const candidate = path.join(releaseRoot, "releases", versionDir);
+  // Prepare and promote the exact signed commit bound to the journal. The
+  // separate CI dependency test covers npm ci; this fixture keeps its
+  // systemd services inert and never starts application HTTP handlers.
   await mkdir(path.join(releaseRoot, "releases"));
-  await mkdir(candidate);
-  await writeFile(path.join(candidate, "package.json"),
-    JSON.stringify({ name: "dp-beget-bridge", version: "0.1.0" }) + "\n");
+  const workspace = path.join(releasePrivate, "prepared");
+  const prepared = await prepareRelease({ ...built, signature, trustDir, workspace,
+    installDependencies: async ({ directory }) => {
+      await mkdir(path.join(directory, "node_modules"));
+    } });
+  const promoted = await promotePreparedRelease({ workspace, releaseRoot, trustDir });
+  const versionDir = promoted.versionDir;
+  assert.equal(prepared.commit, commit);
+  assert.equal(promoted.sha256, artifactSha256);
+  assert.equal(versionDir, `${prepared.version}-${commit}`);
   const admissionFlag = path.join(root, "admission", "paused");
   await activateManagedRelease({ journalPath, marker, permit, unitDirectory,
-    releaseRoot, versionDir, artifactSha256: "c".repeat(64),
+    releaseRoot, versionDir, artifactSha256,
     pause: () => pauseAdmission({ flag: admissionFlag }),
     assertHealthy: async () => {
       for (const unit of writers) assert.equal(await active(unit), "active");
@@ -238,7 +268,7 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
   try { changed.exec("INSERT INTO rehearsal (id) VALUES (1)"); }
   finally { changed.close(); }
   await assert.rejects(openManagedIngress({ journalPath, marker, permit, unitDirectory,
-    releaseRoot, versionDir, artifactSha256: "c".repeat(64), admissionFlag,
+    releaseRoot, versionDir, artifactSha256, admissionFlag,
     assertLocalPaused: async () => {}, assertRouteExclusive: async () => false }),
   /Exclusive public OAuth route not proven/);
   assert.equal((await readMigrationJournal(journalPath)).phase, "locally-healthy");
