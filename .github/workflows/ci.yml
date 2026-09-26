@@ -70,6 +70,8 @@ jobs:
         run: sudo env "PATH=$PATH" node --test test/release-snapshot-legacy-state.test.js
       - name: Root-only managed unit preparation
         run: sudo env "PATH=$PATH" node --test test/release-managed-unit-overrides.test.js test/release-installed-managed-unit-preflight.test.js
+      - name: Disposable shadow-utils service account lifecycle
+        run: sudo env "PATH=$PATH" DP_TEST_REAL_ACCOUNTS=1 node --test test/release-real-clean-install-identities.test.js
       - name: Root-only managed unit installation transaction
         run: sudo env "PATH=$PATH" node --test test/release-install-managed-overrides.test.js
       - name: Root-only candidate activation and fail-closed rollback

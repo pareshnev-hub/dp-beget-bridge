@@ -9,11 +9,11 @@ import { advanceCleanInstallJournal, readCleanInstallJournal } from "./clean-ins
 
 const exec = promisify(execFile);
 
-async function createGroup(name) {
+export async function createGroup(name) {
   await exec("groupadd", ["--system", "--", name], { timeout: 10000, maxBuffer: 4096 });
 }
 
-async function createUser(name, transactionId, home) {
+export async function createUser(name, transactionId, home) {
   await exec("useradd", ["--system", "--gid", name,
     "--home-dir", home,
     "--no-create-home", "--shell", "/usr/sbin/nologin",
