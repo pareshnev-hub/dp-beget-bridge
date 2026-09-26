@@ -20,7 +20,7 @@ export async function prepareCleanInstall({ artifact, manifest, signature, domai
     throw new Error("Root and a new direct child of the private workspace parent are required");
   }
   const inputs = { artifact, manifest, signature, domain, expectedIp, workUser,
-    allowedRoot, workspaceParent, releaseRoot, trustDir };
+    workGroup, agentUser, mcpUser, ipcGroup, allowedRoot, workspaceParent, releaseRoot, trustDir };
   const proof = await inspect(inputs);
   if (!/^[0-9a-f]{64}$/.test(proof?.candidate?.sha256 || "")) {
     throw new Error("Clean-install candidate proof is incomplete");
