@@ -155,7 +155,8 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Private clean-install config staging | `64abf90` (#216) | Generates separate Direct credentials and three private environment files with telemetry disabled. Installation, identity ownership and recovery are still pending |
 | Combined clean-install candidate preparation | `64abf90` (#216) | Binds host preflight, prepared release, signed service templates and private configuration to one archive SHA-256; failure removes only an owned candidate workspace. No live install or ingress change |
 | Clean-install identity inventory | `8867d22` (#217) | Requires the existing work account to own a private work directory and reserves two new service identities plus the IPC group before candidate preparation. Account creation and recovery remain open |
-| Clean-install staged file binding | this change | Private manifest binds six staged unit/config files and the signed archive to SHA-256 values and detects mutation before installation. Journaled copying and activation remain open |
+| Clean-install staged file binding | `fbe2e4c` (#218) | Private manifest binds six staged unit/config files and the signed archive to SHA-256 values and detects mutation before installation. Journaled copying and activation remain open |
+| Clean-install transaction intent | this change | Root-only journal outside the candidate workspace binds the manifest and records only the first identities-intent transition with an exclusive persistent lock. Account mutation, recovery and later phases remain open |
 
 These implementation slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
