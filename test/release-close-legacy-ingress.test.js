@@ -23,7 +23,7 @@ async function fixture(t) {
 }
 
 const closeFixture = options => closeLegacyIngress({
-  assertPublicLegacy: async () => true, ...options
+  assertPublicLegacy: async () => true, assertPublicClosed: async () => true, ...options
 });
 
 test("OPS-07: durable marker and journal phase precede dedicated ingress stops", {
@@ -86,6 +86,26 @@ test("OPS-07: route change during stops retains persistent guard and refuses clo
     getState: async unit => stopped.includes(unit) ? "inactive" : "active" }),
   /route changed during ingress closure/);
   assert.equal(proofs, 2);
+  assert.equal(stopped.length, 3);
+  assert.equal((await readMigrationJournal(journalPath)).phase, "ingress-closed");
+  assert.match(await readFile(marker, "utf8"), /migration-incomplete/);
+});
+
+test("OPS-07: public route still answering after socket stop retains the marker", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const { journalPath, marker } = await fixture(t);
+  const stopped = [];
+  let probes = 0;
+  await assert.rejects(closeFixture({ journalPath, marker,
+    unitDirectory: "/etc/systemd/system", inspectGuard: async () => true,
+    inspectWriterGuards: async () => true, inspectServices: legacyActivityFixture,
+    assertRouteExclusive: async () => true,
+    assertPublicClosed: async () => { probes++; return false; },
+    stopUnit: async unit => { stopped.push(unit); },
+    getState: async unit => stopped.includes(unit) ? "inactive" : "active" }),
+  /Public OAuth path did not close/);
+  assert.equal(probes, 1);
   assert.equal(stopped.length, 3);
   assert.equal((await readMigrationJournal(journalPath)).phase, "ingress-closed");
   assert.match(await readFile(marker, "utf8"), /migration-incomplete/);

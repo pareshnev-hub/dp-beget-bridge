@@ -27,6 +27,7 @@ async function fixture(t) {
   await closeLegacyIngress({ journalPath, marker, unitDirectory: "/etc/systemd/system",
     assertRouteExclusive: async () => true,
     assertPublicLegacy: async () => true,
+    assertPublicClosed: async () => true,
     inspectGuard: async () => true, inspectWriterGuards: async () => true,
     inspectServices: legacyActivityFixture,
     stopUnit: async unit => { stopped.push(unit); },
