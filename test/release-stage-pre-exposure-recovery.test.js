@@ -19,6 +19,7 @@ import { stagePreExposureRecovery } from "../scripts/release/stage-pre-exposure-
 import { readCandidateRollbackStopRecord, stopCandidateForRollback, verifyCandidateRollbackStopped } from
   "../scripts/release/stop-candidate-for-rollback.mjs";
 import { verifyStagedRecoveryPair } from "../scripts/release/verify-staged-recovery-pair.mjs";
+import { verifyOriginalUnitViewRestored } from "../scripts/release/verify-original-unit-view.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
 async function fixture(t, phase = "locally-healthy") {
@@ -370,6 +371,37 @@ test("OPS-07: original unit view removes only managed bindings after stopped pro
     await assert.rejects(stat(path.join(directory, MANAGED_DROP_IN)), /ENOENT/);
     assert.match(await readFile(path.join(directory, WRITER_GUARD_DROP_IN), "utf8"), /ConditionPathExists/);
   }
+  const proof = await verifyOriginalUnitViewRestored(options);
+  assert.equal(proof.transactionId, (await readMigrationJournal(options.journalPath)).transactionId);
+  assert.equal(proof.destinations.databases[0].path, options.database);
+});
+
+test("OPS-07: original view proof rejects incomplete record, restarted writer and changed state", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await assert.rejects(verifyOriginalUnitViewRestored(options), /ENOENT/);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  await assert.rejects(verifyOriginalUnitViewRestored({ ...options,
+    getWriterState: async unit => unit === "dp-beget-agent.service" ? "active" : "inactive" }),
+  /Writer restarted/);
+  await writeFile(path.join(options.outputDir, "state", "config", "secret.env"), "changed\n");
+  await assert.rejects(verifyOriginalUnitViewRestored(options), /Staged recovery file/);
+});
+
+test("OPS-07: original view proof rejects lost guard or changed unit fragment", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  await assert.rejects(verifyOriginalUnitViewRestored({ ...options,
+    inspectWriterGuards: async () => { throw new Error("writer guard missing"); } }),
+  /writer guard missing/);
+  await writeFile(path.join(options.unitDirectory, "dp-beget-agent.service.d", MANAGED_DROP_IN), "stale\n");
+  await assert.rejects(verifyOriginalUnitViewRestored(options), /drop-in inventory changed/);
+  await rm(path.join(options.unitDirectory, "dp-beget-agent.service.d", MANAGED_DROP_IN));
+  await writeFile(path.join(options.unitDirectory, "dp-beget-agent.service"), "changed\n");
+  await assert.rejects(verifyOriginalUnitViewRestored(options), /legacy app units differ/);
 });
 
 test("OPS-07: daemon-reload failure retains restoring intent and ingress marker", {
