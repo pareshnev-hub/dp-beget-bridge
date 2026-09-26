@@ -22,7 +22,7 @@ import { verifyStagedRecoveryPair } from "../scripts/release/verify-staged-recov
 import { verifyOriginalUnitViewRestored } from "../scripts/release/verify-original-unit-view.mjs";
 import { readLiveStateCopyRecord, stageLiveStateRecovery, verifyPreparedLiveStateCopies } from
   "../scripts/release/stage-live-state-recovery.mjs";
-import { inspectLiveReplacementLedger, prepareLiveReplacementLedger } from
+import { inspectLiveReplacementLedger, prepareLiveReplacementLedger, replaceLiveStateFromLedger } from
   "../scripts/release/live-state-replacement-ledger.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
@@ -500,6 +500,79 @@ test("OPS-07: replacement ledger cannot be placed inside its staged recovery pai
   await assert.rejects(prepareLiveReplacementLedger({ ...options, recordPath,
     ledgerPath: path.join(options.outputDir, "replacement-ledger.json") }),
   /outside staged/);
+});
+
+test("OPS-07: journaled live replacement restores old state and parks candidate bytes", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  await writeFile(path.join(options.configRoot, "secret.env"), "CANARY=candidate\n");
+  const candidate = new DatabaseSync(options.database);
+  candidate.prepare("UPDATE state SET value = ?").run("candidate-state");
+  candidate.close();
+  const root = path.dirname(options.outputDir);
+  const recordPath = path.join(root, "live-copy-record.json");
+  const ledgerPath = path.join(root, "replacement-ledger.json");
+  await stageLiveStateRecovery({ ...options, recordPath });
+  const ledger = await prepareLiveReplacementLedger({ ...options, recordPath, ledgerPath });
+  const result = await replaceLiveStateFromLedger({ ...options, ledgerPath });
+  assert.equal(result.record.phase, "replaced");
+  assert.deepEqual(result.positions, ["installed", "installed"]);
+  assert.equal(await readFile(path.join(options.configRoot, "secret.env"), "utf8"), "CANARY=private\n");
+  assert.equal(await readFile(path.join(ledger.targets[0].parked, "secret.env"), "utf8"),
+    "CANARY=candidate\n");
+  const restored = new DatabaseSync(options.database, { readOnly: true });
+  const parked = new DatabaseSync(ledger.targets[1].parked, { readOnly: true });
+  try {
+    assert.equal(restored.prepare("SELECT value FROM state").get().value, "old-state");
+    assert.equal(parked.prepare("SELECT value FROM state").get().value, "candidate-state");
+  } finally { restored.close(); parked.close(); }
+  assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+  assert.deepEqual((await replaceLiveStateFromLedger({ ...options, ledgerPath })).positions,
+    ["installed", "installed"]);
+});
+
+test("OPS-07: interrupted first rename resumes only from recognized parked inode", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  const root = path.dirname(options.outputDir);
+  const recordPath = path.join(root, "live-copy-record.json");
+  const ledgerPath = path.join(root, "replacement-ledger.json");
+  await stageLiveStateRecovery({ ...options, recordPath });
+  await prepareLiveReplacementLedger({ ...options, recordPath, ledgerPath });
+  await assert.rejects(replaceLiveStateFromLedger({ ...options, ledgerPath,
+    renameEntry: async (...args) => { await rename(...args); throw new Error("power interrupted"); } }),
+  /power interrupted/);
+  const interrupted = await inspectLiveReplacementLedger({ ...options, ledgerPath });
+  assert.equal(interrupted.record.phase, "replacing");
+  assert.deepEqual(interrupted.positions, ["parked", "pending"]);
+  assert.deepEqual((await replaceLiveStateFromLedger({ ...options, ledgerPath })).positions,
+    ["installed", "installed"]);
+});
+
+test("OPS-07: interruption after installing config resumes remaining database", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  const root = path.dirname(options.outputDir);
+  const recordPath = path.join(root, "live-copy-record.json");
+  const ledgerPath = path.join(root, "replacement-ledger.json");
+  await stageLiveStateRecovery({ ...options, recordPath });
+  await prepareLiveReplacementLedger({ ...options, recordPath, ledgerPath });
+  let renames = 0;
+  await assert.rejects(replaceLiveStateFromLedger({ ...options, ledgerPath,
+    renameEntry: async (...args) => {
+      await rename(...args);
+      if (++renames === 2) throw new Error("interrupted after config installation");
+    } }), /interrupted after config installation/);
+  assert.deepEqual((await inspectLiveReplacementLedger({ ...options, ledgerPath })).positions,
+    ["installed", "pending"]);
+  assert.deepEqual((await replaceLiveStateFromLedger({ ...options, ledgerPath })).positions,
+    ["installed", "installed"]);
 });
 
 test("OPS-07: daemon-reload failure retains restoring intent and ingress marker", {
