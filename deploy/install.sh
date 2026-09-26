@@ -250,6 +250,8 @@ chown root:"${mcp_user}" "${mcp_env}"
   printf 'DP_TERMINAL_MAX_ACTIVE=8\n'
   printf 'DP_SESSION_OUTPUT_WARN_BYTES=52428800\n'
   printf 'DP_SESSION_OUTPUT_MAX_BYTES=67108864\n'
+  printf 'DP_TRANSCRIPT_SEGMENT_BYTES=8388608\n'
+  printf 'DP_TRANSCRIPT_TOTAL_MAX_BYTES=2147483648\n'
   printf 'DP_STORAGE_MIN_FREE_BYTES=268435456\n'
   printf 'DP_LOG_LEVEL=info\n'
 } > "${session_host_env}"

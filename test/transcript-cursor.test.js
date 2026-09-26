@@ -6,6 +6,7 @@ import test from "node:test";
 import { StateStore } from "../apps/agent/src/state-store.js";
 import { TmuxSessionManager } from "../apps/agent/src/tmux.js";
 import { CAPTURE_STOP_SUFFIX } from "../scripts/transcript-capture.mjs";
+import { segmentPath } from "../scripts/transcript-segments.mjs";
 
 async function fixture(context, output = "") {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-cursor-"));
@@ -58,6 +59,21 @@ test("CUR-02: UTF-8 characters are never split or replaced", async (context) => 
   assert.doesNotMatch(second.output, /�/);
   const third = await manager.readOutput(session.id, second.cursor, 2);
   assert.equal(third.output, "B");
+});
+
+test("R0004: cursor reads a UTF-8 character across segment boundaries", async context => {
+  const { store, session, manager } = await fixture(context);
+  const bytes = Buffer.from("A🙂B");
+  await fs.writeFile(store.outputPath(session.id), bytes.subarray(0, 3));
+  await fs.writeFile(segmentPath(store.outputPath(session.id), 1), bytes.subarray(3));
+  manager.config.transcriptSegmentBytes = 3;
+  const first = await manager.readOutput(session.id, undefined, 2);
+  assert.equal(first.output, "A");
+  const second = await manager.readOutput(session.id, first.cursor, 2);
+  assert.equal(second.output, "🙂");
+  const third = await manager.readOutput(session.id, second.cursor, 2);
+  assert.equal(third.output, "B");
+  assert.equal(third.hasMore, false);
 });
 
 test("CUR-03: retained CLOSED transcript survives state restart and requires explicit purge", async (context) => {

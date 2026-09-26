@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { TmuxSessionManager } from "../apps/agent/src/tmux.js";
+import { segmentPath } from "../scripts/transcript-segments.mjs";
 
 test("STR-03: new terminal capture pipe has a hard byte ceiling", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-tmux-limit-"));
@@ -26,7 +27,7 @@ test("STR-03: new terminal capture pipe has a hard byte ceiling", async (t) => {
   const pipe = calls.find((args) => args[0] === "pipe-pane");
   assert.match(
     pipe.at(-1),
-    new RegExp(`^/usr/bin/env node '.*scripts/transcript-capture\\.mjs' '.*${opened.id}/terminal\\.log' 12345 4096$`),
+    new RegExp(`^/usr/bin/env node '.*scripts/transcript-capture\\.mjs' '.*${opened.id}/terminal\\.log' 12345 4096 12345$`),
   );
 });
 
@@ -144,6 +145,46 @@ test("R0004: an OPEN session still reserves capture space while tmux is absent",
   manager.isAlive = async () => false;
   await assert.rejects(manager.open({}), error =>
     error?.code === "transcript_quota" && error?.status === 507);
+});
+
+test("R0004: quota counts every segment of a CLOSED transcript", async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-segment-quota-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const output = path.join(root, "retained", "terminal.log");
+  await fs.mkdir(path.dirname(output));
+  await fs.writeFile(output, "12345");
+  await fs.writeFile(segmentPath(output, 1), "67890");
+  const manager = new TmuxSessionManager({
+    config: { terminalMaxActive: 8, sessionOutputMaxBytes: 10,
+      transcriptSegmentBytes: 5, transcriptTotalMaxBytes: 15 },
+    store: {
+      async list() { return [{ id: "retained", closedAt: "2026-09-26" }]; },
+      outputPath() { return output; },
+    },
+    pathPolicy: {}, logger: {},
+  });
+  await assert.rejects(manager.open({}), error =>
+    error?.code === "transcript_quota" && error?.status === 507);
+});
+
+test("R0004: a missing middle segment fails closed during quota admission", async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-segment-gap-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const output = path.join(root, "retained", "terminal.log");
+  await fs.mkdir(path.dirname(output));
+  await fs.writeFile(output, "12345");
+  await fs.writeFile(segmentPath(output, 2), "67890");
+  const manager = new TmuxSessionManager({
+    config: { terminalMaxActive: 8, sessionOutputMaxBytes: 10,
+      transcriptSegmentBytes: 5, transcriptTotalMaxBytes: 100 },
+    store: {
+      async list() { return [{ id: "retained", closedAt: "2026-09-26" }]; },
+      outputPath() { return output; },
+    },
+    pathPolicy: {}, logger: {},
+  });
+  await assert.rejects(manager.open({}), error =>
+    error?.code === "transcript_quota_invalid" && error?.status === 503);
 });
 
 test("uses an explicit tmux socket and prepares its persistent directory", async (t) => {

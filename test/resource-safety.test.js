@@ -12,6 +12,7 @@ import { FileManager } from "../apps/agent/src/files.js";
 import { createMcpHttpServer } from "../apps/mcp/src/server.js";
 import { PathPolicy } from "../packages/core/src/path-policy.js";
 import { captureTranscript, CAPTURE_STOP_SUFFIX } from "../scripts/transcript-capture.mjs";
+import { segmentPath } from "../scripts/transcript-segments.mjs";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -154,4 +155,29 @@ test("STR-04: capture stops before exhausting the reserve without an output read
   assert.equal(checks, 2);
   assert.equal(await fs.readFile(outputPath, "utf8"), "first");
   assert.equal(await fs.readFile(`${outputPath}${CAPTURE_STOP_SUFFIX}`, "utf8"), "storage_reserve\n");
+});
+
+test("R0004: capture splits a bounded transcript without dropping bytes", async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-capture-segments-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const outputPath = path.join(root, "terminal.log");
+  await fs.writeFile(outputPath, "");
+  const result = await captureTranscript({ outputPath, maximum: 14, segmentBytes: 5,
+    input: Readable.from([Buffer.from("0123456789abcd")]) });
+  assert.equal(result.stopped, "transcript_limit");
+  assert.equal(await fs.readFile(outputPath, "utf8"), "01234");
+  assert.equal(await fs.readFile(segmentPath(outputPath, 1), "utf8"), "56789");
+  assert.equal(await fs.readFile(segmentPath(outputPath, 2), "utf8"), "abcd");
+});
+
+test("R0004: a legacy transcript larger than the segment size continues safely", async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-capture-legacy-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const outputPath = path.join(root, "terminal.log");
+  await fs.writeFile(outputPath, "1234567");
+  const result = await captureTranscript({ outputPath, maximum: 10, segmentBytes: 5,
+    input: Readable.from([Buffer.from("890123")]) });
+  assert.equal(result.stopped, "transcript_limit");
+  assert.equal(await fs.readFile(outputPath, "utf8"), "1234567890");
+  await assert.rejects(fs.access(segmentPath(outputPath, 1)), { code: "ENOENT" });
 });
