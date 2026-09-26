@@ -134,7 +134,10 @@ test("a timed-out operation is completed asynchronously and releases the session
   const started = await manager.runCommand(session.id, "sleep 1", 0, "background-monitor");
   assert.equal(started.status, "RUNNING");
   await fs.writeFile(store.operationCompletionPath(session.id, started.operationId), "0\n", { mode: 0o600 });
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  const deadline = Date.now() + 5_000;
+  while (store.getOperation(started.operationId, session.id).status === "RUNNING" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
   assert.equal(store.getOperation(started.operationId, session.id).status, "SUCCEEDED");
   assert.equal(store.activeOperation(session.id), null);
 });
