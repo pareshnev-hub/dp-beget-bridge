@@ -142,9 +142,11 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Live legacy database bindings | `1f64cd2` (#184) | Root read-only proof checks three running service PIDs, expected data paths, pinned OAuth config default and absence of unlisted SQLite files without printing environment secrets; first root run failed on an undisclosed boundary |
 | Retained SQLite inventory and safe failure stages | `f94e2a1` (#185) | Admits only observed Session Host backup-v0/v1 files and emits a fixed failed unit/stage instead of environment values; repeat live root execution reached OAuth inventory |
 | Observed OAuth migration backup inventory | `bb04683` (#186) | Admits the observed `auth.sqlite.backup-v1` under pinned OAuth data; root live binding proof passed for all three services, without a drain proof |
-| Bracketed route and database preflight | this change | Rechecks running database bindings on both sides of a public OAuth challenge and matched route inventories; scoped R0003 evidence only, no drain or exclusive-route assertion |
+| Bracketed route and database preflight | #187 | Rechecks running database bindings on both sides of a public OAuth challenge and matched route inventories; scoped R0003 evidence only, no drain or exclusive-route assertion |
+| Segmented terminal transcripts | `085d030` (#206) | New 8 MiB segments share one cursor and aggregate quota; legacy transcripts remain readable; three CI jobs passed. Automatic archival and age policy remain open |
+| Bounded local diagnostics | this change | Doctor emits optional JSON health report with bounded probes and redacted failures; installed version/schema and auth-step diagnostics remain open |
 
-These ninety slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These implementation slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, automated archival, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
