@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, copyFile, mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, mkdir, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
@@ -24,6 +24,8 @@ import { readLiveStateCopyRecord, stageLiveStateRecovery, verifyPreparedLiveStat
   "../scripts/release/stage-live-state-recovery.mjs";
 import { inspectLiveReplacementLedger, prepareLiveReplacementLedger, replaceLiveStateFromLedger } from
   "../scripts/release/live-state-replacement-ledger.mjs";
+import { deactivateCandidatePointer, readCandidatePointerRollbackRecord } from
+  "../scripts/release/deactivate-candidate-pointer.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
 async function fixture(t, phase = "locally-healthy") {
@@ -573,6 +575,70 @@ test("OPS-07: interruption after installing config resumes remaining database", 
     ["installed", "pending"]);
   assert.deepEqual((await replaceLiveStateFromLedger({ ...options, ledgerPath })).positions,
     ["installed", "installed"]);
+});
+
+async function completedReplacementFixture(t) {
+  const options = await originalUnitViewFixture(t);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  const root = path.dirname(options.outputDir);
+  const recordPath = path.join(root, "live-copy-record.json");
+  const ledgerPath = path.join(root, "replacement-ledger.json");
+  const pointerRecordPath = path.join(root, "pointer-rollback.json");
+  await stageLiveStateRecovery({ ...options, recordPath });
+  await prepareLiveReplacementLedger({ ...options, recordPath, ledgerPath });
+  await replaceLiveStateFromLedger({ ...options, ledgerPath });
+  await mkdir(options.releaseRoot);
+  await mkdir(path.join(options.releaseRoot, "releases"));
+  const versionDir = `1.0.0-${"b".repeat(40)}`;
+  await mkdir(path.join(options.releaseRoot, "releases", versionDir));
+  await writeFile(path.join(options.releaseRoot, "releases", versionDir, "package.json"),
+    JSON.stringify({ name: "dp-beget-bridge", version: "1.0.0" }));
+  await symlink(`releases/${versionDir}`, path.join(options.releaseRoot, "current"));
+  return { ...options, ledgerPath, pointerRecordPath, versionDir };
+}
+
+test("OPS-07: first-migration candidate pointer is removed only after old state replacement", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await completedReplacementFixture(t);
+  const result = await deactivateCandidatePointer({ ...options, recordPath: options.pointerRecordPath });
+  assert.equal(result.phase, "removed");
+  await assert.rejects(stat(path.join(options.releaseRoot, "current")), /ENOENT/);
+  assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+  assert.equal((await deactivateCandidatePointer({ ...options,
+    recordPath: options.pointerRecordPath })).phase, "removed");
+});
+
+test("OPS-07: interrupted pointer unlink resumes from durable removing intent", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await completedReplacementFixture(t);
+  await assert.rejects(deactivateCandidatePointer({ ...options, recordPath: options.pointerRecordPath,
+    unlinkPointer: async filename => { await rm(filename); throw new Error("interrupted after unlink"); } }),
+  /interrupted after unlink/);
+  assert.equal((await readCandidatePointerRollbackRecord(options.pointerRecordPath)).phase, "removing");
+  assert.equal((await deactivateCandidatePointer({ ...options,
+    recordPath: options.pointerRecordPath })).phase, "removed");
+});
+
+test("OPS-07: changed first-migration pointer or previous release blocks rollback", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await completedReplacementFixture(t);
+  await symlink(`releases/${options.versionDir}`, path.join(options.releaseRoot, "previous"));
+  await assert.rejects(deactivateCandidatePointer({ ...options,
+    recordPath: options.pointerRecordPath }), /no previous release/);
+  await assert.rejects(stat(options.pointerRecordPath), /ENOENT/);
+});
+
+test("OPS-07: pointer rollback record cannot alter recovered configuration", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await completedReplacementFixture(t);
+  const unsafe = path.join(options.configRoot, "pointer-rollback.json");
+  await assert.rejects(deactivateCandidatePointer({ ...options, recordPath: unsafe }),
+    /outside live state/);
+  await assert.rejects(stat(unsafe), /ENOENT/);
 });
 
 test("OPS-07: daemon-reload failure retains restoring intent and ingress marker", {

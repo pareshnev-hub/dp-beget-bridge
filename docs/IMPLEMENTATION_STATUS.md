@@ -111,8 +111,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Original view recovery proof | `c16d529` (#148) | Reopens restored unit view, stop intent and staged pair under original guards; no live state replacement |
 | Destination-local old-state copies | `d8c64c2` (#149) | Journaled, synced config and SQLite copies beside live destinations; no live rename |
 | Interrupted replacement ledger | `5d722aa` (#150) | Records inode positions and content for a future resumable live swap; no live rename |
+| Resumable old-state replacement | `cf061f3` (#151) | Journaled config/SQLite renames retain candidate bytes and resume recognized positions; no old-service restart |
 
-These fifty-seven slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These fifty-eight slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 
