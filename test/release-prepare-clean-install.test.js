@@ -10,6 +10,7 @@ import { buildArtifact } from "../scripts/release/build-artifact.mjs";
 import { verifyCleanInstallManifest } from "../scripts/release/clean-install-manifest.mjs";
 import { advanceCleanInstallJournal, readCleanInstallJournal,
   startCleanInstallJournal } from "../scripts/release/clean-install-journal.mjs";
+import { installCleanIdentities } from "../scripts/release/install-clean-identities.mjs";
 import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
 import { prepareCleanInstall } from "../scripts/release/prepare-clean-install.mjs";
 import { prepareRelease } from "../scripts/release/prepare-release.mjs";
@@ -79,13 +80,35 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
   assert.equal((await readCleanInstallJournal(journalPath)).phase, "prepared");
   assert.equal((await advanceCleanInstallJournal({ journalPath, transactionId: journal.transactionId,
     expectedPhase: "prepared", nextPhase: "identities-intent", trustDir })).phase, "identities-intent");
-  await assert.rejects(advanceCleanInstallJournal({ journalPath,
-    transactionId: journal.transactionId, expectedPhase: "identities-intent",
-    nextPhase: "identities-ready", trustDir }), /transition rejected/);
+  const calls = [];
+  const installed = await installCleanIdentities({ journalPath, trustDir,
+    inspectAvailable: async () => {},
+    addGroup: async name => { calls.push(`group:${name}`); },
+    addUser: async (name, _, home) => { calls.push(`user:${name}:${home}`); },
+    advance: options => advanceCleanInstallJournal({ ...options,
+      inspectCreated: async () => ({ identities: "journal-bound" }) }) });
+  assert.equal(installed.phase, "identities-ready");
+  assert.deepEqual(calls, ["group:dp-ipc", "group:dp-agent", "group:dp-mcp",
+    "user:dp-agent:/var/lib/dp-beget-bridge-agent",
+    "user:dp-mcp:/var/lib/dp-beget-bridge-mcp"]);
+  await assert.rejects(stat(`${journalPath}.identity-install.lock`), /ENOENT/);
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
     workspace: args.workspace, manifestSha256: result.manifestSha256,
     releaseRoot: args.releaseRoot, trustDir });
+  const failedJournalPath = path.join(workspaceParent, "partial-identities-journal.json");
+  const failed = await startCleanInstallJournal({ journalPath: failedJournalPath,
+    workspace: args.workspace, manifestSha256: result.manifestSha256,
+    releaseRoot: args.releaseRoot, trustDir });
+  await advanceCleanInstallJournal({ journalPath: failedJournalPath,
+    transactionId: failed.transactionId, expectedPhase: "prepared",
+    nextPhase: "identities-intent", trustDir });
+  await assert.rejects(installCleanIdentities({ journalPath: failedJournalPath, trustDir,
+    inspectAvailable: async () => {},
+    addGroup: async () => { throw new Error("injected account tool failure"); } }),
+  /injected account tool failure/);
+  assert.equal((await readCleanInstallJournal(failedJournalPath)).phase, "identities-intent");
+  assert.ok((await stat(`${failedJournalPath}.identity-install.lock`)).isFile());
   await assert.rejects(prepareCleanInstall(args), /EEXIST/);
   assert.ok((await stat(unit)).isFile(), "an existing candidate cannot be cleaned up by a failed retry");
   await assert.rejects(prepareCleanInstall({ ...args,

@@ -4,11 +4,11 @@ import { lstat, open, readFile, realpath, rename, stat, unlink } from "node:fs/p
 import path from "node:path";
 import { verifyCleanInstallManifest } from "./clean-install-manifest.mjs";
 import { inspectCleanInstallIdentityPlan } from "./clean-install-identity-plan.mjs";
+import { inspectCreatedCleanIdentities } from "./inspect-clean-install-created-identities.mjs";
 
 const SHA = /^[0-9a-f]{64}$/;
-// Later phases must be added together with real boundary verifiers. A journal
-// must never claim identities or service health from a candidate hash alone.
-const PHASES = ["prepared", "identities-intent"];
+// Later phases must be added together with real boundary verifiers.
+const PHASES = ["prepared", "identities-intent", "identities-ready"];
 const FORMAT = "dp-beget-clean-install-journal-v1";
 
 async function privateParent(filename) {
@@ -88,7 +88,8 @@ export async function startCleanInstallJournal({ journalPath, workspace, manifes
 
 export async function advanceCleanInstallJournal({ journalPath, transactionId,
   expectedPhase, nextPhase, verify = verifyCleanInstallManifest,
-  inspectPlan = inspectCleanInstallIdentityPlan, trustDir } = {}) {
+  inspectPlan = inspectCleanInstallIdentityPlan,
+  inspectCreated = inspectCreatedCleanIdentities, trustDir } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to advance a clean-install journal");
   const parent = await privateParent(journalPath);
   const lock = `${journalPath}.lock`;
@@ -113,6 +114,11 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
       manifestSha256: current.manifestSha256, trustDir })) !==
         JSON.stringify(current.identityPlan)) {
       throw new Error("Clean-install identity plan changed during transaction");
+    }
+    if (nextPhase === "identities-ready" &&
+        (await inspectCreated({ plan: current.identityPlan,
+          transactionId: current.transactionId }))?.identities !== "journal-bound") {
+      throw new Error("Created clean-install identities are unproven");
     }
     const next = validate({ ...current, phase: nextPhase });
     const temporary = `${journalPath}.${randomUUID()}.tmp`;
