@@ -23,8 +23,14 @@ async function systemctlState(unit) {
   return stdout.trim().slice("ActiveState=".length);
 }
 
-async function assertClosed({ journalPath, marker, unitDirectory, assertRouteExclusive, inspectGuard, getState,
-  inspectWriterGuards, permit, transactionId, phase }) {
+export async function assertPreExposureRecoveryBoundary({ journalPath, marker = PERSISTENT_MARKER,
+  unitDirectory = "/etc/systemd/system", assertRouteExclusive,
+  inspectGuard = inspectInstalledIngressGuard, getState = systemctlState,
+  inspectWriterGuards = inspectInstalledWriterGuards, permit = WRITER_START_PERMIT,
+  transactionId, phase }) {
+  if (process.getuid?.() !== 0 || typeof assertRouteExclusive !== "function") {
+    throw new Error("Root and an exclusive route proof are required for recovery");
+  }
   const journal = await readMigrationJournal(journalPath);
   if (journal.transactionId !== transactionId || journal.phase !== phase) {
     throw new Error("Migration changed during recovery staging");
@@ -63,10 +69,10 @@ export async function stagePreExposureRecovery({ journalPath, marker = PERSISTEN
   const boundary = { journalPath, marker, unitDirectory, assertRouteExclusive, inspectGuard,
     inspectWriterGuards, permit, getState,
     transactionId: journal.transactionId, phase: journal.phase };
-  await assertClosed(boundary);
+  await assertPreExposureRecoveryBoundary(boundary);
   const result = await restore({ backupDir: journal.snapshotPath, outputDir });
   try {
-    await assertClosed(boundary);
+    await assertPreExposureRecoveryBoundary(boundary);
     await verifyJournalUnitBackup(journal);
     await verifyJournalStateBundle(journal);
   } catch (error) {
