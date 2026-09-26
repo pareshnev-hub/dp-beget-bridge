@@ -113,8 +113,9 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 | Interrupted replacement ledger | `5d722aa` (#150) | Records inode positions and content for a future resumable live swap; no live rename |
 | Resumable old-state replacement | `cf061f3` (#151) | Journaled config/SQLite renames retain candidate bytes and resume recognized positions; no old-service restart |
 | Candidate pointer deactivation | `81f2a44` (#152) | Removes only first-migration `current` after old state replacement; leaves ingress marker and writers stopped |
+| Original writer restart | `0da1f68` (#153) | Starts R0003 under closed ingress and scoped permit, requires exact legacy local health; no public reopening |
 
-These fifty-nine slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
+These sixty-one slices are merged code, **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, retention/quotas, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
 

@@ -109,7 +109,7 @@ function assertRecordPlacement(recordPath, { journal, intent, ledger }, unitDire
     throw new Error("Legacy restart record must be outside live state, units and backups");
   }
 }
-function validHealth(result) {
+export function assertLegacyHealthResult(result) {
   if (result?.services !== 4 || JSON.stringify(result.products) !== JSON.stringify(PRODUCTS)) {
     throw new Error("Four exact R0003 local health responses are required");
   }
@@ -186,7 +186,7 @@ export async function restartLegacyAfterRollback({ recordPath, pointerRecordPath
   for (const unit of START) {
     if (await getState(unit) !== "active") throw new Error(`Legacy writer is not active: ${unit}`);
   }
-  validHealth(await assertLegacyHealthy());
+  assertLegacyHealthResult(await assertLegacyHealthy());
   if (record.phase === "starting") {
     const current = await readLegacyRestartRecord(recordPath);
     if (JSON.stringify(current) !== JSON.stringify(record)) throw new Error("Legacy restart record changed");
