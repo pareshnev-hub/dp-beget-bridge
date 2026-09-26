@@ -26,16 +26,17 @@ const absolute = value => typeof value === "string" && path.isAbsolute(value) &&
 const overlaps = (a, b) => a === b || a.startsWith(`${b}${path.sep}`) ||
   b.startsWith(`${a}${path.sep}`);
 
-async function trustedDirectory(directory) {
+async function trustedDirectory(directory, { candidate = false } = {}) {
   const info = await stat(directory);
-  if (!info.isDirectory() || info.uid !== 0 || (info.mode & 0o022) !== 0 ||
+  if (!info.isDirectory() || info.uid !== 0 || (info.mode & 0o002) !== 0 ||
+      ((info.mode & 0o020) !== 0 && (!candidate || info.gid !== 0)) ||
       await realpath(directory) !== directory) throw new Error("Untrusted hotfix directory");
 }
 
-async function pinnedFile(filename, digest) {
+async function pinnedFile(filename, digest, expectedModes) {
   const info = await lstat(filename);
-  if (!info.isFile() || info.nlink !== 1 || info.uid !== 0 ||
-      (info.mode & 0o022) !== 0 || info.size > 512 * 1024 ||
+  if (!info.isFile() || info.nlink !== 1 || info.uid !== 0 || info.gid !== 0 ||
+      !expectedModes.includes(info.mode & 0o7777) || info.size > 512 * 1024 ||
       await realpath(filename) !== filename) throw new Error("Untrusted R0003 source file");
   const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW);
   let bytes;
@@ -71,14 +72,17 @@ export async function stageLegacyCounterHotfix({ outputDir, candidateRoot,
   }
   const parent = path.dirname(outputDir);
   await trustedDirectory(parent);
-  await trustedDirectory(candidateRoot);
+  await trustedDirectory(candidateRoot, { candidate: true });
   for (const root of new Set(files.map(item => item.root))) await trustedDirectory(root);
   const records = [];
   for (const item of files) {
     const source = path.join(item.root, item.relative);
     const candidate = path.join(candidateRoot, item.relative);
-    const original = await pinnedFile(source, item.before);
-    const updated = await pinnedFile(candidate, item.after);
+    // All four observed live files are root:root 0664. Git checkout modes
+    // depend on root's umask; accept only root:root 0644 or 0664 candidates.
+    // A later installer must recheck before any live replacement.
+    const original = await pinnedFile(source, item.before, [0o664]);
+    const updated = await pinnedFile(candidate, item.after, [0o644, 0o664]);
     records.push({ name: item.name, source, before: item.before, after: item.after,
       mode: original.mode, original: original.bytes, updated: updated.bytes });
   }
