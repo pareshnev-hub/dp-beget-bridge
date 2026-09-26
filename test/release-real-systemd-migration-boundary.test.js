@@ -12,6 +12,7 @@ import { installMigrationBootGuards } from "../scripts/release/install-migration
 import { readMigrationJournal, startMigrationJournal } from "../scripts/release/migration-journal.mjs";
 import { quiesceLegacyWriters } from "../scripts/release/quiesce-legacy-writers.mjs";
 import { stageWriterBootGuard } from "../scripts/release/writer-boot-guard.mjs";
+import { assertWriterPermitAbsent, withWriterStartPermit } from "../scripts/release/writer-start-permit.mjs";
 
 const exec = promisify(execFile);
 const writers = ["dp-beget-session-host.service", "dp-beget-agent.service",
@@ -125,4 +126,23 @@ test("OPS-07: seven real systemd units close ingress and quiesce writers under l
   assert.equal(await active(writers[0]), "inactive");
   assert.equal((await readMigrationJournal(journalPath)).phase, "quiesced");
   assert.ok((await stat(marker)).isFile());
+
+  // Rehearse the old-writer restart boundary under the same seven loaded
+  // guards. In this fixture the units do no work and no state is restored.
+  await withWriterStartPermit({ marker, permit, action: async () => {
+    for (const unit of writers) {
+      await systemctl("start", unit);
+      assert.equal(await active(unit), "active");
+    }
+    for (const unit of ingress) assert.equal(await active(unit), "inactive");
+    await systemctl("start", ingress[0]).catch(() => {});
+    assert.equal(await active(ingress[0]), "inactive");
+  } });
+  await assertWriterPermitAbsent(permit);
+  assert.ok((await stat(marker)).isFile());
+  for (const unit of writers) await systemctl("stop", unit);
+  await systemctl("start", writers[0]).catch(() => {});
+  for (const unit of writers) assert.equal(await active(unit), "inactive");
+  for (const unit of ingress) assert.equal(await active(unit), "inactive");
+  assert.equal((await readMigrationJournal(journalPath)).phase, "quiesced");
 });
