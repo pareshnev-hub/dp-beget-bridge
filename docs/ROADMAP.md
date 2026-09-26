@@ -339,6 +339,7 @@ All configuration/state migrations are versioned, backed up and preflighted. Act
 
 ### Observability
 Expose local health/readiness, installed version/commit, state schema, bounded resource status and sanitized doctor output. Optional telemetry remains disabled by default and is never required for health or authorization.
+R0004 requires enough sanitized local diagnostics to identify a failed install, update or auth step without logging credentials, tokens or user content. Cross-service request correlation and a support bundle may follow after the core migration and rollback work, unless the security review identifies a release-blocking need. Group related verification after substantive changes while retaining the mandatory release and security gates.
 
 ### Out of scope
 Large resumable transfers, directory synchronization, Catalog transport, organization RBAC, billing and speculative scale infrastructure.
