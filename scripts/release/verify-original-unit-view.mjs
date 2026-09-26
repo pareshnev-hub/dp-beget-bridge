@@ -12,6 +12,7 @@ import { readPreparedRollbackIntent } from "./prepare-pre-exposure-rollback.mjs"
 import { readOriginalUnitViewRecord } from "./restore-original-unit-view.mjs";
 import { readCandidateRollbackStopRecord } from "./stop-candidate-for-rollback.mjs";
 import { readRegularFile } from "./verify-artifact.mjs";
+import { assertPreExposureRecoveryBoundary } from "./stage-pre-exposure-recovery.mjs";
 import { verifyStagedRecoveryPair } from "./verify-staged-recovery-pair.mjs";
 import { MANAGED_APP_UNITS } from "./stage-managed-unit-overrides.mjs";
 import { WRITER_GUARD_DROP_IN } from "./writer-boot-guard.mjs";
@@ -44,7 +45,7 @@ async function assertOriginalDropIns(unitDirectory) {
 // locally-healthy migration. Once the original view is restored, prove the
 // durable transition and then inspect the pair against the original view.
 // This is a read-only prerequisite for later live state replacement.
-export async function verifyOriginalUnitViewRestored({ planPath, stopRecordPath, unitRecordPath,
+export async function verifyOriginalUnitViewBoundary({ planPath, stopRecordPath, unitRecordPath,
   stateDatabase, unitDirectory = "/etc/systemd/system",
   admissionFlag = DEFAULT_ADMISSION_PAUSE_PATH,
   verifyPaused = verifyAdmissionPause, assertLedgerSafe = assertSessionHostRestartSafe,
@@ -92,21 +93,28 @@ export async function verifyOriginalUnitViewRestored({ planPath, stopRecordPath,
   await assertLedgerSafe(stateDatabase);
   await assertOriginalAppUnits(journal, unitDirectory);
   await assertOriginalDropIns(unitDirectory);
+  await assertPreExposureRecoveryBoundary({ ...boundary, journalPath: intent.journalPath,
+    transactionId: journal.transactionId, phase: journal.phase, unitDirectory,
+    inspectWriterGuards, managedWriterView: false });
+  if (JSON.stringify(await readOriginalUnitViewRecord(unitRecordPath)) !== JSON.stringify(restored)) {
+    throw new Error("Original unit view record changed during verification");
+  }
+  return { intent, journal, restored };
+}
+
+export async function verifyOriginalUnitViewRestored({ planPath, stopRecordPath, unitRecordPath,
+  stateDatabase, unitDirectory = "/etc/systemd/system",
+  inspectWriterGuards = inspectInstalledWriterGuards, ...boundary } = {}) {
+  const proof = { ...boundary, planPath, stopRecordPath, unitRecordPath, stateDatabase,
+    unitDirectory, inspectWriterGuards };
+  const { intent, journal } = await verifyOriginalUnitViewBoundary(proof);
   const pair = await verifyStagedRecoveryPair({ ...boundary, journalPath: intent.journalPath,
     outputDir: intent.stagedDirectory, unitDirectory, inspectWriterGuards,
     managedWriterView: false });
   if (JSON.stringify(pair.destinations) !== JSON.stringify(intent.destinations)) {
     throw new Error("Live recovery destinations changed since rollback intent");
   }
-  await assertOriginalAppUnits(journal, unitDirectory);
-  await assertOriginalDropIns(unitDirectory);
-  await verifyPaused({ flag: admissionFlag });
-  for (const unit of WRITERS) {
-    if (await getWriterState(unit) !== "inactive") throw new Error(`Writer restarted after unit recovery: ${unit}`);
-  }
-  if (JSON.stringify(await readOriginalUnitViewRecord(unitRecordPath)) !== JSON.stringify(restored)) {
-    throw new Error("Original unit view record changed during verification");
-  }
+  await verifyOriginalUnitViewBoundary(proof);
   return { transactionId: journal.transactionId, destinations: pair.destinations,
     stagedDirectory: intent.stagedDirectory, unitRecordPath };
 }

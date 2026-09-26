@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { copyFile, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +22,8 @@ import { verifyStagedRecoveryPair } from "../scripts/release/verify-staged-recov
 import { verifyOriginalUnitViewRestored } from "../scripts/release/verify-original-unit-view.mjs";
 import { readLiveStateCopyRecord, stageLiveStateRecovery, verifyPreparedLiveStateCopies } from
   "../scripts/release/stage-live-state-recovery.mjs";
+import { inspectLiveReplacementLedger, prepareLiveReplacementLedger } from
+  "../scripts/release/live-state-replacement-ledger.mjs";
 import { legacyActivityFixture, unitBackupFixture } from "./fixtures/unit-backup.js";
 
 async function fixture(t, phase = "locally-healthy") {
@@ -439,6 +441,47 @@ test("OPS-07: failed recovery copy retains copying intent and original live data
   assert.equal((await readLiveStateCopyRecord(recordPath)).phase, "copying");
   assert.deepEqual(await readFile(options.database), before);
   await assert.rejects(verifyPreparedLiveStateCopies({ ...options, recordPath }), /incomplete/);
+});
+
+test("OPS-07: replacement ledger identifies each interrupted rename without opening ingress", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  const root = path.dirname(options.outputDir);
+  const recordPath = path.join(root, "live-copy-record.json");
+  const ledgerPath = path.join(root, "replacement-ledger.json");
+  await stageLiveStateRecovery({ ...options, recordPath });
+  const ledger = await prepareLiveReplacementLedger({ ...options, recordPath, ledgerPath });
+  assert.deepEqual((await inspectLiveReplacementLedger({ ...options, ledgerPath })).positions,
+    ["pending", "pending"]);
+  await writeFile(ledgerPath, JSON.stringify({ ...ledger, phase: "replacing" }) + "\n");
+  await rename(ledger.targets[0].live, ledger.targets[0].parked);
+  assert.deepEqual((await inspectLiveReplacementLedger({ ...options, ledgerPath })).positions,
+    ["parked", "pending"]);
+  await rename(ledger.targets[0].copy, ledger.targets[0].live);
+  await rename(ledger.targets[1].live, ledger.targets[1].parked);
+  assert.deepEqual((await inspectLiveReplacementLedger({ ...options, ledgerPath })).positions,
+    ["installed", "parked"]);
+  await rename(ledger.targets[1].copy, ledger.targets[1].live);
+  assert.deepEqual((await inspectLiveReplacementLedger({ ...options, ledgerPath })).positions,
+    ["installed", "installed"]);
+  assert.match(await readFile(options.marker, "utf8"), /migration-incomplete/);
+});
+
+test("OPS-07: changed prepared database refuses replacement ledger inspection", {
+  skip: process.getuid?.() !== 0
+}, async t => {
+  const options = await originalUnitViewFixture(t);
+  await restoreOriginalUnitView({ ...options, reload: async () => {} });
+  const root = path.dirname(options.outputDir);
+  const recordPath = path.join(root, "live-copy-record.json");
+  const ledgerPath = path.join(root, "replacement-ledger.json");
+  const copies = await stageLiveStateRecovery({ ...options, recordPath });
+  await prepareLiveReplacementLedger({ ...options, recordPath, ledgerPath });
+  await writeFile(copies.databases[0].copy, "corrupt\n");
+  await assert.rejects(inspectLiveReplacementLedger({ ...options, ledgerPath }),
+    /Replacement copy changed/);
 });
 
 test("OPS-07: daemon-reload failure retains restoring intent and ingress marker", {
