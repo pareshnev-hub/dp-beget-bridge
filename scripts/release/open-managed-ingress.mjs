@@ -14,6 +14,7 @@ import { localReleaseHealthProbes, waitForAdmissionDrain } from "./wait-admissio
 import { DEFAULT_ADMISSION_PAUSE_PATH } from "../../packages/core/src/admission-gate.js";
 import { probePublicOAuthPaused } from "./public-admission-probe.mjs";
 import { assertWriterPermitAbsent } from "./writer-start-permit.mjs";
+import { WRITER_START_PERMIT } from "./writer-boot-guard.mjs";
 
 const exec = promisify(execFile);
 const INGRESS = ["dp-beget-oauth-proxy.socket", "dp-beget-oauth-proxy.service", "dp-beget-tunnel.service"];
@@ -38,6 +39,7 @@ async function assertPausedHealth() {
 // observe a real non-health public request denied by the R0004 admission gate.
 // This function has no CLI and cannot infer either claim from local health alone.
 export async function openManagedIngress({ journalPath, marker = PERSISTENT_MARKER,
+  permit = WRITER_START_PERMIT,
   admissionFlag = DEFAULT_ADMISSION_PAUSE_PATH, unitDirectory = "/etc/systemd/system",
   releaseRoot, versionDir, artifactSha256, assertRouteExclusive,
   assertPublicPaused = probePublicOAuthPaused,
@@ -60,7 +62,7 @@ export async function openManagedIngress({ journalPath, marker = PERSISTENT_MARK
   await verifyJournalUnitBackup(journal);
   await verifyJournalStateBundle(journal);
   await verifyMarker(marker);
-  await assertWriterPermitAbsent();
+  await assertWriterPermitAbsent(permit);
   await verifyAdmissionPause({ flag: admissionFlag });
   if ((await realpath(releaseRoot)) !== releaseRoot ||
       (await realpath(path.join(releaseRoot, "releases"))) !== path.join(releaseRoot, "releases") ||
@@ -71,7 +73,7 @@ export async function openManagedIngress({ journalPath, marker = PERSISTENT_MARK
     throw new Error("Unresolved candidate activation lock");
   } catch (error) { if (error.code !== "ENOENT") throw error; }
   await inspectGuard({ unitDirectory, marker });
-  await inspectManaged({ unitDirectory, releaseRoot });
+  await inspectManaged({ unitDirectory, releaseRoot, marker, permit });
   for (const unit of INGRESS) {
     if (await getState(unit) !== "inactive") throw new Error(`Ingress already active: ${unit}`);
   }

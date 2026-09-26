@@ -4,7 +4,8 @@ import { lstat, open, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { MANAGED_APP_UNITS, MANAGED_DROP_IN, managedUnitContent } from "./stage-managed-unit-overrides.mjs";
-import { WRITER_GUARD_DROP_IN, writerGuardContent } from "./writer-boot-guard.mjs";
+import { WRITER_GUARD_DROP_IN, WRITER_START_PERMIT, writerGuardContent } from "./writer-boot-guard.mjs";
+import { PERSISTENT_MARKER } from "./ingress-boot-guard.mjs";
 
 const exec = promisify(execFile);
 const UNIT_ROOT = "/etc/systemd/system";
@@ -32,6 +33,7 @@ function parse(output) {
 }
 
 export async function inspectInstalledManagedUnits({ unitDirectory = UNIT_ROOT, releaseRoot,
+  marker = PERSISTENT_MARKER, permit = WRITER_START_PERMIT,
   showUnit = systemctlShow } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to verify managed systemd units");
   const expectedContent = managedUnitContent(releaseRoot);
@@ -52,7 +54,7 @@ export async function inspectInstalledManagedUnits({ unitDirectory = UNIT_ROOT, 
     }
     const guardHandle = await open(guard, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
-      if ((await guardHandle.readFile("utf8")) !== writerGuardContent()) {
+      if ((await guardHandle.readFile("utf8")) !== writerGuardContent(marker, permit)) {
         throw new Error(`Changed writer guard for ${unit}`);
       }
     } finally { await guardHandle.close(); }
