@@ -11,7 +11,7 @@ import { verifyCleanInstallManifest } from "./clean-install-manifest.mjs";
 // Verify the inert destination after the source has moved. The workspace
 // still holds the signed archive and candidate manifest, but not its extracted
 // source. No version pointer or systemd state is changed here.
-export async function inspectPromotedCleanRelease({ journal, trustDir,
+export async function inspectPromotedCleanRelease({ journal, trustDir, allowPromotionLock = false,
   verify = verifyCleanInstallManifest } = {}) {
   if (process.getuid?.() !== 0 || !journal) {
     throw new Error("Root and clean-install journal are required to inspect promotion");
@@ -49,7 +49,18 @@ export async function inspectPromotedCleanRelease({ journal, trustDir,
       throw new Error("Promoted release directory is untrusted");
     }
   }
-  if (JSON.stringify((await readdir(journal.releaseRoot)).sort()) !== '["releases"]' ||
+  const rootEntries = (await readdir(journal.releaseRoot)).sort();
+  if (allowPromotionLock && rootEntries.includes(".promotion.lock")) {
+    const lock = path.join(journal.releaseRoot, ".promotion.lock");
+    const info = await lstat(lock);
+    if (!info.isDirectory() || info.uid !== 0 || info.gid !== 0 ||
+        (info.mode & 0o777) !== 0o700 || await realpath(lock) !== lock ||
+        (await readdir(lock)).length !== 0) {
+      throw new Error("Promoted release primitive lock is untrusted");
+    }
+  }
+  if (JSON.stringify(rootEntries) !== JSON.stringify(allowPromotionLock &&
+      rootEntries.includes(".promotion.lock") ? [".promotion.lock", "releases"] : ["releases"]) ||
       JSON.stringify((await readdir(releases)).sort()) !== JSON.stringify([versionDir])) {
     throw new Error("Promoted release root has unexpected contents");
   }

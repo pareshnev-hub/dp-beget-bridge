@@ -20,6 +20,7 @@ import { inspectInstalledCleanData } from "../scripts/release/clean-install-data
 import { installCleanReleaseRoot, inspectCreatedCleanReleaseRoot } from "../scripts/release/clean-install-release-root.mjs";
 import { promoteCleanInstall } from "../scripts/release/promote-clean-install.mjs";
 import { inspectPromotedCleanRelease } from "../scripts/release/inspect-promoted-clean-release.mjs";
+import { recoverCompletedCleanPromotion } from "../scripts/release/recover-completed-clean-promotion.mjs";
 import { recoverCompletedCleanReleaseRoot } from "../scripts/release/recover-completed-clean-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
@@ -331,11 +332,33 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
       inspectCreated: async () => identityEvidence,
       inspectData: input => inspectInstalledCleanData({ ...input,
         inspectWork: async () => workEvidence }) })).phase, "promotion-intent");
-    const promoted = await promoteCleanInstall({ journalPath, trustDir,
+    await assert.rejects(promoteCleanInstall({ journalPath, trustDir,
       configDir, unitDirectory, dataRoot,
       inspectCreated: async () => identityEvidence,
       inspectData: input => inspectInstalledCleanData({ ...input,
         inspectWork: async () => workEvidence }),
+      advance: async () => { throw new Error("interrupted before promotion journal write"); } }),
+    /interrupted before promotion journal write/);
+    assert.equal((await readCleanInstallJournal(journalPath)).phase, "promotion-intent");
+    const promotionLock = `${journalPath}.promotion-install.lock`;
+    assert.ok((await stat(promotionLock)).isFile());
+    const destination = path.join(args.releaseRoot, "releases", `${journal.version}-${journal.commit}`);
+    const promotedPackage = path.join(destination, "package.json");
+    const originalPackage = await readFile(promotedPackage);
+    const changedPackage = Buffer.from(originalPackage);
+    changedPackage[0] ^= 1;
+    await writeFile(promotedPackage, changedPackage);
+    const recoverPromotion = options => recoverCompletedCleanPromotion({ journalPath,
+      trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }), ...options });
+    await assert.rejects(recoverPromotion(), /differs from signed archive/);
+    assert.ok((await stat(promotionLock)).isFile());
+    await writeFile(promotedPackage, originalPackage);
+    const primitiveLock = path.join(args.releaseRoot, ".promotion.lock");
+    await mkdir(primitiveLock, { mode: 0o700 });
+    const promoted = await recoverPromotion({
       advance: options => advanceCleanInstallJournal({ ...options,
         inspectCreated: async () => identityEvidence,
         inspectData: input => inspectInstalledCleanData({ ...input,
@@ -346,6 +369,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
       trustDir })).release, "signed-inert");
     await assert.rejects(stat(path.join(args.releaseRoot, "current")), /ENOENT/);
     await assert.rejects(stat(`${journalPath}.promotion-install.lock`), /ENOENT/);
+    await assert.rejects(stat(primitiveLock), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
