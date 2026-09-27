@@ -6,11 +6,13 @@ import { verifyCleanInstallManifest } from "./clean-install-manifest.mjs";
 import { inspectCleanInstallIdentityPlan } from "./clean-install-identity-plan.mjs";
 import { inspectCreatedCleanIdentities } from "./inspect-clean-install-created-identities.mjs";
 import { inspectInstalledCleanConfig } from "./inspect-installed-clean-config.mjs";
+import { inspectInstalledCleanUnits } from "./inspect-installed-clean-units.mjs";
+import { inspectCleanInstallUnitTargets } from "./preflight-clean-install.mjs";
 
 const SHA = /^[0-9a-f]{64}$/;
 // Later phases must be added together with real boundary verifiers.
 const PHASES = ["prepared", "identities-intent", "identities-ready",
-  "config-intent", "config-ready"];
+  "config-intent", "config-ready", "units-intent", "units-ready"];
 const FORMAT = "dp-beget-clean-install-journal-v1";
 
 async function privateParent(filename) {
@@ -93,7 +95,10 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
   inspectPlan = inspectCleanInstallIdentityPlan,
   inspectCreated = inspectCreatedCleanIdentities,
   inspectConfig = inspectInstalledCleanConfig,
-  configDir = "/etc/dp-beget-bridge", trustDir } = {}) {
+  inspectUnitTargets = inspectCleanInstallUnitTargets,
+  inspectUnits = inspectInstalledCleanUnits,
+  configDir = "/etc/dp-beget-bridge",
+  unitDirectory = "/etc/systemd/system", trustDir } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to advance a clean-install journal");
   const parent = await privateParent(journalPath);
   const lock = `${journalPath}.lock`;
@@ -125,17 +130,33 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
         throw new Error("Identity installation has an unresolved lock");
       } catch (error) { if (error.code !== "ENOENT") throw error; }
     }
+    if (nextPhase === "units-intent") {
+      try {
+        await lstat(`${journalPath}.config-install.lock`);
+        throw new Error("Configuration installation has an unresolved lock");
+      } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
     if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("identities-ready")) {
       const identities = await inspectCreated({ plan: current.identityPlan,
         transactionId: current.transactionId });
       if (identities?.identities !== "journal-bound") {
         throw new Error("Created clean-install identities are unproven");
       }
-      if (nextPhase === "config-ready" &&
-          (await inspectConfig({ configDir, workspace: current.workspace,
-            manifestSha256: current.manifestSha256, trustDir,
-            identityPlan: current.identityPlan, identities }))?.config !== "bound-private") {
-        throw new Error("Installed clean-install configuration is unproven");
+      if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("config-ready")) {
+        if ((await inspectConfig({ configDir, workspace: current.workspace,
+          manifestSha256: current.manifestSha256, trustDir,
+          identityPlan: current.identityPlan, identities }))?.config !== "bound-private") {
+          throw new Error("Installed clean-install configuration is unproven");
+        }
+      }
+      if (nextPhase === "units-intent" &&
+          (await inspectUnitTargets({ unitDirectory }))?.units !== "unoccupied") {
+        throw new Error("Clean-install unit targets are occupied");
+      }
+      if (nextPhase === "units-ready" &&
+          (await inspectUnits({ unitDirectory, workspace: current.workspace,
+            manifestSha256: current.manifestSha256, trustDir }))?.units !== "bound-files") {
+        throw new Error("Installed clean-install units are unproven");
       }
     }
     const next = validate({ ...current, phase: nextPhase });

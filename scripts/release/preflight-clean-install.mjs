@@ -11,7 +11,7 @@ import { DEFAULT_TRUST_DIR, loadPinnedReleaseKey } from "./pin-release-key.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
 const exec = promisify(execFile);
-const UNITS = ["dp-beget-session-host.service", "dp-beget-agent.service", "dp-beget-mcp.service",
+export const CLEAN_INSTALL_UNIT_NAMES = ["dp-beget-session-host.service", "dp-beget-agent.service", "dp-beget-mcp.service",
   "dp-beget-mcp-oauth-spike.service", "dp-beget-tunnel.service", "dp-beget-oauth-proxy.socket",
   "dp-beget-oauth-proxy.service"];
 const LEGACY_PATHS = ["/opt/dp-beget-bridge", "/etc/dp-beget-bridge",
@@ -83,16 +83,23 @@ export async function inspectCleanInstallTargets({ releaseRoot, workspaceParent,
   }
   await checkParent(releaseRoot);
   await checkParent(path.join(workspaceParent, "candidate-workspace"));
-  await checkParent(path.join(unitDirectory, "reserved-unit"));
   await ensureMissing(releaseRoot);
-  for (const unit of UNITS) {
+  await inspectCleanInstallUnitTargets({ unitDirectory, getUnit, ensureMissing, checkParent });
+  for (const filename of LEGACY_PATHS) await ensureMissing(filename);
+  return { units: "unoccupied", legacyPaths: "absent", releaseRoot: "absent" };
+}
+
+export async function inspectCleanInstallUnitTargets({ unitDirectory = "/etc/systemd/system",
+  getUnit = showUnit, ensureMissing = assertMissing,
+  checkParent = assertRootOwnedParent } = {}) {
+  await checkParent(path.join(unitDirectory, "reserved-unit"));
+  for (const unit of CLEAN_INSTALL_UNIT_NAMES) {
     if (await getUnit(unit) !== "LoadState=not-found\n") throw new Error(`Install unit already exists: ${unit}`);
     // A fragment or drop-in can exist on disk before systemd daemon-reload.
     await ensureMissing(path.join(unitDirectory, unit));
     await ensureMissing(path.join(unitDirectory, `${unit}.d`));
   }
-  for (const filename of LEGACY_PATHS) await ensureMissing(filename);
-  return { units: "unoccupied", legacyPaths: "absent", releaseRoot: "absent" };
+  return { units: "unoccupied" };
 }
 
 // Read-only preflight for an already routed, clean Ubuntu host. No proxy
