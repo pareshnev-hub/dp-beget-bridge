@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, readdir, realpath } from "node:fs/promises";
+import { lstat, readdir, readlink, realpath } from "node:fs/promises";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { inspectTar } from "./extract-verified-artifact.mjs";
@@ -11,7 +11,8 @@ import { verifyCleanInstallManifest } from "./clean-install-manifest.mjs";
 // Verify the inert destination after the source has moved. The workspace
 // still holds the signed archive and candidate manifest, but not its extracted
 // source. No version pointer or systemd state is changed here.
-export async function inspectPromotedCleanRelease({ journal, trustDir, allowPromotionLock = false,
+export async function inspectPromotedCleanRelease({ journal, trustDir,
+  allowPromotionLock = false, requireCurrent = false,
   verify = verifyCleanInstallManifest } = {}) {
   if (process.getuid?.() !== 0 || !journal) {
     throw new Error("Root and clean-install journal are required to inspect promotion");
@@ -50,6 +51,13 @@ export async function inspectPromotedCleanRelease({ journal, trustDir, allowProm
     }
   }
   const rootEntries = (await readdir(journal.releaseRoot)).sort();
+  if (requireCurrent) {
+    const pointer = path.join(journal.releaseRoot, "current");
+    if (!(await lstat(pointer)).isSymbolicLink() ||
+        await readlink(pointer) !== `releases/${versionDir}`) {
+      throw new Error("Clean-install current pointer is not the signed release");
+    }
+  }
   if (allowPromotionLock && rootEntries.includes(".promotion.lock")) {
     const lock = path.join(journal.releaseRoot, ".promotion.lock");
     const info = await lstat(lock);
@@ -59,8 +67,12 @@ export async function inspectPromotedCleanRelease({ journal, trustDir, allowProm
       throw new Error("Promoted release primitive lock is untrusted");
     }
   }
-  if (JSON.stringify(rootEntries) !== JSON.stringify(allowPromotionLock &&
-      rootEntries.includes(".promotion.lock") ? [".promotion.lock", "releases"] : ["releases"]) ||
+  const expectedRoot = ["releases"];
+  if (allowPromotionLock && rootEntries.includes(".promotion.lock")) {
+    expectedRoot.push(".promotion.lock");
+  }
+  if (requireCurrent) expectedRoot.push("current");
+  if (JSON.stringify(rootEntries) !== JSON.stringify(expectedRoot.sort()) ||
       JSON.stringify((await readdir(releases)).sort()) !== JSON.stringify([versionDir])) {
     throw new Error("Promoted release root has unexpected contents");
   }
