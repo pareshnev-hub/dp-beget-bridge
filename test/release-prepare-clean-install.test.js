@@ -14,6 +14,7 @@ import { installCleanIdentities } from "../scripts/release/install-clean-identit
 import { installCleanConfig } from "../scripts/release/install-clean-config.mjs";
 import { inspectInstalledCleanConfig } from "../scripts/release/inspect-installed-clean-config.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
+import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
 import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
 import { prepareCleanInstall } from "../scripts/release/prepare-clean-install.mjs";
 import { prepareRelease } from "../scripts/release/prepare-release.mjs";
@@ -115,6 +116,47 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
       identityPlan: journal.identityPlan, identities: identityEvidence })).config, "bound-private");
     await assert.rejects(stat(`${journalPath}.config-install.lock`), /ENOENT/);
     await assert.rejects(installCleanConfig({ journalPath, trustDir, configDir }), /journaled intent/);
+    const configLock = `${journalPath}.config-install.lock`;
+    const installedAgent = path.join(configDir, "agent.env");
+    const originalAgent = await readFile(installedAgent);
+    await writeFile(configLock, `${journal.transactionId}\n`, { mode: 0o600 });
+    await writeFile(installedAgent, Buffer.concat([originalAgent, Buffer.from("DP_LOG_LEVEL=debug\n")]));
+    await assert.rejects(recoverCompletedCleanConfig({ journalPath, trustDir, configDir,
+      inspectCreated: async () => identityEvidence }), /differs/);
+    assert.ok((await stat(configLock)).isFile());
+    await writeFile(installedAgent, originalAgent);
+    assert.equal((await recoverCompletedCleanConfig({ journalPath, trustDir, configDir,
+      inspectCreated: async () => identityEvidence })).phase, "config-ready");
+    await assert.rejects(stat(configLock), /ENOENT/);
+
+    const interruptedPath = path.join(workspaceParent, "interrupted-config-journal.json");
+    const interrupted = await startCleanInstallJournal({ journalPath: interruptedPath,
+      workspace: args.workspace, manifestSha256: result.manifestSha256,
+      releaseRoot: args.releaseRoot, trustDir });
+    await advanceCleanInstallJournal({ journalPath: interruptedPath,
+      transactionId: interrupted.transactionId, expectedPhase: "prepared",
+      nextPhase: "identities-intent", trustDir });
+    await installCleanIdentities({ journalPath: interruptedPath, trustDir,
+      inspectAvailable: async () => {}, addGroup: async () => {}, addUser: async () => {},
+      advance: options => advanceCleanInstallJournal({ ...options,
+        inspectCreated: async () => identityEvidence }) });
+    await advanceCleanInstallJournal({ journalPath: interruptedPath,
+      transactionId: interrupted.transactionId, expectedPhase: "identities-ready",
+      nextPhase: "config-intent", trustDir,
+      inspectCreated: async () => identityEvidence });
+    const interruptedDir = path.join(workspaceParent, "interrupted-config");
+    await assert.rejects(installCleanConfig({ journalPath: interruptedPath, trustDir,
+      configDir: interruptedDir, inspectCreated: async () => identityEvidence,
+      advance: async () => { throw new Error("interrupted before config journal write"); } }),
+    /interrupted before config journal write/);
+    assert.equal((await readCleanInstallJournal(interruptedPath)).phase, "config-intent");
+    assert.ok((await stat(`${interruptedPath}.config-install.lock`)).isFile());
+    assert.equal((await recoverCompletedCleanConfig({ journalPath: interruptedPath,
+      trustDir, configDir: interruptedDir,
+      inspectCreated: async () => identityEvidence,
+      advance: options => advanceCleanInstallJournal({ ...options,
+        inspectCreated: async () => identityEvidence }) })).phase, "config-ready");
+    await assert.rejects(stat(`${interruptedPath}.config-install.lock`), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
