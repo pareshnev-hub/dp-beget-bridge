@@ -12,6 +12,7 @@ import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
 import { inspectReleasePreparationSpace } from "../scripts/release/inspect-release-preparation-space.mjs";
 import { prepareRelease } from "../scripts/release/prepare-release.mjs";
 import { promotePreparedRelease } from "../scripts/release/promote-prepared-release.mjs";
+import { inspectPromotedCleanRelease } from "../scripts/release/inspect-promoted-clean-release.mjs";
 import { switchVersion } from "../scripts/release/version-pointer.mjs";
 
 const exec = promisify(execFile);
@@ -68,6 +69,19 @@ test("OPS-05: root preparation enforces the separately pinned key before staging
   assert.equal(promoted.versionDir, `${result.version}-${commit}`);
   assert.equal((await stat(promoted.directory)).mode & 0o777, 0o755);
   assert.equal((await stat(path.join(promoted.directory, "package.json"))).mode & 0o777, 0o644);
+  const promotedJournal = { workspace, releaseRoot, artifactSha256: result.sha256,
+    manifestSha256: "a".repeat(64), version: result.version, commit };
+  const inspectPromotion = () => inspectPromotedCleanRelease({ journal: promotedJournal,
+    trustDir, verify: async () => ({ artifactSha256: result.sha256,
+      version: result.version, commit }) });
+  assert.equal((await inspectPromotion()).release, "signed-inert");
+  const installedPackage = path.join(promoted.directory, "package.json");
+  const originalPackage = await readFile(installedPackage);
+  const alteredPackage = Buffer.from(originalPackage);
+  alteredPackage[0] ^= 1;
+  await writeFile(installedPackage, alteredPackage);
+  await assert.rejects(inspectPromotion(), /differs from signed archive/);
+  await writeFile(installedPackage, originalPackage);
   const switched = await switchVersion({ releaseRoot, versionDir: promoted.versionDir, checkHealthy: async () => {} });
   assert.equal(switched.current, `releases/${promoted.versionDir}`);
   await assert.rejects(promotePreparedRelease({ workspace, releaseRoot, trustDir }));
