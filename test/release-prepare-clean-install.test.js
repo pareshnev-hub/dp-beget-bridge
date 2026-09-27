@@ -23,6 +23,8 @@ import { inspectPromotedCleanRelease } from "../scripts/release/inspect-promoted
 import { recoverCompletedCleanPromotion } from "../scripts/release/recover-completed-clean-promotion.mjs";
 import { installCleanPointer } from "../scripts/release/install-clean-pointer.mjs";
 import { recoverCompletedCleanPointer } from "../scripts/release/recover-completed-clean-pointer.mjs";
+import { inspectCleanSystemdBoundary } from "../scripts/release/inspect-clean-systemd-boundary.mjs";
+import { CLEAN_INSTALL_UNIT_NAMES } from "../scripts/release/preflight-clean-install.mjs";
 import { recoverCompletedCleanReleaseRoot } from "../scripts/release/recover-completed-clean-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
@@ -421,6 +423,28 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     assert.equal((await inspectPromotedCleanRelease({ journal, trustDir,
       requireCurrent: true })).release, "signed-inert");
     await assert.rejects(stat(`${journalPath}.pointer-install.lock`), /ENOENT/);
+    const systemdState = (unit, active = "inactive") => {
+      const index = CLEAN_INSTALL_UNIT_NAMES.indexOf(unit);
+      const loaded = index < 3;
+      const user = [journal.identityPlan.workUser, journal.identityPlan.agentUser,
+        journal.identityPlan.mcpUser][index] || "";
+      const group = [journal.identityPlan.ipcGroup, journal.identityPlan.agentUser,
+        journal.identityPlan.mcpUser][index] || "";
+      return `LoadState=${loaded ? "loaded" : "not-found"}\n` +
+        `FragmentPath=${loaded ? path.join(unitDirectory, unit) : ""}\n` +
+        `DropInPaths=\nActiveState=${active}\n` +
+        `UnitFileState=${loaded ? "disabled" : ""}\n` +
+        `WorkingDirectory=${loaded ? current : ""}\nUser=${user}\nGroup=${group}\n` +
+        `KillMode=${index === 0 ? "process" : "control-group"}\n`;
+    };
+    const inspectSystemd = showUnit => inspectCleanSystemdBoundary({ journalPath,
+      trustDir, unitDirectory, showUnit,
+      inspectListeners: async () => ({ directPorts: "unoccupied" }) });
+    assert.deepEqual(await inspectSystemd(unit => systemdState(unit)), {
+      localSystemd: "inactive-bound", directPorts: "unoccupied", publicIngress: "unproven"
+    });
+    await assert.rejects(inspectSystemd(unit => systemdState(unit,
+      unit === "dp-beget-agent.service" ? "active" : "inactive")), /active or overridden/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
