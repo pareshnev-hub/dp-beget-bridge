@@ -22,6 +22,7 @@ import { promoteCleanInstall } from "../scripts/release/promote-clean-install.mj
 import { inspectPromotedCleanRelease } from "../scripts/release/inspect-promoted-clean-release.mjs";
 import { recoverCompletedCleanPromotion } from "../scripts/release/recover-completed-clean-promotion.mjs";
 import { installCleanPointer } from "../scripts/release/install-clean-pointer.mjs";
+import { recoverCompletedCleanPointer } from "../scripts/release/recover-completed-clean-pointer.mjs";
 import { recoverCompletedCleanReleaseRoot } from "../scripts/release/recover-completed-clean-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
@@ -389,11 +390,28 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
       inspectCreated: async () => identityEvidence,
       inspectData: input => inspectInstalledCleanData({ ...input,
         inspectWork: async () => workEvidence }) })).phase, "pointer-intent");
-    const pointer = await installCleanPointer({ journalPath, trustDir,
+    await assert.rejects(installCleanPointer({ journalPath, trustDir,
       configDir, unitDirectory, dataRoot,
       inspectCreated: async () => identityEvidence,
       inspectData: input => inspectInstalledCleanData({ ...input,
         inspectWork: async () => workEvidence }),
+      advance: async () => { throw new Error("interrupted before pointer journal write"); } }),
+    /interrupted before pointer journal write/);
+    assert.equal((await readCleanInstallJournal(journalPath)).phase, "pointer-intent");
+    const pointerLock = `${journalPath}.pointer-install.lock`;
+    assert.ok((await stat(pointerLock)).isFile());
+    const recoverPointer = options => recoverCompletedCleanPointer({ journalPath,
+      trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }), ...options });
+    await rm(current);
+    await symlink("releases/other", current);
+    await assert.rejects(recoverPointer(), /not the signed release/);
+    assert.ok((await stat(pointerLock)).isFile());
+    await rm(current);
+    await symlink(`releases/${journal.version}-${journal.commit}`, current);
+    const pointer = await recoverPointer({
       advance: options => advanceCleanInstallJournal({ ...options,
         inspectCreated: async () => identityEvidence,
         inspectData: input => inspectInstalledCleanData({ ...input,
