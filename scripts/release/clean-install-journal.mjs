@@ -17,7 +17,7 @@ const SHA = /^[0-9a-f]{64}$/;
 const PHASES = ["prepared", "identities-intent", "identities-ready",
   "config-intent", "config-ready", "units-intent", "units-ready",
   "data-intent", "data-ready", "release-root-intent", "release-root-ready",
-  "promotion-intent", "promotion-ready"];
+  "promotion-intent", "promotion-ready", "pointer-intent", "pointer-ready"];
 const FORMAT = "dp-beget-clean-install-journal-v1";
 
 async function privateParent(filename) {
@@ -164,6 +164,12 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
         throw new Error("Version-root installation has an unresolved lock");
       } catch (error) { if (error.code !== "ENOENT") throw error; }
     }
+    if (nextPhase === "pointer-intent") {
+      try {
+        await lstat(`${journalPath}.promotion-install.lock`);
+        throw new Error("Release promotion has an unresolved lock");
+      } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
     if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("identities-ready")) {
       const identities = await inspectCreated({ plan: current.identityPlan,
         transactionId: current.transactionId });
@@ -205,9 +211,14 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
           (await inspectReleaseRoot({ releaseRoot: current.releaseRoot }))?.releaseRoot !== "private-empty") {
         throw new Error("Clean-install version root is unproven");
       }
-      if (nextPhase === "promotion-ready" &&
+      if (["promotion-ready", "pointer-intent"].includes(nextPhase) &&
           (await inspectPromoted({ journal: current, trustDir }))?.release !== "signed-inert") {
         throw new Error("Promoted clean-install release is unproven");
+      }
+      if (nextPhase === "pointer-ready" &&
+          (await inspectPromoted({ journal: current, trustDir,
+            requireCurrent: true }))?.release !== "signed-inert") {
+        throw new Error("Clean-install current pointer is unproven");
       }
     }
     const next = validate({ ...current, phase: nextPhase });
