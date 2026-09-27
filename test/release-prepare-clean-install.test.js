@@ -345,7 +345,9 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     const destination = path.join(args.releaseRoot, "releases", `${journal.version}-${journal.commit}`);
     const promotedPackage = path.join(destination, "package.json");
     const originalPackage = await readFile(promotedPackage);
-    await writeFile(promotedPackage, Buffer.concat([originalPackage, Buffer.from(" ")]));
+    const changedPackage = Buffer.from(originalPackage);
+    changedPackage[0] ^= 1;
+    await writeFile(promotedPackage, changedPackage);
     const recoverPromotion = options => recoverCompletedCleanPromotion({ journalPath,
       trustDir, configDir, unitDirectory, dataRoot,
       inspectCreated: async () => identityEvidence,
