@@ -18,6 +18,7 @@ import { inspectInstalledCleanConfig } from "../scripts/release/inspect-installe
 import { inspectInstalledCleanUnits } from "../scripts/release/inspect-installed-clean-units.mjs";
 import { inspectInstalledCleanData } from "../scripts/release/clean-install-data-directories.mjs";
 import { installCleanReleaseRoot, inspectCreatedCleanReleaseRoot } from "../scripts/release/clean-install-release-root.mjs";
+import { recoverCompletedCleanReleaseRoot } from "../scripts/release/recover-completed-clean-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
 import { recoverCompletedCleanUnits } from "../scripts/release/recover-completed-clean-units.mjs";
@@ -293,15 +294,34 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
       inspectCreated: async () => identityEvidence,
       inspectData: input => inspectInstalledCleanData({ ...input,
         inspectWork: async () => workEvidence }) })).phase, "release-root-intent");
-    assert.equal((await installCleanReleaseRoot({ journalPath, trustDir,
+    await assert.rejects(installCleanReleaseRoot({ journalPath, trustDir,
       configDir, unitDirectory, dataRoot,
+      advance: async () => { throw new Error("interrupted before root journal write"); } }),
+    /interrupted before root journal write/);
+    assert.equal((await readCleanInstallJournal(journalPath)).phase, "release-root-intent");
+    const rootLock = `${journalPath}.release-root-install.lock`;
+    assert.ok((await stat(rootLock)).isFile());
+    const recoverRoot = options => recoverCompletedCleanReleaseRoot({
+      journalPath, trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }), ...options });
+    assert.equal((await recoverRoot({
       advance: options => advanceCleanInstallJournal({ ...options,
         inspectCreated: async () => identityEvidence,
         inspectData: input => inspectInstalledCleanData({ ...input,
           inspectWork: async () => workEvidence }) }) })).phase, "release-root-ready");
     assert.equal((await inspectCreatedCleanReleaseRoot({
       releaseRoot: args.releaseRoot })).releaseRoot, "private-empty");
-    await assert.rejects(stat(`${journalPath}.release-root-install.lock`), /ENOENT/);
+    await assert.rejects(stat(rootLock), /ENOENT/);
+    await writeFile(rootLock, `${journal.transactionId}\n`, { mode: 0o600 });
+    const unexpected = path.join(args.releaseRoot, "releases", "unexpected");
+    await writeFile(unexpected, "x");
+    await assert.rejects(recoverRoot(), /unexpected contents/);
+    assert.ok((await stat(rootLock)).isFile());
+    await rm(unexpected);
+    assert.equal((await recoverRoot()).phase, "release-root-ready");
+    await assert.rejects(stat(rootLock), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
