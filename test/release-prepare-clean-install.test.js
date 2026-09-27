@@ -13,8 +13,10 @@ import { advanceCleanInstallJournal, readCleanInstallJournal,
 import { installCleanIdentities } from "../scripts/release/install-clean-identities.mjs";
 import { installCleanConfig } from "../scripts/release/install-clean-config.mjs";
 import { installCleanUnits } from "../scripts/release/install-clean-units.mjs";
+import { installCleanData } from "../scripts/release/install-clean-data.mjs";
 import { inspectInstalledCleanConfig } from "../scripts/release/inspect-installed-clean-config.mjs";
 import { inspectInstalledCleanUnits } from "../scripts/release/inspect-installed-clean-units.mjs";
+import { inspectInstalledCleanData } from "../scripts/release/clean-install-data-directories.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
 import { recoverCompletedCleanUnits } from "../scripts/release/recover-completed-clean-units.mjs";
@@ -100,7 +102,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     "user:dp-mcp:/var/lib/dp-beget-bridge-mcp"]);
   await assert.rejects(stat(`${journalPath}.identity-install.lock`), /ENOENT/);
   const identityEvidence = { identities: "journal-bound", ipcGid: 1,
-    agentGid: 2, mcpGid: 3 };
+    agentUid: 5, agentGid: 2, mcpUid: 6, mcpGid: 3 };
   const configDir = path.join(workspaceParent, "installed-config");
   if (process.env.DP_TEST_REAL_CHOWN === "1") {
     assert.equal((await advanceCleanInstallJournal({ journalPath,
@@ -217,6 +219,30 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
       advance: options => advanceCleanInstallJournal({ ...options,
         inspectCreated: async () => identityEvidence }) })).phase, "units-ready");
     await assert.rejects(stat(`${interruptedPath}.unit-install.lock`), /ENOENT/);
+
+    const dataRoot = path.join(workspaceParent, "installed-data-parent");
+    await mkdir(dataRoot, { mode: 0o755 });
+    const workEvidence = { uid: 4, gid: 4 };
+    assert.equal((await advanceCleanInstallJournal({ journalPath,
+      transactionId: journal.transactionId, expectedPhase: "units-ready",
+      nextPhase: "data-intent", trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence })).phase, "data-intent");
+    assert.equal((await installCleanData({ journalPath, trustDir,
+      configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectWork: async () => workEvidence,
+      advance: options => advanceCleanInstallJournal({ ...options,
+        inspectCreated: async () => identityEvidence,
+        inspectData: input => inspectInstalledCleanData({ ...input,
+          inspectWork: async () => workEvidence }) }) })).phase, "data-ready");
+    const workData = path.join(dataRoot, "dp-beget-bridge");
+    assert.equal((await stat(workData)).uid, workEvidence.uid);
+    assert.equal((await stat(path.join(workData, "tmux"))).mode & 0o777, 0o700);
+    await assert.rejects(stat(`${journalPath}.data-install.lock`), /ENOENT/);
+    await writeFile(path.join(dataRoot, "dp-beget-bridge-agent", "unexpected"), "x");
+    await assert.rejects(inspectInstalledCleanData({ dataRoot,
+      plan: journal.identityPlan, identities: identityEvidence,
+      inspectWork: async () => workEvidence }), /untrusted/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
