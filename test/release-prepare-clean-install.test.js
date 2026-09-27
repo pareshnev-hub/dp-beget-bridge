@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -370,6 +370,18 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     await assert.rejects(stat(path.join(args.releaseRoot, "current")), /ENOENT/);
     await assert.rejects(stat(`${journalPath}.promotion-install.lock`), /ENOENT/);
     await assert.rejects(stat(primitiveLock), /ENOENT/);
+    await assert.rejects(inspectPromotedCleanRelease({ journal, trustDir,
+      requireCurrent: true }), /ENOENT/);
+    const current = path.join(args.releaseRoot, "current");
+    await symlink(`releases/${journal.version}-${journal.commit}`, current);
+    assert.equal((await inspectPromotedCleanRelease({ journal, trustDir,
+      requireCurrent: true })).release, "signed-inert");
+    await assert.rejects(inspectPromotedCleanRelease({ journal, trustDir }), /unexpected contents/);
+    await rm(current);
+    await symlink("releases/other", current);
+    await assert.rejects(inspectPromotedCleanRelease({ journal, trustDir,
+      requireCurrent: true }), /not the signed release/);
+    await rm(current);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
