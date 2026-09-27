@@ -17,6 +17,7 @@ import { installCleanData } from "../scripts/release/install-clean-data.mjs";
 import { inspectInstalledCleanConfig } from "../scripts/release/inspect-installed-clean-config.mjs";
 import { inspectInstalledCleanUnits } from "../scripts/release/inspect-installed-clean-units.mjs";
 import { inspectInstalledCleanData } from "../scripts/release/clean-install-data-directories.mjs";
+import { installCleanReleaseRoot, inspectCreatedCleanReleaseRoot } from "../scripts/release/clean-install-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
 import { recoverCompletedCleanUnits } from "../scripts/release/recover-completed-clean-units.mjs";
@@ -51,7 +52,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
   const sha256 = JSON.parse(await readFile(built.manifest, "utf8")).artifact.sha256;
   let preflights = 0;
   const args = { ...built, signature, trustDir, workspaceParent,
-    workspace: path.join(workspaceParent, "new-candidate"), releaseRoot: "/opt/dp-versions",
+    workspace: path.join(workspaceParent, "new-candidate"), releaseRoot: path.join(base, "version-root"),
     domain: "bridge.example.com", expectedIp: "1.1.1.1", allowedRoot: "/srv/operator",
     workUser: "operator", workGroup: "operator", agentUser: "dp-agent",
     mcpUser: "dp-mcp", ipcGroup: "dp-ipc",
@@ -69,7 +70,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     trustDir, manifestSha256: result.manifestSha256 })).files, 6);
   assert.doesNotMatch(JSON.stringify(result), /DP_AGENT_TOKEN|DP_MCP_ACCESS_TOKEN/);
   const unit = path.join(args.workspace, "clean-install", "units", "dp-beget-agent.service");
-  assert.match(await readFile(unit, "utf8"), /WorkingDirectory=\/opt\/dp-versions\/current\n/);
+  assert.ok((await readFile(unit, "utf8")).includes(`WorkingDirectory=${args.releaseRoot}/current\n`));
   assert.equal((await stat(unit)).mode & 0o777, 0o600);
   const journalPath = path.join(workspaceParent, "clean-install-journal.json");
   const journal = await startCleanInstallJournal({ journalPath, workspace: args.workspace,
@@ -78,7 +79,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
   assert.deepEqual(journal.identityPlan, {
     workUser: "operator", workGroup: "operator", ipcGroup: "dp-ipc",
     agentUser: "dp-agent", mcpUser: "dp-mcp", allowedRoot: "/srv/operator",
-    releaseRoot: "/opt/dp-versions", domain: "bridge.example.com"
+    releaseRoot: args.releaseRoot, domain: "bridge.example.com"
   });
   assert.doesNotMatch(JSON.stringify(journal), /DP_AGENT_TOKEN|DP_MCP_ACCESS_TOKEN/);
   assert.equal((await stat(journalPath)).mode & 0o777, 0o600);
@@ -285,6 +286,22 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
         inspectData: input => inspectInstalledCleanData({ ...input,
           inspectWork: async () => workEvidence }) }) })).phase, "data-ready");
     await assert.rejects(stat(`${interruptedPath}.data-install.lock`), /ENOENT/);
+
+    assert.equal((await advanceCleanInstallJournal({ journalPath,
+      transactionId: journal.transactionId, expectedPhase: "data-ready",
+      nextPhase: "release-root-intent", trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }) })).phase, "release-root-intent");
+    assert.equal((await installCleanReleaseRoot({ journalPath, trustDir,
+      configDir, unitDirectory, dataRoot,
+      advance: options => advanceCleanInstallJournal({ ...options,
+        inspectCreated: async () => identityEvidence,
+        inspectData: input => inspectInstalledCleanData({ ...input,
+          inspectWork: async () => workEvidence }) }) })).phase, "release-root-ready");
+    assert.equal((await inspectCreatedCleanReleaseRoot({
+      releaseRoot: args.releaseRoot })).releaseRoot, "private-empty");
+    await assert.rejects(stat(`${journalPath}.release-root-install.lock`), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,

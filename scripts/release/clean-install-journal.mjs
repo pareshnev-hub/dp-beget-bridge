@@ -9,12 +9,13 @@ import { inspectInstalledCleanConfig } from "./inspect-installed-clean-config.mj
 import { inspectInstalledCleanUnits } from "./inspect-installed-clean-units.mjs";
 import { inspectCleanInstallUnitTargets } from "./preflight-clean-install.mjs";
 import { inspectCleanDataTargets, inspectInstalledCleanData } from "./clean-install-data-directories.mjs";
+import { inspectCleanReleaseRootTarget, inspectCreatedCleanReleaseRoot } from "./clean-install-release-root.mjs";
 
 const SHA = /^[0-9a-f]{64}$/;
 // Later phases must be added together with real boundary verifiers.
 const PHASES = ["prepared", "identities-intent", "identities-ready",
   "config-intent", "config-ready", "units-intent", "units-ready",
-  "data-intent", "data-ready"];
+  "data-intent", "data-ready", "release-root-intent", "release-root-ready"];
 const FORMAT = "dp-beget-clean-install-journal-v1";
 
 async function privateParent(filename) {
@@ -101,6 +102,8 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
   inspectUnits = inspectInstalledCleanUnits,
   inspectDataTargets = inspectCleanDataTargets,
   inspectData = inspectInstalledCleanData,
+  inspectReleaseRootTarget = inspectCleanReleaseRootTarget,
+  inspectReleaseRoot = inspectCreatedCleanReleaseRoot,
   configDir = "/etc/dp-beget-bridge",
   unitDirectory = "/etc/systemd/system", dataRoot = "/var/lib", trustDir } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to advance a clean-install journal");
@@ -146,6 +149,12 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
         throw new Error("Unit installation has an unresolved lock");
       } catch (error) { if (error.code !== "ENOENT") throw error; }
     }
+    if (nextPhase === "release-root-intent") {
+      try {
+        await lstat(`${journalPath}.data-install.lock`);
+        throw new Error("Data installation has an unresolved lock");
+      } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
     if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("identities-ready")) {
       const identities = await inspectCreated({ plan: current.identityPlan,
         transactionId: current.transactionId });
@@ -173,10 +182,19 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
           (await inspectDataTargets({ dataRoot }))?.data !== "unoccupied") {
         throw new Error("Clean-install data targets are occupied");
       }
-      if (nextPhase === "data-ready" &&
-          (await inspectData({ dataRoot, plan: current.identityPlan,
-            identities }))?.data !== "private-owned") {
-        throw new Error("Installed clean-install data directories are unproven");
+      if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("data-ready")) {
+        if ((await inspectData({ dataRoot, plan: current.identityPlan,
+          identities }))?.data !== "private-owned") {
+          throw new Error("Installed clean-install data directories are unproven");
+        }
+      }
+      if (nextPhase === "release-root-intent" &&
+          (await inspectReleaseRootTarget({ releaseRoot: current.releaseRoot }))?.releaseRoot !== "unoccupied") {
+        throw new Error("Clean-install version root target is occupied");
+      }
+      if (nextPhase === "release-root-ready" &&
+          (await inspectReleaseRoot({ releaseRoot: current.releaseRoot }))?.releaseRoot !== "private-empty") {
+        throw new Error("Clean-install version root is unproven");
       }
     }
     const next = validate({ ...current, phase: nextPhase });
