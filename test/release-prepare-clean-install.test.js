@@ -21,6 +21,7 @@ import { installCleanReleaseRoot, inspectCreatedCleanReleaseRoot } from "../scri
 import { promoteCleanInstall } from "../scripts/release/promote-clean-install.mjs";
 import { inspectPromotedCleanRelease } from "../scripts/release/inspect-promoted-clean-release.mjs";
 import { recoverCompletedCleanPromotion } from "../scripts/release/recover-completed-clean-promotion.mjs";
+import { installCleanPointer } from "../scripts/release/install-clean-pointer.mjs";
 import { recoverCompletedCleanReleaseRoot } from "../scripts/release/recover-completed-clean-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
@@ -382,6 +383,26 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     await assert.rejects(inspectPromotedCleanRelease({ journal, trustDir,
       requireCurrent: true }), /not the signed release/);
     await rm(current);
+    assert.equal((await advanceCleanInstallJournal({ journalPath,
+      transactionId: journal.transactionId, expectedPhase: "promotion-ready",
+      nextPhase: "pointer-intent", trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }) })).phase, "pointer-intent");
+    const pointer = await installCleanPointer({ journalPath, trustDir,
+      configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }),
+      advance: options => advanceCleanInstallJournal({ ...options,
+        inspectCreated: async () => identityEvidence,
+        inspectData: input => inspectInstalledCleanData({ ...input,
+          inspectWork: async () => workEvidence }) }) });
+    assert.equal(pointer.phase, "pointer-ready");
+    assert.equal(pointer.current, `releases/${journal.version}-${journal.commit}`);
+    assert.equal((await inspectPromotedCleanRelease({ journal, trustDir,
+      requireCurrent: true })).release, "signed-inert");
+    await assert.rejects(stat(`${journalPath}.pointer-install.lock`), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
