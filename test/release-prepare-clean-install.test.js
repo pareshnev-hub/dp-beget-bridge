@@ -17,6 +17,7 @@ import { inspectInstalledCleanConfig } from "../scripts/release/inspect-installe
 import { inspectInstalledCleanUnits } from "../scripts/release/inspect-installed-clean-units.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
+import { recoverCompletedCleanUnits } from "../scripts/release/recover-completed-clean-units.mjs";
 import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
 import { prepareCleanInstall } from "../scripts/release/prepare-clean-install.mjs";
 import { prepareRelease } from "../scripts/release/prepare-release.mjs";
@@ -182,6 +183,40 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     await assert.rejects(inspectInstalledCleanUnits({ unitDirectory,
       workspace: args.workspace, manifestSha256: result.manifestSha256,
       trustDir }), /Unexpected existing/);
+    await rm(path.join(unitDirectory, "dp-beget-tunnel.service"));
+    const unitLock = `${journalPath}.unit-install.lock`;
+    const installedUnit = path.join(unitDirectory, "dp-beget-agent.service");
+    const originalUnit = await readFile(installedUnit);
+    await writeFile(unitLock, `${journal.transactionId}\n`, { mode: 0o600 });
+    await writeFile(installedUnit, Buffer.concat([originalUnit, Buffer.from("# altered\n")]));
+    await assert.rejects(recoverCompletedCleanUnits({ journalPath, trustDir,
+      configDir, unitDirectory, inspectCreated: async () => identityEvidence }), /differs/);
+    assert.ok((await stat(unitLock)).isFile());
+    await writeFile(installedUnit, originalUnit);
+    assert.equal((await recoverCompletedCleanUnits({ journalPath, trustDir,
+      configDir, unitDirectory, inspectCreated: async () => identityEvidence })).phase,
+    "units-ready");
+    await assert.rejects(stat(unitLock), /ENOENT/);
+
+    const interruptedUnitDir = path.join(workspaceParent, "interrupted-units");
+    await mkdir(interruptedUnitDir, { mode: 0o755 });
+    await advanceCleanInstallJournal({ journalPath: interruptedPath,
+      transactionId: interrupted.transactionId, expectedPhase: "config-ready",
+      nextPhase: "units-intent", trustDir, configDir: interruptedDir,
+      unitDirectory: interruptedUnitDir, inspectCreated: async () => identityEvidence });
+    await assert.rejects(installCleanUnits({ journalPath: interruptedPath,
+      trustDir, configDir: interruptedDir, unitDirectory: interruptedUnitDir,
+      inspectCreated: async () => identityEvidence,
+      advance: async () => { throw new Error("interrupted before unit journal write"); } }),
+    /interrupted before unit journal write/);
+    assert.equal((await readCleanInstallJournal(interruptedPath)).phase, "units-intent");
+    assert.ok((await stat(`${interruptedPath}.unit-install.lock`)).isFile());
+    assert.equal((await recoverCompletedCleanUnits({ journalPath: interruptedPath,
+      trustDir, configDir: interruptedDir, unitDirectory: interruptedUnitDir,
+      inspectCreated: async () => identityEvidence,
+      advance: options => advanceCleanInstallJournal({ ...options,
+        inspectCreated: async () => identityEvidence }) })).phase, "units-ready");
+    await assert.rejects(stat(`${interruptedPath}.unit-install.lock`), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
