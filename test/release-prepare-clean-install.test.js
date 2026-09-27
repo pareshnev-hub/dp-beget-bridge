@@ -23,7 +23,9 @@ import { inspectPromotedCleanRelease } from "../scripts/release/inspect-promoted
 import { recoverCompletedCleanPromotion } from "../scripts/release/recover-completed-clean-promotion.mjs";
 import { installCleanPointer } from "../scripts/release/install-clean-pointer.mjs";
 import { recoverCompletedCleanPointer } from "../scripts/release/recover-completed-clean-pointer.mjs";
-import { inspectCleanSystemdBoundary } from "../scripts/release/inspect-clean-systemd-boundary.mjs";
+import { inspectCleanSystemdBoundary, inspectCleanSystemdInactivity } from
+  "../scripts/release/inspect-clean-systemd-boundary.mjs";
+import { loadCleanSystemdUnits } from "../scripts/release/load-clean-systemd-units.mjs";
 import { CLEAN_INSTALL_UNIT_NAMES } from "../scripts/release/preflight-clean-install.mjs";
 import { recoverCompletedCleanReleaseRoot } from "../scripts/release/recover-completed-clean-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
@@ -445,6 +447,31 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     });
     await assert.rejects(inspectSystemd(unit => systemdState(unit,
       unit === "dp-beget-agent.service" ? "active" : "inactive")), /active or overridden/);
+    assert.equal((await advanceCleanInstallJournal({ journalPath,
+      transactionId: journal.transactionId, expectedPhase: "pointer-ready",
+      nextPhase: "systemd-intent", trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }) })).phase, "systemd-intent");
+    const inspectInactive = showUnit => inspectCleanSystemdInactivity({ showUnit,
+      inspectListeners: async () => ({ directPorts: "unoccupied" }) });
+    let reloadCalls = 0;
+    const loadOptions = { journalPath, trustDir, configDir, unitDirectory, dataRoot,
+      inspectInactive: () => inspectInactive(unit => systemdState(unit)),
+      inspectBoundary: () => inspectSystemd(unit => systemdState(unit)),
+      reload: async () => { reloadCalls++; },
+      advance: options => advanceCleanInstallJournal({ ...options,
+        inspectCreated: async () => identityEvidence,
+        inspectData: input => inspectInstalledCleanData({ ...input,
+          inspectWork: async () => workEvidence }),
+        inspectSystemd: () => inspectSystemd(unit => systemdState(unit)) }) };
+    await assert.rejects(loadCleanSystemdUnits({ ...loadOptions,
+      inspectInactive: () => inspectInactive(unit => systemdState(unit,
+        unit === "dp-beget-mcp.service" ? "active" : "inactive")) }), /active or overridden/);
+    assert.equal(reloadCalls, 0);
+    assert.equal((await loadCleanSystemdUnits(loadOptions)).phase, "systemd-ready");
+    assert.equal(reloadCalls, 1);
+    await assert.rejects(stat(`${journalPath}.systemd-install.lock`), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
