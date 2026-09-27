@@ -35,6 +35,24 @@ function parse(output) {
   return values;
 }
 
+// Before daemon-reload, verify no reserved unit or Direct port is live.
+// The loaded-file binding is checked separately after the reload.
+export async function inspectCleanSystemdInactivity({ showUnit = systemctlShow,
+  inspectListeners = inspectCleanInstallListeners } = {}) {
+  if (process.getuid?.() !== 0) throw new Error("Root is required to inspect clean systemd inactivity");
+  for (const [index, unit] of CLEAN_INSTALL_UNIT_NAMES.entries()) {
+    const state = parse(await showUnit(unit));
+    if (state.ActiveState !== "inactive" || state.DropInPaths !== "" ||
+        (index >= 3 && (state.LoadState !== "not-found" || state.FragmentPath !== ""))) {
+      throw new Error(`Clean-install reserved unit is active or overridden: ${unit}`);
+    }
+  }
+  if ((await inspectListeners())?.directPorts !== "unoccupied") {
+    throw new Error("Clean-install Direct service ports are occupied");
+  }
+  return { localSystemd: "inactive", directPorts: "unoccupied" };
+}
+
 // Local boundary after daemon-reload and before starting the three core units.
 // The public reverse-proxy route needs its own independent closed-ingress proof.
 export async function inspectCleanSystemdBoundary({ journalPath, trustDir,
@@ -44,7 +62,9 @@ export async function inspectCleanSystemdBoundary({ journalPath, trustDir,
   inspectListeners = inspectCleanInstallListeners } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to inspect clean systemd boundary");
   const journal = await readCleanInstallJournal(journalPath);
-  if (journal.phase !== "pointer-ready") throw new Error("Clean pointer is not ready for systemd preflight");
+  if (!["pointer-ready", "systemd-intent", "systemd-ready"].includes(journal.phase)) {
+    throw new Error("Clean pointer is not ready for systemd preflight");
+  }
   if ((await inspectInstalled({ unitDirectory, workspace: journal.workspace,
     manifestSha256: journal.manifestSha256, trustDir }))?.units !== "bound-files" ||
       (await inspectPointer({ journal, trustDir,
