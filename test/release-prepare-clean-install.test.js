@@ -11,6 +11,8 @@ import { verifyCleanInstallManifest } from "../scripts/release/clean-install-man
 import { advanceCleanInstallJournal, readCleanInstallJournal,
   startCleanInstallJournal } from "../scripts/release/clean-install-journal.mjs";
 import { installCleanIdentities } from "../scripts/release/install-clean-identities.mjs";
+import { installCleanConfig } from "../scripts/release/install-clean-config.mjs";
+import { inspectInstalledCleanConfig } from "../scripts/release/inspect-installed-clean-config.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
 import { prepareCleanInstall } from "../scripts/release/prepare-clean-install.mjs";
@@ -93,6 +95,27 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     "user:dp-agent:/var/lib/dp-beget-bridge-agent",
     "user:dp-mcp:/var/lib/dp-beget-bridge-mcp"]);
   await assert.rejects(stat(`${journalPath}.identity-install.lock`), /ENOENT/);
+  const identityEvidence = { identities: "journal-bound", ipcGid: 1,
+    agentGid: 2, mcpGid: 3 };
+  const configDir = path.join(workspaceParent, "installed-config");
+  if (process.env.DP_TEST_REAL_CHOWN === "1") {
+    assert.equal((await advanceCleanInstallJournal({ journalPath,
+      transactionId: journal.transactionId, expectedPhase: "identities-ready",
+      nextPhase: "config-intent", trustDir,
+      inspectCreated: async () => identityEvidence })).phase, "config-intent");
+    assert.equal((await installCleanConfig({ journalPath, trustDir, configDir,
+      inspectCreated: async () => identityEvidence,
+      advance: options => advanceCleanInstallJournal({ ...options,
+        inspectCreated: async () => identityEvidence }) })).phase, "config-ready");
+    assert.equal((await stat(configDir)).mode & 0o777, 0o711);
+    assert.equal((await stat(path.join(configDir, "agent.env"))).gid, identityEvidence.agentGid);
+    assert.equal((await stat(path.join(configDir, "agent.env"))).mode & 0o777, 0o640);
+    assert.equal((await inspectInstalledCleanConfig({ configDir, workspace: args.workspace,
+      manifestSha256: result.manifestSha256, trustDir,
+      identityPlan: journal.identityPlan, identities: identityEvidence })).config, "bound-private");
+    await assert.rejects(stat(`${journalPath}.config-install.lock`), /ENOENT/);
+    await assert.rejects(installCleanConfig({ journalPath, trustDir, configDir }), /journaled intent/);
+  }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
     workspace: args.workspace, manifestSha256: result.manifestSha256,
@@ -159,6 +182,11 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
   await assert.rejects(stat(path.join(workspaceParent, "changed-candidate")), /ENOENT/);
   const configFile = path.join(args.workspace, "clean-install", "config", "mcp.env");
   await writeFile(configFile, (await readFile(configFile, "utf8")) + "DP_LOG_LEVEL=debug\n");
+  if (process.env.DP_TEST_REAL_CHOWN === "1") {
+    await assert.rejects(inspectInstalledCleanConfig({ configDir, workspace: args.workspace,
+      manifestSha256: result.manifestSha256, trustDir,
+      identityPlan: journal.identityPlan, identities: identityEvidence }), /files changed/);
+  }
   await assert.rejects(verifyCleanInstallManifest({ workspace: args.workspace, trustDir,
     manifestSha256: result.manifestSha256 }), /files changed/);
   await assert.rejects(advanceCleanInstallJournal({ journalPath: secondJournalPath,

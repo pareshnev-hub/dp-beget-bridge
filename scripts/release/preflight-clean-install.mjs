@@ -14,7 +14,8 @@ const exec = promisify(execFile);
 const UNITS = ["dp-beget-session-host.service", "dp-beget-agent.service", "dp-beget-mcp.service",
   "dp-beget-mcp-oauth-spike.service", "dp-beget-tunnel.service", "dp-beget-oauth-proxy.socket",
   "dp-beget-oauth-proxy.service"];
-const LEGACY_PATHS = ["/opt/dp-beget-bridge", "/etc/dp-beget-bridge/bridge.env",
+const LEGACY_PATHS = ["/opt/dp-beget-bridge", "/etc/dp-beget-bridge",
+  "/etc/dp-beget-bridge/bridge.env",
   "/etc/dp-beget-bridge/agent.env", "/etc/dp-beget-bridge/mcp.env",
   "/etc/dp-beget-bridge/mcp-oauth-spike.env", "/etc/dp-beget-bridge/session-host.env",
   "/var/lib/dp-beget-bridge", "/var/lib/dp-beget-bridge-agent", "/var/lib/dp-beget-bridge-mcp",

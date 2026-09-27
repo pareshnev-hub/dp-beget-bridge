@@ -43,5 +43,5 @@ export async function inspectCreatedCleanIdentities({ plan, transactionId,
   const mcpUid = userRecord(await lookup("passwd", plan.mcpUser), plan.mcpUser,
     mcpGid, transactionId, "/var/lib/dp-beget-bridge-mcp");
   if (agentUid === mcpUid) throw new Error("Created service accounts must have distinct numeric IDs");
-  return { identities: "journal-bound", agentUid, mcpUid, ipcGid };
+  return { identities: "journal-bound", agentUid, mcpUid, ipcGid, agentGid, mcpGid };
 }
