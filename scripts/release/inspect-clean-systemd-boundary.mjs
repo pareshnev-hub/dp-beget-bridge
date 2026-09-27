@@ -62,7 +62,9 @@ export async function inspectCleanSystemdBoundary({ journalPath, trustDir,
   inspectListeners = inspectCleanInstallListeners } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to inspect clean systemd boundary");
   const journal = await readCleanInstallJournal(journalPath);
-  if (journal.phase !== "pointer-ready") throw new Error("Clean pointer is not ready for systemd preflight");
+  if (!["pointer-ready", "systemd-intent", "systemd-ready"].includes(journal.phase)) {
+    throw new Error("Clean pointer is not ready for systemd preflight");
+  }
   if ((await inspectInstalled({ unitDirectory, workspace: journal.workspace,
     manifestSha256: journal.manifestSha256, trustDir }))?.units !== "bound-files" ||
       (await inspectPointer({ journal, trustDir,
