@@ -10,12 +10,14 @@ import { inspectInstalledCleanUnits } from "./inspect-installed-clean-units.mjs"
 import { inspectCleanInstallUnitTargets } from "./preflight-clean-install.mjs";
 import { inspectCleanDataTargets, inspectInstalledCleanData } from "./clean-install-data-directories.mjs";
 import { inspectCleanReleaseRootTarget, inspectCreatedCleanReleaseRoot } from "./clean-install-release-root.mjs";
+import { inspectPromotedCleanRelease } from "./inspect-promoted-clean-release.mjs";
 
 const SHA = /^[0-9a-f]{64}$/;
 // Later phases must be added together with real boundary verifiers.
 const PHASES = ["prepared", "identities-intent", "identities-ready",
   "config-intent", "config-ready", "units-intent", "units-ready",
-  "data-intent", "data-ready", "release-root-intent", "release-root-ready"];
+  "data-intent", "data-ready", "release-root-intent", "release-root-ready",
+  "promotion-intent", "promotion-ready"];
 const FORMAT = "dp-beget-clean-install-journal-v1";
 
 async function privateParent(filename) {
@@ -104,6 +106,7 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
   inspectData = inspectInstalledCleanData,
   inspectReleaseRootTarget = inspectCleanReleaseRootTarget,
   inspectReleaseRoot = inspectCreatedCleanReleaseRoot,
+  inspectPromoted = inspectPromotedCleanRelease,
   configDir = "/etc/dp-beget-bridge",
   unitDirectory = "/etc/systemd/system", dataRoot = "/var/lib", trustDir } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to advance a clean-install journal");
@@ -155,6 +158,12 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
         throw new Error("Data installation has an unresolved lock");
       } catch (error) { if (error.code !== "ENOENT") throw error; }
     }
+    if (nextPhase === "promotion-intent") {
+      try {
+        await lstat(`${journalPath}.release-root-install.lock`);
+        throw new Error("Version-root installation has an unresolved lock");
+      } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
     if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("identities-ready")) {
       const identities = await inspectCreated({ plan: current.identityPlan,
         transactionId: current.transactionId });
@@ -192,9 +201,13 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
           (await inspectReleaseRootTarget({ releaseRoot: current.releaseRoot }))?.releaseRoot !== "unoccupied") {
         throw new Error("Clean-install version root target is occupied");
       }
-      if (nextPhase === "release-root-ready" &&
+      if (["release-root-ready", "promotion-intent"].includes(nextPhase) &&
           (await inspectReleaseRoot({ releaseRoot: current.releaseRoot }))?.releaseRoot !== "private-empty") {
         throw new Error("Clean-install version root is unproven");
+      }
+      if (nextPhase === "promotion-ready" &&
+          (await inspectPromoted({ journal: current, trustDir }))?.release !== "signed-inert") {
+        throw new Error("Promoted clean-install release is unproven");
       }
     }
     const next = validate({ ...current, phase: nextPhase });

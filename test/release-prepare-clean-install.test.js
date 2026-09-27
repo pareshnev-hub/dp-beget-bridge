@@ -18,6 +18,8 @@ import { inspectInstalledCleanConfig } from "../scripts/release/inspect-installe
 import { inspectInstalledCleanUnits } from "../scripts/release/inspect-installed-clean-units.mjs";
 import { inspectInstalledCleanData } from "../scripts/release/clean-install-data-directories.mjs";
 import { installCleanReleaseRoot, inspectCreatedCleanReleaseRoot } from "../scripts/release/clean-install-release-root.mjs";
+import { promoteCleanInstall } from "../scripts/release/promote-clean-install.mjs";
+import { inspectPromotedCleanRelease } from "../scripts/release/inspect-promoted-clean-release.mjs";
 import { recoverCompletedCleanReleaseRoot } from "../scripts/release/recover-completed-clean-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
 import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
@@ -322,6 +324,28 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     await rm(unexpected);
     assert.equal((await recoverRoot()).phase, "release-root-ready");
     await assert.rejects(stat(rootLock), /ENOENT/);
+
+    assert.equal((await advanceCleanInstallJournal({ journalPath,
+      transactionId: journal.transactionId, expectedPhase: "release-root-ready",
+      nextPhase: "promotion-intent", trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }) })).phase, "promotion-intent");
+    const promoted = await promoteCleanInstall({ journalPath, trustDir,
+      configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }),
+      advance: options => advanceCleanInstallJournal({ ...options,
+        inspectCreated: async () => identityEvidence,
+        inspectData: input => inspectInstalledCleanData({ ...input,
+          inspectWork: async () => workEvidence }) }) });
+    assert.equal(promoted.phase, "promotion-ready");
+    assert.equal(promoted.sha256, journal.artifactSha256);
+    assert.equal((await inspectPromotedCleanRelease({ journal,
+      trustDir })).release, "signed-inert");
+    await assert.rejects(stat(path.join(args.releaseRoot, "current")), /ENOENT/);
+    await assert.rejects(stat(`${journalPath}.promotion-install.lock`), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
