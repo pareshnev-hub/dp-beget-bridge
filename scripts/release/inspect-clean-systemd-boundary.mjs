@@ -16,6 +16,37 @@ async function systemctlShow(unit) {
   return stdout;
 }
 
+export function inspectCleanLoopbackListeners(output) {
+  if (typeof output !== "string" || output.length > 1024 * 1024) {
+    throw new Error("Clean service listener inventory is unavailable");
+  }
+  const seen = new Set();
+  for (const line of output.split("\n")) {
+    if (!line.trim()) continue;
+    const fields = line.trim().split(/\s+/);
+    if (fields.length < 5 || fields[0] !== "LISTEN" ||
+        !/^\d+$/.test(fields[1]) || !/^\d+$/.test(fields[2]) ||
+        !/^\S+:\d+$/.test(fields[3])) {
+      throw new Error("Invalid clean service listener inventory");
+    }
+    const port = Number(fields[3].slice(fields[3].lastIndexOf(":") + 1));
+    if (port !== 8787 && port !== 8788) continue;
+    if (fields[3] !== `127.0.0.1:${port}` || seen.has(port)) {
+      throw new Error("Clean service port has a non-loopback or duplicate listener");
+    }
+    seen.add(port);
+  }
+  if (seen.size !== 2) throw new Error("Clean service loopback listeners are incomplete");
+  return { directPorts: "loopback-bound" };
+}
+
+export async function inspectCleanRunningListeners() {
+  const { stdout, stderr } = await exec("ss", ["-H", "-ltn"],
+    { timeout: 5000, maxBuffer: 1024 * 1024 });
+  if (stderr.trim()) throw new Error("Clean service listener inventory is unavailable");
+  return inspectCleanLoopbackListeners(stdout);
+}
+
 function parse(output) {
   if (typeof output !== "string" || output.length > 4096) {
     throw new Error("Clean-install systemd inventory is unavailable");
@@ -57,7 +88,8 @@ export async function inspectCleanSystemdInactivity({ showUnit = systemctlShow,
 // pointer checks so a disposable systemd host can exercise this boundary.
 export async function inspectCleanLoadedSystemdUnits({ unitDirectory = "/etc/systemd/system",
   releaseRoot, identityPlan, showUnit = systemctlShow,
-  inspectListeners = inspectCleanInstallListeners, expectActive = false } = {}) {
+  expectActive = false,
+  inspectListeners = expectActive ? inspectCleanRunningListeners : inspectCleanInstallListeners } = {}) {
   if (process.getuid?.() !== 0 || !path.isAbsolute(unitDirectory || "") ||
       path.normalize(unitDirectory) !== unitDirectory ||
       !path.isAbsolute(releaseRoot || "") || path.normalize(releaseRoot) !== releaseRoot ||
@@ -83,11 +115,12 @@ export async function inspectCleanLoadedSystemdUnits({ unitDirectory = "/etc/sys
       throw new Error(`Clean-install ingress unit exists: ${unit}`);
     }
   }
-  if (!expectActive && (await inspectListeners())?.directPorts !== "unoccupied") {
-    throw new Error("Clean-install Direct service ports are occupied");
+  const expectedPorts = expectActive ? "loopback-bound" : "unoccupied";
+  if ((await inspectListeners())?.directPorts !== expectedPorts) {
+    throw new Error("Clean-install Direct service ports are not in the expected state");
   }
   return { localSystemd: expectActive ? "active-bound" : "inactive-bound",
-    directPorts: expectActive ? "local-health-required" : "unoccupied",
+    directPorts: expectedPorts,
     publicIngress: "unproven" };
 }
 
