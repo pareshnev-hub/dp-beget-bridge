@@ -233,7 +233,7 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
       }
       if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("data-ready")) {
         if ((await inspectData({ dataRoot, plan: current.identityPlan,
-          identities }))?.data !== "private-owned") {
+          identities, startupState: nextPhase === "startup-ready" }))?.data !== "private-owned") {
           throw new Error("Installed clean-install data directories are unproven");
         }
       }

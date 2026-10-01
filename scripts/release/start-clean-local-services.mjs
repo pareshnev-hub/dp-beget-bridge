@@ -8,7 +8,7 @@ import { verifyCleanInstallManifest } from "./clean-install-manifest.mjs";
 import { inspectCleanInstallIdentityPlan } from "./clean-install-identity-plan.mjs";
 import { inspectCreatedCleanIdentities } from "./inspect-clean-install-created-identities.mjs";
 import { inspectInstalledCleanConfig } from "./inspect-installed-clean-config.mjs";
-import { inspectInstalledCleanData } from "./clean-install-data-directories.mjs";
+import { inspectCleanStartupData } from "./clean-install-data-directories.mjs";
 import { advanceCleanInstallJournal, readCleanInstallJournal,
   requireCleanClosedIngress } from "./clean-install-journal.mjs";
 import { inspectCleanSystemdBoundary, inspectCleanRunningSystemd } from
@@ -39,7 +39,7 @@ export async function startCleanLocalServices({ journalPath, trustDir,
   inspectPlan = inspectCleanInstallIdentityPlan,
   inspectCreated = inspectCreatedCleanIdentities,
   inspectConfig = inspectInstalledCleanConfig,
-  inspectData = inspectInstalledCleanData,
+  inspectData = inspectCleanStartupData,
   inspectClosedIngress = requireCleanClosedIngress,
   inspectHealth = () => waitForAdmissionDrain({ probes: localReleaseHealthProbes() }),
   startUnit = unit => systemctl("start", unit),
@@ -97,8 +97,10 @@ export async function startCleanLocalServices({ journalPath, trustDir,
       started.push(unit);
       await startUnit(unit);
     }
-    if ((await inspectRunning({ journalPath, trustDir, unitDirectory }))?.localSystemd !== "active-bound" ||
-        (await inspectHealth())?.drained !== true ||
+    // Type=simple only proves systemd forked the process. Wait for bounded
+    // application readiness before requiring its actual bound listeners.
+    if ((await inspectHealth())?.drained !== true ||
+        (await inspectRunning({ journalPath, trustDir, unitDirectory }))?.localSystemd !== "active-bound" ||
         (await inspectPaused())?.paused !== true ||
         (await inspectClosedIngress())?.publicIngress !== "closed-exclusive") {
       throw new Error("Clean running services, admission or public route are unproven");

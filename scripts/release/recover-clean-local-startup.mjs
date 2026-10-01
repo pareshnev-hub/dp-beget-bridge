@@ -6,7 +6,7 @@ import { inspectCleanInstallIdentityPlan } from "./clean-install-identity-plan.m
 import { inspectCreatedCleanIdentities } from "./inspect-clean-install-created-identities.mjs";
 import { inspectInstalledCleanConfig } from "./inspect-installed-clean-config.mjs";
 import { inspectInstalledCleanUnits } from "./inspect-installed-clean-units.mjs";
-import { inspectInstalledCleanData } from "./clean-install-data-directories.mjs";
+import { inspectCleanStartupData } from "./clean-install-data-directories.mjs";
 import { inspectPromotedCleanRelease } from "./inspect-promoted-clean-release.mjs";
 import { inspectCleanSystemdBoundary, inspectCleanRunningSystemd } from
   "./inspect-clean-systemd-boundary.mjs";
@@ -40,7 +40,7 @@ export async function recoverCleanLocalStartup({ journalPath, trustDir,
   inspectCreated = inspectCreatedCleanIdentities,
   inspectConfig = inspectInstalledCleanConfig,
   inspectUnits = inspectInstalledCleanUnits,
-  inspectData = inspectInstalledCleanData,
+  inspectData = inspectCleanStartupData,
   inspectPointer = inspectPromotedCleanRelease,
   inspectInactive = inspectCleanSystemdBoundary,
   inspectRunning = inspectCleanRunningSystemd,
