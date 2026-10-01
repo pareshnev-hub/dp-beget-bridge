@@ -87,8 +87,8 @@ export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
             (child === "sessions"
               ? !entry.isDirectory() || (entry.mode & 0o777) !== 0o700 || (await readdir(filename)).length !== 0
               : !entry.isFile() || entry.nlink !== 1 || entry.size > 128 * 1024 * 1024 ||
-                ![0o600, ...(name === NAMES[0] ? [0o660] : [0o640, 0o644])].includes(entry.mode & 0o777))) {
-          throw new Error("Clean startup data ownership or type is untrusted");
+                ![0o600, ...(name === NAMES[0] ? [0o640, 0o660] : [0o640, 0o644])].includes(entry.mode & 0o777))) {
+          throw new Error(`Clean startup data ownership or type is untrusted (${name}/${child}: uid=${entry.uid}, gid=${entry.gid}, mode=${(entry.mode & 0o777).toString(8)})`);
         }
       }
     }
