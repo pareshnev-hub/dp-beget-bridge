@@ -23,6 +23,7 @@ import { inspectCleanInstallAuthProfile } from "../scripts/release/clean-install
 import { inspectInitializedCleanOwner } from "../scripts/release/clean-install-owner-data.mjs";
 import { installCleanOwner } from "../scripts/release/install-clean-owner.mjs";
 import { recoverCompletedCleanOwner } from "../scripts/release/recover-completed-clean-owner.mjs";
+import { installCleanPrivate } from "../scripts/release/install-clean-private.mjs";
 
 const exec = promisify(execFile);
 const systemctl = (...args) => exec("systemctl", args, { timeout: 20000, maxBuffer: 4096 });
@@ -92,14 +93,32 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   // Only the external DNS/TLS prerequisite is simulated in this private
   // installation fixture. Trust, signatures, extraction, actual npm ci,
   // capacity, NSS, accounts, ownership, units, pointers and manager are real.
-  const prepared = await prepareCleanInstall({ ...inputs,
-    inspect: args => preflightCleanInstall({ ...args,
-      inspectHost: async () => ({ domain, expectedIp, dns: "pass", tls: "pass" }) }) });
   const journalPath = path.join(workspaceParent, "installation.json");
+  const prepare = args => prepareCleanInstall({ ...args,
+    inspect: request => preflightCleanInstall({ ...request,
+      inspectHost: async () => ({ domain, expectedIp, dns: "pass", tls: "pass" }) }) });
+  const useEntry = process.env.DP_TEST_REAL_CLEAN_PRIVATE_ENTRY === "1";
+  let prepared, result;
+  if (useEntry) {
+    assert.equal(process.env.DP_TEST_REAL_CLEAN_OAUTH_STAGING, "1");
+    assert.equal(process.env.DP_TEST_REAL_CLEAN_OAUTH_COMPOSED, "1");
+    const requestPath = path.join(workspaceParent, "private-request.json");
+    const request = { format: "dp-beget-clean-private-request-v1", journalPath };
+    for (const key of ["artifact", "manifest", "signature", "trustDir", "domain", "expectedIp",
+      "workUser", "workGroup", "agentUser", "mcpUser", "ipcGroup", "allowedRoot", "workspaceParent",
+      "workspace", "releaseRoot", "ownerId", "executionProfile"]) request[key] = inputs[key];
+    await writeFile(requestPath, JSON.stringify(request) + "\n", { mode: 0o600, flag: "wx" });
+    const options = { requestPath, prepare: async args => { prepared = await prepare(args); return prepared; } };
+    result = await installCleanPrivate(options);
+    await assert.rejects(installCleanPrivate(options), /fresh journal/);
+    t.diagnostic("Actual protected request reader, signed preparation and owner controller composed through one private entry; fresh-only replay rejected");
+  } else {
+    prepared = await prepare(inputs);
+  }
   const controller = { journalPath, workspace: inputs.workspace,
     manifestSha256: prepared.manifestSha256, releaseRoot, trustDir,
     initializeOwner: process.env.DP_TEST_REAL_CLEAN_OAUTH_COMPOSED === "1" };
-  const result = await installCleanPrivateRuntime(controller);
+  if (!useEntry) result = await installCleanPrivateRuntime(controller);
   const installedPhase = controller.initializeOwner ? "owner-ready" : "admission-ready";
   assert.equal(result.phase, installedPhase);
   assert.equal(result.localServices, "inactive");
@@ -112,7 +131,7 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   await assert.rejects(installCleanPrivateRuntime(controller), /fresh journal/);
   assert.equal((await readCleanInstallJournal(journalPath)).phase, installedPhase);
   if (controller.initializeOwner) {
-    assert.equal(result.authMode, "oauth");
+    if (!useEntry) assert.equal(result.authMode, "oauth");
     assert.equal(result.owner, "candidate-bound");
     await assert.rejects(lstat(`${journalPath}.owner-install.lock`), { code: "ENOENT" });
     assert.equal((await inspectInitializedCleanOwner({ journal: await readCleanInstallJournal(journalPath), trustDir })).owner, "candidate-bound");
