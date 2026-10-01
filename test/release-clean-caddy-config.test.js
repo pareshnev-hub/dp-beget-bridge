@@ -57,6 +57,7 @@ test("OPS-01: additional routes, handlers, apps, listeners and wrong domains fai
     c => { c.apps.layer4 = {}; },
     c => { c.admin.listen = "localhost:2019"; },
     c => { c.admin.remote = {}; },
+    c => { c.admin.origins = ["other.example.com"]; },
   ];
   for (const mutate of mutations) {
     const config = renderClosedCleanCaddyConfig(options);

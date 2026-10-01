@@ -19,7 +19,9 @@ function socketPath(value) {
 export function renderClosedCleanCaddyConfig({ domain, adminSocket, certificateFiles } = {}) {
   domain = validateHostname(domain);
   adminSocket = socketPath(adminSocket);
-  const config = { admin: { listen: `unix/${adminSocket}` }, apps: { http: { servers: {
+  // Caddy 2.6.2 enforces Host even on Unix sockets. Bind the exact Host used
+  // by our GET reader instead of relying on version-dependent defaults.
+  const config = { admin: { listen: `unix/${adminSocket}`, origins: ["localhost"] }, apps: { http: { servers: {
     dp_clean: { listen: [":443"], protocols: ["h1", "h2"],
       automatic_https: { disable_redirects: true },
       routes: [{ match: [{ host: [domain] }], terminal: true,
