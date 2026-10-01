@@ -176,10 +176,51 @@ export async function rehearseCleanPrivateAutonomy({ journalPath, trustDir } = {
     stage = "file-download-bytes";
     const bytes = await request(`${origin}${link.pathname}`); assert.equal(bytes.status, 200);
     assert.equal(await bytes.text(), "ci-autonomy-content\n");
+    const archiveParent = `${plan.allowedRoot}/autonomy-ci-archives`;
+    const archiveDirectory = `${archiveParent}/snapshot`;
+    const archiveScript = `${journal.releaseRoot}/current/scripts/archive-terminal.mjs`;
+    const asWork = args => exec("runuser", ["-u", plan.workUser, "--", process.execPath, archiveScript, ...args],
+      { timeout: 15000, maxBuffer: 8192, env: { PATH: "/usr/sbin:/usr/bin:/sbin:/bin", LC_ALL: "C" } });
+    const archiveArgs = ["archive", "--data-dir", "/var/lib/dp-beget-bridge", "--session-id", sessionId,
+      "--output-dir", archiveDirectory];
+    stage = "active-terminal-retention-refusal";
+    await assert.rejects(lstat(archiveParent), { code: "ENOENT" });
+    await exec("runuser", ["-u", plan.workUser, "--", process.execPath, "--input-type=module", "--eval",
+      'import {mkdir} from "node:fs/promises";await mkdir(process.argv[1],{mode:0o700});', archiveParent],
+    { timeout: 5000, maxBuffer: 4096, env: { PATH: "/usr/sbin:/usr/bin:/sbin:/bin", LC_ALL: "C" } });
+    assert.equal((await lstat(archiveParent)).uid, rootStat.uid);
+    assert.equal((await lstat(archiveParent)).mode & 0o777, 0o700);
+    const refusedPurge = await client.callTool({ name: "purge_terminal", arguments: { session_id: sessionId } });
+    assert.equal(refusedPurge.isError, true);
+    assert.ok(refusedPurge.content.some(item => item.type === "text" && item.text.includes("Close the terminal before purging")));
+    await assert.rejects(asWork(archiveArgs), error => error.code === 1);
+    await assert.rejects(lstat(archiveDirectory), { code: "ENOENT" });
+    assert.ok((await call("read_terminal", { session_id: sessionId, cursor: 0, max_bytes: 8192 })).output.includes("ci-autonomy-ready"));
     stage = "terminal-close";
     await call("close_terminal", { session_id: sessionId });
+    const retained = await call("read_terminal", { session_id: sessionId, cursor: 0, max_bytes: 8192 });
+    stage = "closed-terminal-service-restart";
+    await pauseAdmission();
+    await systemctl("restart", units[0]);
+    await waitForAdmissionDrain({ probes: localReleaseHealthProbes() });
+    await resumeAdmission({ assertHealthy: () => waitForAdmissionDrain({ probes: localReleaseHealthProbes() }) });
+    const afterRestart = await call("read_terminal", { session_id: sessionId, cursor: 0, max_bytes: 8192 });
+    assert.equal(afterRestart.output, retained.output);
+    assert.equal(afterRestart.cursor, retained.cursor);
+    assert.equal(afterRestart.earliestCursor, retained.earliestCursor);
+    stage = "closed-terminal-private-archive";
+    const archive = JSON.parse((await asWork(archiveArgs)).stdout);
+    assert.equal(archive.sessionId, sessionId); assert.ok(archive.size > 0); assert.ok(archive.files >= 1);
+    assert.equal((await lstat(archiveDirectory)).mode & 0o777, 0o700);
+    assert.equal((await lstat(archiveDirectory)).uid, rootStat.uid);
+    assert.equal((await lstat(`${archiveDirectory}/terminal.log`)).mode & 0o777, 0o600);
+    assert.deepEqual(JSON.parse((await asWork(["verify", "--archive-dir", archiveDirectory])).stdout), archive);
     stage = "terminal-purge";
-    await call("purge_terminal", { session_id: sessionId }); sessionId = undefined;
+    await call("purge_terminal", { session_id: sessionId });
+    await assert.rejects(lstat(`/var/lib/dp-beget-bridge/sessions/${sessionId}`), { code: "ENOENT" });
+    assert.deepEqual(JSON.parse((await asWork(["verify", "--archive-dir", archiveDirectory])).stdout), archive);
+    assert.equal((await lstat(privateCanary)).mode & 0o777, 0o600);
+    sessionId = undefined;
     stage = "file-delete";
     await call("delete_path", { path: `${plan.allowedRoot}/${name}`, recursive: false });
     await call("delete_path", { path: `${plan.allowedRoot}/${uploadedName}`, recursive: false });
@@ -198,6 +239,8 @@ export async function rehearseCleanPrivateAutonomy({ journalPath, trustDir } = {
       externalEgress: "denied", enforcement: "effective-control-probe", telemetry: "off",
       oauth: "synthetic-owner-consent", terminal: "pass", fileDownload: "pass", revocation: "pass",
       agentUploadTerminalRoundtrip: "pass", uploadTransport: "local-Agent-synthetic-OAuth-context",
+      terminalRetention: "closed-restart-pass", terminalArchive: "verified-private",
+      terminalPurge: "source-only", activePurgeArchive: "refused", archiveBytes: archive.size,
       publicTransport: "unproven", scope: "disposable signed local Direct runtime; not real-client or public release acceptance" };
   } catch {
     throw new Error(`Disposable Direct autonomy is unproven at ${stage}; credentials withheld`);

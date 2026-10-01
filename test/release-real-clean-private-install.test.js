@@ -362,6 +362,10 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
     assert.equal(autonomy.terminal, "pass");
     assert.equal(autonomy.fileDownload, "pass");
     assert.equal(autonomy.agentUploadTerminalRoundtrip, "pass");
+    assert.equal(autonomy.terminalRetention, "closed-restart-pass");
+    assert.equal(autonomy.terminalArchive, "verified-private");
+    assert.equal(autonomy.terminalPurge, "source-only");
+    assert.equal(autonomy.activePurgeArchive, "refused");
     assert.equal(autonomy.revocation, "pass");
     assert.equal((await verifyAdmissionPause()).paused, true);
     t.diagnostic(JSON.stringify(autonomy));
