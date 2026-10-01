@@ -53,27 +53,17 @@ export async function inspectCleanSystemdInactivity({ showUnit = systemctlShow,
   return { localSystemd: "inactive", directPorts: "unoccupied" };
 }
 
-// Local boundary after daemon-reload and before starting the three core units.
-// The public reverse-proxy route needs its own independent closed-ingress proof.
-export async function inspectCleanSystemdBoundary({ journalPath, trustDir,
-  unitDirectory = "/etc/systemd/system", showUnit = systemctlShow,
-  inspectInstalled = inspectInstalledCleanUnits,
-  inspectPointer = inspectPromotedCleanRelease,
+// Check the manager's actual loaded view. Separate from signed disk and
+// pointer checks so a disposable systemd host can exercise this boundary.
+export async function inspectCleanLoadedSystemdUnits({ unitDirectory = "/etc/systemd/system",
+  releaseRoot, identityPlan, showUnit = systemctlShow,
   inspectListeners = inspectCleanInstallListeners } = {}) {
-  if (process.getuid?.() !== 0) throw new Error("Root is required to inspect clean systemd boundary");
-  const journal = await readCleanInstallJournal(journalPath);
-  if (!["pointer-ready", "systemd-intent", "systemd-ready"].includes(journal.phase)) {
-    throw new Error("Clean pointer is not ready for systemd preflight");
-  }
-  if ((await inspectInstalled({ unitDirectory, workspace: journal.workspace,
-    manifestSha256: journal.manifestSha256, trustDir }))?.units !== "bound-files" ||
-      (await inspectPointer({ journal, trustDir,
-        requireCurrent: true }))?.release !== "signed-inert") {
-    throw new Error("Clean-install unit files or release pointer are unproven");
-  }
-  const identities = journal.identityPlan;
-  const users = [identities.workUser, identities.agentUser, identities.mcpUser];
-  const groups = [identities.ipcGroup, identities.agentUser, identities.mcpUser];
+  if (process.getuid?.() !== 0 || !path.isAbsolute(unitDirectory || "") ||
+      path.normalize(unitDirectory) !== unitDirectory ||
+      !path.isAbsolute(releaseRoot || "") || path.normalize(releaseRoot) !== releaseRoot ||
+      !identityPlan) throw new Error("Root and normalized clean systemd bindings are required");
+  const users = [identityPlan.workUser, identityPlan.agentUser, identityPlan.mcpUser];
+  const groups = [identityPlan.ipcGroup, identityPlan.agentUser, identityPlan.mcpUser];
   for (const [index, unit] of CLEAN_INSTALL_UNIT_NAMES.entries()) {
     const state = parse(await showUnit(unit));
     if (state.ActiveState !== "inactive" || state.DropInPaths !== "") {
@@ -83,7 +73,7 @@ export async function inspectCleanSystemdBoundary({ journalPath, trustDir,
       if (state.LoadState !== "loaded" ||
           state.FragmentPath !== path.join(unitDirectory, unit) ||
           state.UnitFileState !== "disabled" ||
-          state.WorkingDirectory !== path.join(journal.releaseRoot, "current") ||
+          state.WorkingDirectory !== path.join(releaseRoot, "current") ||
           state.User !== users[index] || state.Group !== groups[index] ||
           (index === 0 && state.KillMode !== "process")) {
         throw new Error(`Clean-install systemd binding is unproven: ${unit}`);
@@ -95,10 +85,34 @@ export async function inspectCleanSystemdBoundary({ journalPath, trustDir,
   if ((await inspectListeners())?.directPorts !== "unoccupied") {
     throw new Error("Clean-install Direct service ports are occupied");
   }
+  return { localSystemd: "inactive-bound", directPorts: "unoccupied",
+    publicIngress: "unproven" };
+}
+
+// Local boundary after daemon-reload and before starting the three core units.
+// The public reverse-proxy route needs its own independent closed-ingress proof.
+export async function inspectCleanSystemdBoundary({ journalPath, trustDir,
+  unitDirectory = "/etc/systemd/system", showUnit = systemctlShow,
+  inspectInstalled = inspectInstalledCleanUnits,
+  inspectPointer = inspectPromotedCleanRelease,
+  inspectListeners = inspectCleanInstallListeners,
+  inspectLoaded = inspectCleanLoadedSystemdUnits } = {}) {
+  if (process.getuid?.() !== 0) throw new Error("Root is required to inspect clean systemd boundary");
+  const journal = await readCleanInstallJournal(journalPath);
+  if (!["pointer-ready", "systemd-intent", "systemd-ready"].includes(journal.phase)) {
+    throw new Error("Clean pointer is not ready for systemd preflight");
+  }
+  if ((await inspectInstalled({ unitDirectory, workspace: journal.workspace,
+    manifestSha256: journal.manifestSha256, trustDir }))?.units !== "bound-files" ||
+      (await inspectPointer({ journal, trustDir,
+        requireCurrent: true }))?.release !== "signed-inert") {
+    throw new Error("Clean-install unit files or release pointer are unproven");
+  }
+  const report = await inspectLoaded({ unitDirectory, releaseRoot: journal.releaseRoot,
+    identityPlan: journal.identityPlan, showUnit, inspectListeners });
   if ((await inspectPointer({ journal, trustDir,
     requireCurrent: true }))?.release !== "signed-inert") {
     throw new Error("Clean-install release changed during systemd preflight");
   }
-  return { localSystemd: "inactive-bound", directPorts: "unoccupied",
-    publicIngress: "unproven" };
+  return report;
 }
