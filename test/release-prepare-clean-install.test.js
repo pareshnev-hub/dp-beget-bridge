@@ -8,44 +8,63 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { buildArtifact } from "../scripts/release/build-artifact.mjs";
 import { verifyCleanInstallManifest } from "../scripts/release/clean-install-manifest.mjs";
-import { advanceCleanInstallJournal, readCleanInstallJournal,
+import { advanceCleanInstallJournal as advanceCleanInstallJournalProduction, readCleanInstallJournal,
   startCleanInstallJournal } from "../scripts/release/clean-install-journal.mjs";
 import { installCleanIdentities } from "../scripts/release/install-clean-identities.mjs";
-import { installCleanConfig } from "../scripts/release/install-clean-config.mjs";
-import { installCleanUnits } from "../scripts/release/install-clean-units.mjs";
-import { installCleanData } from "../scripts/release/install-clean-data.mjs";
-import { inspectInstalledCleanConfig } from "../scripts/release/inspect-installed-clean-config.mjs";
+import { installCleanConfig as installCleanConfigProduction } from "../scripts/release/install-clean-config.mjs";
+import { installCleanUnits as installCleanUnitsProduction } from "../scripts/release/install-clean-units.mjs";
+import { installCleanData as installCleanDataProduction } from "../scripts/release/install-clean-data.mjs";
+import { inspectInstalledCleanConfig as inspectInstalledCleanConfigProduction } from "../scripts/release/inspect-installed-clean-config.mjs";
 import { inspectInstalledCleanUnits } from "../scripts/release/inspect-installed-clean-units.mjs";
 import { inspectInstalledCleanData } from "../scripts/release/clean-install-data-directories.mjs";
 import { installCleanReleaseRoot, inspectCreatedCleanReleaseRoot } from "../scripts/release/clean-install-release-root.mjs";
-import { promoteCleanInstall } from "../scripts/release/promote-clean-install.mjs";
+import { promoteCleanInstall as promoteCleanInstallProduction } from "../scripts/release/promote-clean-install.mjs";
 import { inspectPromotedCleanRelease } from "../scripts/release/inspect-promoted-clean-release.mjs";
-import { recoverCompletedCleanPromotion } from "../scripts/release/recover-completed-clean-promotion.mjs";
-import { installCleanPointer } from "../scripts/release/install-clean-pointer.mjs";
-import { recoverCompletedCleanPointer } from "../scripts/release/recover-completed-clean-pointer.mjs";
+import { recoverCompletedCleanPromotion as recoverCompletedCleanPromotionProduction } from "../scripts/release/recover-completed-clean-promotion.mjs";
+import { installCleanPointer as installCleanPointerProduction } from "../scripts/release/install-clean-pointer.mjs";
+import { recoverCompletedCleanPointer as recoverCompletedCleanPointerProduction } from "../scripts/release/recover-completed-clean-pointer.mjs";
 import { inspectCleanSystemdBoundary, inspectCleanSystemdInactivity } from
   "../scripts/release/inspect-clean-systemd-boundary.mjs";
 import { loadCleanSystemdUnits } from "../scripts/release/load-clean-systemd-units.mjs";
-import { recoverCompletedCleanSystemd } from "../scripts/release/recover-completed-clean-systemd.mjs";
+import { recoverCompletedCleanSystemd as recoverCompletedCleanSystemdProduction } from "../scripts/release/recover-completed-clean-systemd.mjs";
 import { installCleanAdmissionPause } from "../scripts/release/install-clean-admission-pause.mjs";
-import { recoverCompletedCleanAdmission } from "../scripts/release/recover-completed-clean-admission.mjs";
-import { startCleanLocalServices } from "../scripts/release/start-clean-local-services.mjs";
-import { recoverCleanLocalStartup } from "../scripts/release/recover-clean-local-startup.mjs";
+import { recoverCompletedCleanAdmission as recoverCompletedCleanAdmissionProduction } from "../scripts/release/recover-completed-clean-admission.mjs";
+import { startCleanLocalServices as startCleanLocalServicesProduction } from "../scripts/release/start-clean-local-services.mjs";
+import { recoverCleanLocalStartup as recoverCleanLocalStartupProduction } from "../scripts/release/recover-clean-local-startup.mjs";
 import { pauseAdmission, verifyAdmissionPause } from "../scripts/release/admission-pause.mjs";
 import { DEFAULT_ADMISSION_PAUSE_PATH, isAdmissionPaused } from
   "../packages/core/src/admission-gate.js";
 import { CLEAN_INSTALL_UNIT_NAMES } from "../scripts/release/preflight-clean-install.mjs";
-import { recoverCompletedCleanReleaseRoot } from "../scripts/release/recover-completed-clean-release-root.mjs";
+import { recoverCompletedCleanReleaseRoot as recoverCompletedCleanReleaseRootProduction } from "../scripts/release/recover-completed-clean-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
-import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
-import { recoverCompletedCleanUnits } from "../scripts/release/recover-completed-clean-units.mjs";
-import { recoverCompletedCleanData } from "../scripts/release/recover-completed-clean-data.mjs";
+import { recoverCompletedCleanConfig as recoverCompletedCleanConfigProduction } from "../scripts/release/recover-completed-clean-config.mjs";
+import { recoverCompletedCleanUnits as recoverCompletedCleanUnitsProduction } from "../scripts/release/recover-completed-clean-units.mjs";
+import { recoverCompletedCleanData as recoverCompletedCleanDataProduction } from "../scripts/release/recover-completed-clean-data.mjs";
 import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
 import { prepareCleanInstall } from "../scripts/release/prepare-clean-install.mjs";
 import { prepareRelease } from "../scripts/release/prepare-release.mjs";
 import { signManifest } from "../scripts/release/sign-manifest.mjs";
 
 const exec = promisify(execFile);
+// Isolated component fixture: synthetic NSS plan, no actual work directory.
+const workspaceProof = async () => ({ workspace: "shared-private" });
+const installCleanUnits = options => installCleanUnitsProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const installCleanData = options => installCleanDataProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const installCleanPointer = options => installCleanPointerProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const promoteCleanInstall = options => promoteCleanInstallProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const recoverCompletedCleanAdmission = options => recoverCompletedCleanAdmissionProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const recoverCompletedCleanData = options => recoverCompletedCleanDataProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const recoverCompletedCleanPointer = options => recoverCompletedCleanPointerProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const recoverCompletedCleanPromotion = options => recoverCompletedCleanPromotionProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const recoverCompletedCleanSystemd = options => recoverCompletedCleanSystemdProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const recoverCompletedCleanUnits = options => recoverCompletedCleanUnitsProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const recoverCompletedCleanReleaseRoot = options => recoverCompletedCleanReleaseRootProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const startCleanLocalServices = options => startCleanLocalServicesProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const recoverCleanLocalStartup = options => recoverCleanLocalStartupProduction({ inspectConfig: inspectInstalledCleanConfig, ...options });
+const advanceCleanInstallJournal = options => advanceCleanInstallJournalProduction({ ...options, inspectWorkspace: workspaceProof });
+const installCleanConfig = options => installCleanConfigProduction({ ...options, configureWorkspace: async () => {} });
+const inspectInstalledCleanConfig = options => inspectInstalledCleanConfigProduction({ ...options, inspectWorkspace: workspaceProof });
+const recoverCompletedCleanConfig = options => recoverCompletedCleanConfigProduction({ ...options, inspectWorkspace: workspaceProof });
 
 test("OPS-01/05: signed clean-install candidate stages config and units without a live install", {
   skip: process.getuid?.() !== 0
@@ -584,6 +603,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     }
     const startOptions = filename => ({ journalPath: filename, trustDir,
       configDir, unitDirectory, dataRoot, inspectInactive: inactive,
+      inspectConfig: inspectInstalledCleanConfig,
       inspectCreated: async () => identityEvidence,
       inspectData: simulatedStartupData,
       inspectRunning: running, inspectPaused, inspectClosedIngress: closedIngress,
@@ -605,6 +625,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     assert.equal(await isAdmissionPaused(admissionFlag), true);
     const recoverStartup = options => recoverCleanLocalStartup({
       journalPath: failedStartupPath, trustDir, configDir, unitDirectory, dataRoot,
+      inspectConfig: inspectInstalledCleanConfig,
       inspectCreated: async () => identityEvidence,
       inspectData: simulatedStartupData,
       inspectInactive: inactive, inspectRunning: running,

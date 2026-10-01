@@ -113,7 +113,7 @@ export async function preflightHost({ domain, expectedIp, workUser, allowedRoot 
   if (!info.isDirectory() || (await realpath(root)) !== root) {
     throw new Error("Allowed root must be a real directory without symlink components");
   }
-  for (const binary of ["tmux", "systemctl", "openssl", "tar", "git"]) {
+  for (const binary of ["tmux", "systemctl", "openssl", "tar", "git", "getfacl"]) {
     try { await exec("which", [binary], { timeout: 5000, maxBuffer: 4096 }); }
     catch { throw new Error(`Missing host dependency: ${binary}`); }
   }
