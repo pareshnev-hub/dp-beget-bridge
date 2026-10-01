@@ -176,7 +176,8 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
       const policy = { format: "dp-beget-clean-route-policy-v1", transactionId: record.transactionId,
         artifactSha256: record.artifactSha256, manifestSha256: record.manifestSha256, commit: record.commit,
         domain, expectedIp, unitName: "dp-clean-caddy.service", unitFile: "/etc/systemd/system/dp-clean-caddy.service",
-        unitFileSha256: "a".repeat(64), ownerUser: "nobody", ownerUid: 65534,
+        unitFileSha256: "a".repeat(64), ownerUser: joinedCaddy?.ownerUser || "nobody",
+        ownerUid: joinedCaddy?.ownerUid || 65534,
         executable: "/usr/bin/caddy", executableSha256: "b".repeat(64), adminSocket: "/run/dp-caddy/admin.sock" };
       await writeFile(policyPath, JSON.stringify(policy), { mode: 0o600, flag: "wx" });
       const route = { pid: 9001, ownerUid: policy.ownerUid, unitName: policy.unitName, domain, expectedIp,
