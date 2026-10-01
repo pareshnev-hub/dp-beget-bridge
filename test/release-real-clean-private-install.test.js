@@ -97,9 +97,11 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
       inspectHost: async () => ({ domain, expectedIp, dns: "pass", tls: "pass" }) }) });
   const journalPath = path.join(workspaceParent, "installation.json");
   const controller = { journalPath, workspace: inputs.workspace,
-    manifestSha256: prepared.manifestSha256, releaseRoot, trustDir };
+    manifestSha256: prepared.manifestSha256, releaseRoot, trustDir,
+    initializeOwner: process.env.DP_TEST_REAL_CLEAN_OAUTH_COMPOSED === "1" };
   const result = await installCleanPrivateRuntime(controller);
-  assert.equal(result.phase, "admission-ready");
+  const installedPhase = controller.initializeOwner ? "owner-ready" : "admission-ready";
+  assert.equal(result.phase, installedPhase);
   assert.equal(result.localServices, "inactive");
   assert.equal(result.admission, "paused");
   assert.equal(result.publicIngress, "unproven");
@@ -108,7 +110,14 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   assert.equal((await verifyAdmissionPause()).paused, true);
   assert.equal((await lstat(path.join(releaseRoot, "current"))).isSymbolicLink(), true);
   await assert.rejects(installCleanPrivateRuntime(controller), /fresh journal/);
-  assert.equal((await readCleanInstallJournal(journalPath)).phase, "admission-ready");
+  assert.equal((await readCleanInstallJournal(journalPath)).phase, installedPhase);
+  if (controller.initializeOwner) {
+    assert.equal(result.authMode, "oauth");
+    assert.equal(result.owner, "candidate-bound");
+    await assert.rejects(lstat(`${journalPath}.owner-install.lock`), { code: "ENOENT" });
+    assert.equal((await inspectInitializedCleanOwner({ journal: await readCleanInstallJournal(journalPath), trustDir })).owner, "candidate-bound");
+    t.diagnostic("One fresh controller composed all real signed private phases and committed OAuth owner readiness; no active service or grant");
+  }
   if (process.env.DP_TEST_REAL_CLEAN_OAUTH_STAGING === "1") {
     const agent = await readFile("/etc/dp-beget-bridge/agent.env", "utf8");
     const mcp = await readFile("/etc/dp-beget-bridge/mcp.env", "utf8");
@@ -135,7 +144,7 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   t.diagnostic("Real signed artifact, dependencies, identities, config, data, promotion, pointer, systemd and admission installation passed; public DNS/TLS simulated; no service startup");
   const authProfile = await inspectCleanInstallAuthProfile(controller);
   assert.equal(Object.keys(authProfile).some(key => /secret|token/i.test(key)), false);
-  if (process.env.DP_TEST_REAL_CLEAN_OAUTH_OWNER === "1") {
+  if (process.env.DP_TEST_REAL_CLEAN_OAUTH_OWNER === "1" && !controller.initializeOwner) {
     assert.equal(authProfile.authMode, "oauth");
     const journal = await readCleanInstallJournal(journalPath);
     const skippedPath = path.join(workspaceParent, "rejected-owner-skip.json");

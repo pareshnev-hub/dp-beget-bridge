@@ -17,6 +17,9 @@ import { loadCleanSystemdUnits } from "./load-clean-systemd-units.mjs";
 import { installCleanAdmissionPause, inspectCleanAdmissionTarget } from "./install-clean-admission-pause.mjs";
 import { inspectCleanSystemdBoundary } from "./inspect-clean-systemd-boundary.mjs";
 import { verifyAdmissionPause } from "./admission-pause.mjs";
+import { inspectCleanInstallAuthProfile } from "./clean-install-auth-profile.mjs";
+import { inspectInitializedCleanOwner } from "./clean-install-owner-data.mjs";
+import { installCleanOwner } from "./install-clean-owner.mjs";
 
 const STEPS = Object.freeze([
   ["identities", installCleanIdentities], ["config", installCleanConfig],
@@ -40,18 +43,23 @@ async function inspectFreshTargets({ journal, trustDir }) {
 
 // Fresh private installation only. Never retries an existing journal, starts
 // or enables services, opens ingress, resumes admission, or purges data.
+// Explicit initializeOwner adds the journaled OAuth owner phase only.
 // Every live phase delegates to its existing signed/journaled primitive.
 export async function installCleanPrivateRuntime({ journalPath, workspace, manifestSha256,
   releaseRoot, trustDir, startJournal = startCleanInstallJournal,
   readJournal = readCleanInstallJournal, advance = advanceCleanInstallJournal,
   inspectTargets = inspectFreshTargets, inspectSystemd = inspectCleanSystemdBoundary,
   inspectPaused = verifyAdmissionPause, installers = {},
+  initializeOwner = false, inspectAuthProfile = inspectCleanInstallAuthProfile,
+  inspectOwner = inspectInitializedCleanOwner,
   isRoot = () => process.getuid?.() === 0 } = {}) {
   if (!isRoot()) throw new Error("Root is required to install clean private runtime");
+  const steps = initializeOwner === true ? [...STEPS, ["owner", installCleanOwner]] : STEPS;
   if (typeof journalPath !== "string" || !path.isAbsolute(journalPath) ||
-      path.normalize(journalPath) !== journalPath || !installers || typeof installers !== "object" ||
+      path.normalize(journalPath) !== journalPath || typeof initializeOwner !== "boolean" ||
+      !installers || typeof installers !== "object" ||
       Array.isArray(installers) || Object.keys(installers).some(key =>
-        !STEPS.some(([name]) => name === key) || typeof installers[key] !== "function")) {
+        !steps.some(([name]) => name === key) || typeof installers[key] !== "function")) {
     throw new Error("Invalid clean private controller inputs");
   }
   // Reject all pre-existing journal paths, including symlinks, before doing
@@ -59,6 +67,13 @@ export async function installCleanPrivateRuntime({ journalPath, workspace, manif
   // and enforces exclusive no-follow creation, closing the check/create race.
   try { await lstat(journalPath); throw new Error("Clean private installation requires a fresh journal"); }
   catch (error) { if (error.code !== "ENOENT") throw error; }
+  // Reject an incompatible or changed signed profile before creating a
+  // journal or making any account/configuration/data mutation.
+  const profileInputs = { workspace, manifestSha256, trustDir };
+  const authProfile = initializeOwner ? await inspectAuthProfile(profileInputs) : null;
+  if (initializeOwner && authProfile?.authMode !== "oauth") {
+    throw new Error("Clean private owner initialization requires a bound OAuth profile");
+  }
   const journal = await startJournal({ journalPath, workspace, manifestSha256, releaseRoot, trustDir });
   if (!journal || journal.phase !== "prepared" || journal.workspace !== workspace ||
       journal.manifestSha256 !== manifestSha256 || journal.releaseRoot !== releaseRoot ||
@@ -73,7 +88,7 @@ export async function installCleanPrivateRuntime({ journalPath, workspace, manif
   try {
     await inspectPhase(phase);
     await inspectTargets({ journal, trustDir });
-    for (const [name, productionInstall] of STEPS) {
+    for (const [name, productionInstall] of steps) {
       stage = name;
       await inspectPhase(phase);
       const intent = `${name}-intent`, ready = `${name}-ready`;
@@ -93,13 +108,16 @@ export async function installCleanPrivateRuntime({ journalPath, workspace, manif
     }
     stage = "final-verification";
     if ((await inspectSystemd(common))?.localSystemd !== "inactive-bound" ||
-        (await inspectPaused())?.paused !== true) {
+        (await inspectPaused())?.paused !== true ||
+        (initializeOwner && (!isDeepStrictEqual(authProfile, await inspectAuthProfile(profileInputs)) ||
+          (await inspectOwner({ journal: { ...journal, phase }, trustDir }))?.owner !== "candidate-bound"))) {
       throw new Error("Clean private final inactive/paused boundary is unproven");
     }
-    await inspectPhase("admission-ready");
-    return { transactionId: journal.transactionId, phase: "admission-ready",
+    await inspectPhase(initializeOwner ? "owner-ready" : "admission-ready");
+    return { transactionId: journal.transactionId, phase,
       version: journal.version, commit: journal.commit, localServices: "inactive",
-      admission: "paused", publicIngress: "unproven" };
+      admission: "paused", publicIngress: "unproven",
+      ...(initializeOwner ? { authMode: "oauth", owner: "candidate-bound" } : {}) };
   } catch (cause) {
     const error = new Error(`Clean private installation stopped during ${stage}; journal retained for deliberate recovery`, { cause });
     error.code = "CLEAN_PRIVATE_INSTALL_STOPPED";

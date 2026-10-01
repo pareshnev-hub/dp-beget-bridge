@@ -38,6 +38,77 @@ async function fixture(t) {
   return { args, calls, read, save, journal };
 }
 
+function withOwner(f) {
+  const profile = { authMode: "oauth", ownerId: "owner-ci", executionProfile: "files-read" };
+  f.args.initializeOwner = true;
+  f.args.inspectAuthProfile = async () => ({ ...profile });
+  f.args.inspectOwner = async () => ({ owner: "candidate-bound", ownerId: profile.ownerId });
+  f.args.installers.owner = async input => {
+    f.calls.push("owner");
+    await input.advance({ journalPath: f.args.journalPath, transactionId: f.journal.transactionId,
+      expectedPhase: "owner-intent", nextPhase: "owner-ready" });
+  };
+  return profile;
+}
+
+test("OPS-01: explicit OAuth composition commits owner readiness while keeping services inactive and admission paused", async t => {
+  const f = await fixture(t);
+  withOwner(f);
+  const result = await installCleanPrivateRuntime(f.args);
+  assert.equal(result.phase, "owner-ready");
+  assert.equal(result.owner, "candidate-bound");
+  assert.equal(result.authMode, "oauth");
+  assert.equal(result.localServices, "inactive");
+  assert.equal(result.admission, "paused");
+  assert.equal(result.publicIngress, "unproven");
+  assert.deepEqual(f.calls, ["preflight", ...names, "owner"]);
+  await assert.rejects(installCleanPrivateRuntime(f.args), /fresh journal/);
+});
+
+test("OPS-01: incompatible or unverifiable OAuth selection stops before journal and all live mutations", async t => {
+  for (const selection of ["static", "unverifiable", "invalid-option"]) {
+    const f = await fixture(t);
+    withOwner(f);
+    if (selection === "static") f.args.inspectAuthProfile = async () => ({ authMode: "static" });
+    if (selection === "unverifiable") f.args.inspectAuthProfile = async () => { throw new Error("signed candidate changed"); };
+    if (selection === "invalid-option") f.args.initializeOwner = "yes";
+    await assert.rejects(installCleanPrivateRuntime(f.args));
+    await assert.rejects(f.read(), { code: "ENOENT" });
+    assert.deepEqual(f.calls, []);
+  }
+});
+
+test("OPS-01: owner interruption, phase skipping and missing commits retain intent without replay", async t => {
+  for (const failure of ["interrupted", "skip", "missing-commit"]) {
+    const f = await fixture(t);
+    withOwner(f);
+    f.args.installers.owner = async input => {
+      f.calls.push("owner");
+      if (failure === "interrupted") throw new Error("owner bootstrap interrupted");
+      if (failure === "skip") await input.advance({ journalPath: f.args.journalPath,
+        transactionId: f.journal.transactionId, expectedPhase: "owner-intent", nextPhase: "startup-ready" });
+    };
+    await assert.rejects(installCleanPrivateRuntime(f.args), /stopped during owner/);
+    assert.equal((await f.read()).phase, "owner-intent");
+    await assert.rejects(installCleanPrivateRuntime(f.args), /fresh journal/);
+    assert.deepEqual(f.calls, ["preflight", ...names, "owner"]);
+  }
+});
+
+test("OPS-01: owner readiness cannot count as controller success after profile drift or failed owner proof", async t => {
+  for (const failure of ["profile-drift", "unproven-owner"]) {
+    const f = await fixture(t);
+    const profile = withOwner(f);
+    if (failure === "profile-drift") {
+      let reads = 0;
+      f.args.inspectAuthProfile = async () => ++reads === 1 ? profile : { ...profile, ownerId: "owner-foreign" };
+    } else f.args.inspectOwner = async () => ({ owner: "unproven" });
+    await assert.rejects(installCleanPrivateRuntime(f.args), /stopped during final-verification/);
+    assert.equal((await f.read()).phase, "owner-ready");
+    await assert.rejects(installCleanPrivateRuntime(f.args), /fresh journal/);
+  }
+});
+
 test("OPS-01: controller reaches only inactive paused installation and refuses replay", async t => {
   const f = await fixture(t);
   const result = await installCleanPrivateRuntime(f.args);
