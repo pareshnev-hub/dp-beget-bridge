@@ -20,6 +20,7 @@ test("OPS-01: clean Direct config isolates Session Host from credentials", () =>
     agentToken, mcpToken });
   assert.doesNotMatch(config["session-host.env"], /TOKEN|SECRET|TELEMETRY/);
   assert.match(config["agent.env"], /DP_TELEMETRY_ENABLED=false\n/);
+  assert.match(config["agent.env"], /DP_FILE_WORKSPACE_SHARING=ipc-group\n/);
   assert.match(config["agent.env"], new RegExp(`DP_AGENT_TOKEN=${agentToken}\\n`));
   assert.doesNotMatch(config["agent.env"], /DP_MCP_ACCESS_TOKEN/);
   assert.match(config["mcp.env"], new RegExp(`DP_MCP_ACCESS_TOKEN=${mcpToken}\\n`));

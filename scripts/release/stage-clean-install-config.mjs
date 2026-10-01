@@ -67,6 +67,7 @@ export function renderCleanInstallConfig({ domain, allowedRoot, agentToken, mcpT
       agentAuthorization +
       `DP_SESSION_HOST_SOCKET=/run/dp-beget-bridge/session-host.sock\n` +
       `DP_DATA_DIR=/var/lib/dp-beget-bridge-agent\nDP_ALLOWED_ROOTS=${allowedRoot}\n` +
+      `DP_FILE_WORKSPACE_SHARING=ipc-group\n` +
       `DP_STORAGE_MIN_FREE_BYTES=268435456\nDP_TELEMETRY_ENABLED=false\nDP_LOG_LEVEL=info\n`,
     "mcp.env": `DP_AGENT_URL=http://127.0.0.1:8787\nDP_AGENT_TOKEN=${authMode === "oauth" ? oauthAgentToken : agentToken}\n` +
       `DP_MCP_HOST=127.0.0.1\nDP_MCP_PORT=8788\nDP_MCP_PATH=/mcp\n` +

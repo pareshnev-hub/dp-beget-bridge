@@ -24,7 +24,7 @@ const telemetry = new TelemetryClient({
   installationId,
   logger,
 });
-const pathPolicy = new PathPolicy(config.allowedRoots);
+const pathPolicy = new PathPolicy(config.allowedRoots, { workspaceSharing: config.workspaceSharing });
 const sessions = new SessionHostClient({ socketPath: config.sessionHostSocket });
 const sessionOwners = new SessionOwnerStore(config.dataDir);
 await sessionOwners.init();

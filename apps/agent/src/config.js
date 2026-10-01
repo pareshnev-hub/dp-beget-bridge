@@ -31,6 +31,7 @@ export function loadConfig() {
     storageMinFreeBytes: integer("DP_STORAGE_MIN_FREE_BYTES", 256 * 1024 * 1024),
     fileUploadMaxBytes: integer("DP_FILE_UPLOAD_MAX_BYTES", 512 * 1024 * 1024),
     fileTransferMaxConcurrent: integer("DP_FILE_TRANSFER_MAX_CONCURRENT", 2),
+    workspaceSharing: process.env.DP_FILE_WORKSPACE_SHARING || "private",
     telemetryEnabled: /^(1|true|yes)$/i.test(process.env.DP_TELEMETRY_ENABLED || "false"),
     telemetryUrl: process.env.DP_TELEMETRY_URL || "https://pareshnev.com/api/dp-beget-bridge/events",
   };
@@ -48,6 +49,9 @@ export function loadConfig() {
   }
   if (config.fileTransferMaxConcurrent < 1) {
     throw new Error("DP_FILE_TRANSFER_MAX_CONCURRENT must be at least 1");
+  }
+  if (!["private", "ipc-group"].includes(config.workspaceSharing)) {
+    throw new Error("DP_FILE_WORKSPACE_SHARING must be private or ipc-group");
   }
   if (config.sessionOutputMaxBytes < 1) {
     throw new Error("DP_SESSION_OUTPUT_MAX_BYTES must be at least 1");

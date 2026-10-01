@@ -352,6 +352,7 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
     assert.equal(autonomy.externalEgress, "denied");
     assert.equal(autonomy.terminal, "pass");
     assert.equal(autonomy.fileDownload, "pass");
+    assert.equal(autonomy.agentUploadTerminalRoundtrip, "pass");
     assert.equal(autonomy.revocation, "pass");
     assert.equal((await verifyAdmissionPause()).paused, true);
     t.diagnostic(JSON.stringify(autonomy));

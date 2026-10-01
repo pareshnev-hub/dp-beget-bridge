@@ -132,7 +132,8 @@ export class FileManager {
           pinned.parentPath,
           Number.isFinite(declaredLength) ? declaredLength : 1,
         );
-        await pipeline(request, meter, this.createWriteStream(temporary, { mode: 0o600, flags: "wx" }));
+        const mode = this.pathPolicy.workspaceSharing === "ipc-group" ? 0o660 : 0o600;
+        await pipeline(request, meter, this.createWriteStream(temporary, { mode, flags: "wx" }));
         await this.commitTemporary(temporary, pinned.path, overwrite);
       } catch (error) {
         await this.fileSystem.rm(temporary, { force: true }).catch(() => {});
