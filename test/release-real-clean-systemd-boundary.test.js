@@ -7,6 +7,10 @@ import { promisify } from "node:util";
 import { CLEAN_INSTALL_UNIT_NAMES } from "../scripts/release/preflight-clean-install.mjs";
 import { inspectCleanLoadedSystemdUnits } from
   "../scripts/release/inspect-clean-systemd-boundary.mjs";
+import { advanceCleanInstallJournal, readCleanInstallJournal } from
+  "../scripts/release/clean-install-journal.mjs";
+import { startCleanLocalServices } from "../scripts/release/start-clean-local-services.mjs";
+import { recoverCleanLocalStartup } from "../scripts/release/recover-clean-local-startup.mjs";
 
 const exec = promisify(execFile);
 const unitDirectory = "/etc/systemd/system";
@@ -84,10 +88,57 @@ test("OPS-01: clean units load disabled and inactive with exact identities", asy
       `[Install]\nWantedBy=multi-user.target\n`);
   }
   await systemctl("daemon-reload");
-  for (const unit of core) await systemctl("start", unit);
   const running = () => inspectCleanLoadedSystemdUnits({ unitDirectory,
     releaseRoot, identityPlan: dummyPlan, expectActive: true,
     inspectListeners: async () => { throw new Error("Active ports need health probes"); } });
+  const inactive = () => inspectCleanLoadedSystemdUnits({ unitDirectory,
+    releaseRoot, identityPlan: dummyPlan,
+    inspectListeners: async () => ({ directPorts: "unoccupied" }) });
+  const journalParent = await mkdtemp("/var/lib/dp-clean-start-journal-");
+  t.after(() => rm(journalParent, { recursive: true, force: true }));
+  const journalPath = path.join(journalParent, "journal.json");
+  const transactionId = "00000000-0000-4000-8000-000000000001";
+  const plan = { ...dummyPlan, workGroup: "nogroup", releaseRoot,
+    allowedRoot: journalParent, domain: "example.com" };
+  const candidate = { artifactSha256: "b".repeat(64), version: "0.1.0",
+    commit: "c".repeat(40) };
+  await writeFile(journalPath, JSON.stringify({
+    format: "dp-beget-clean-install-journal-v1", transactionId,
+    phase: "startup-intent", workspace: path.join(journalParent, "candidate"),
+    releaseRoot, manifestSha256: "a".repeat(64), ...candidate,
+    identityPlan: plan }) + "\n", { mode: 0o600 });
+  const closed = async () => ({ publicIngress: "closed-exclusive" });
+  const paused = async () => ({ paused: true });
+  const healthy = async () => { await running(); return { drained: true, services: 3 }; };
+  const inspectors = {
+    verify: async () => candidate, inspectPlan: async () => plan,
+    inspectCreated: async () => ({ identities: "journal-bound" }),
+    inspectConfig: async () => ({ config: "bound-private" }),
+    inspectUnits: async () => ({ units: "bound-files" }),
+    inspectData: async () => ({ data: "private-owned" }),
+    inspectPointer: async () => ({ release: "signed-inert" }),
+    inspectPromoted: async () => ({ release: "signed-inert" }),
+    inspectInactive: inactive, inspectSystemd: inactive,
+    inspectRunning: running, inspectPaused: paused,
+    inspectClosedIngress: closed, inspectHealth: healthy,
+  };
+  const advance = options => advanceCleanInstallJournal({ ...options, ...inspectors });
+  const startOptions = { journalPath, trustDir: journalParent,
+    ...inspectors, advance, startUnit: unit => systemctl("start", unit),
+    stopUnit: unit => systemctl("stop", unit) };
+  await assert.rejects(startCleanLocalServices({ ...startOptions,
+    inspectClosedIngress: undefined }), /verified closed public route/);
+  await assert.rejects(startCleanLocalServices({ ...startOptions,
+    startUnit: async unit => {
+      await systemctl("start", unit);
+      if (unit === core[1]) throw new Error("interrupted after second real start");
+    } }), /interrupted after second real start/);
+  assert.equal((await inactive()).localSystemd, "inactive-bound");
+  assert.equal((await readCleanInstallJournal(journalPath)).phase, "startup-intent");
+  await recoverCleanLocalStartup({ journalPath, trustDir: journalParent,
+    ...inspectors, advance });
+  assert.equal((await startCleanLocalServices(startOptions)).phase, "startup-ready");
+  assert.equal((await readCleanInstallJournal(journalPath)).phase, "startup-ready");
   assert.deepEqual(await running(), { localSystemd: "active-bound",
     directPorts: "local-health-required", publicIngress: "unproven" });
   await systemctl("stop", core[1]);
