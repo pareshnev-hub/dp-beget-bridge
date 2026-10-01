@@ -249,6 +249,7 @@ test("OPS-01: real non-root Caddy owns the admin socket and TCP 443 on a disposa
   assert.match(joined.commit, /^[0-9a-f]{40}$/); assert.match(joined.artifactSha256, /^[0-9a-f]{64}$/);
   assert.match(joined.policySha256, /^[0-9a-f]{64}$/); assert.equal(joined.installRoute, "signed-install-bound");
   assert.equal(joined.publicIngress, "unproven");
+  assert.equal(joined.hostStartupGate, "rejected-isolated-namespace");
   t.diagnostic(JSON.stringify(joined));
   await systemctl("stop", unitName);
   t.diagnostic("Real Caddy/systemd/host/TLS/config/closed HTTPS rehearsal and joined actual signed private installation passed; DNS simulated; production ingress unproven");

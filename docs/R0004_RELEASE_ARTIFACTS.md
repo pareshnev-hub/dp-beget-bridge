@@ -335,3 +335,19 @@ Only DNS is simulated; the separate Node client trusts an ephemeral fixture CA v
 The clean installer binds the work root to its isolated IPC group with mode 2770 and selects `DP_FILE_WORKSPACE_SHARING=ipc-group` for Agent. Agent's signed unit uses UMask 0007. New uploaded files use mode 0660 and newly created upload directories use 2770, so the separate work user can read and edit uploads through its terminal. No world access is granted. Existing private descendants retain their ownership and permissions.
 
 The sharing setting is opt-in outside clean installation. Its default is `private`, preserving 0600 uploads and 0700 parent creation. Shared mode refuses unsupported platforms, masks removing group permissions, non-canonical/non-setgid roots, root groups, missing group membership and changed upload-parent group/mode; it never repairs existing descendant permissions automatically.
+
+Shared uploads also require basic permissions without named/default ACLs. The held parent descriptor is checked before directory/file creation and again before commit; failures never publish the new destination. The acl package is an explicit runtime dependency for this mode.
+
+## Protected paused application startup
+
+`start-clean-protected.mjs --request FILE --policy FILE` starts an already installed fresh-owner OAuth application on the supported dedicated Ubuntu 24.04 profile. It reads the original root-private install request and separate protected proxy policy; it neither learns proxy trust from an arbitrary candidate nor provisions/reconfigures a proxy. The independently pinned signature and complete actual Caddy/systemd/process/socket/firewall/address/config/DNS/CA/HTTPS binding must pass. The inspector, PID 1 and Caddy must share the initial host network namespace. An isolated/container route cannot authorize host-wide services.
+
+```bash
+sudo node scripts/release/start-clean-protected.mjs --request /var/lib/dp-install/private-request.json --policy /var/lib/dp-install/route-policy.json
+```
+
+The explicit `inspectCleanClosedIngress` aggregate returns closed-exclusive only for the complete bound static Caddy profile in that initial namespace. Lower supporting inspectors remain unproven; the ordinary startup primitive still refuses without an explicit verifier. The command checks closure before any journal transition, rejects unresolved transition/startup/recovery locks, advances owner-ready to startup-intent and carries the same verifier through ordered starts and readiness. It permits a startup-intent retry only after deliberate recovery has cleared the prior locks. Completed startup-ready replay is refused. Output is bounded non-secret transaction/version/commit/phase/state metadata; failure prints a fixed redacted diagnostic.
+
+Success leaves all core units disabled, active only locally, with admission paused and Caddy serving its static closed response. It never enables boot startup, resumes admission, creates a grant, opens an application route or changes a shared Traefik host. Interrupted work retains its existing journal/locks. Recovery remains the existing explicit `recoverCleanLocalStartup` API with the same protected closed-ingress callback, after the original installer has stopped; no lock is blindly removed by the operator.
+
+Positive public clean-host startup acceptance is still pending. Unit tests exercise namespace/drift/foreign-binding/lock/replay refusal; real signed private installation rejects the unproven proxy without modifying its journal, and actual isolated Caddy/HTTPS proof is rejected by the host-startup namespace gate. Existing actual application startup/recovery fixtures still use their declared test-only gate.
