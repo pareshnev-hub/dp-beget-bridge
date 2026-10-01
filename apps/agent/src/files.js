@@ -134,6 +134,7 @@ export class FileManager {
         );
         const mode = this.pathPolicy.workspaceSharing === "ipc-group" ? 0o660 : 0o600;
         await pipeline(request, meter, this.createWriteStream(temporary, { mode, flags: "wx" }));
+        await pinned.assertUploadParent();
         await this.commitTemporary(temporary, pinned.path, overwrite);
       } catch (error) {
         await this.fileSystem.rm(temporary, { force: true }).catch(() => {});

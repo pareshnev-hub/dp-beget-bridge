@@ -1,11 +1,14 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { BridgeError } from "./errors.js";
 
 const DIRECTORY_OPEN_FLAGS = fs.constants.O_RDONLY
   | fs.constants.O_DIRECTORY
   | fs.constants.O_NOFOLLOW;
+const exec = promisify(execFile);
 
 function isWithin(candidate, root) {
   return candidate === root || candidate.startsWith(`${root}${path.sep}`);
@@ -179,6 +182,7 @@ export class PathPolicy {
         reference: target,
         path: procFdPath(handle, target.segments.at(-1)),
         parentPath: procFdPath(handle),
+        assertUploadParent: () => this.assertSharedUploadParent(handle, target.root),
         async close() { await handle.close(); },
       };
     } catch (error) {
@@ -192,6 +196,18 @@ export class PathPolicy {
     const stat = await handle.stat();
     if (stat.gid !== this.sharedGroups.get(root) || (stat.mode & 0o7777) !== 0o2770) {
       throw new BridgeError("workspace_permissions_changed", "Upload parent no longer has the isolated shared workspace permissions", 409);
+    }
+    // Named/default ACLs could grant inherited upload access beyond IPC.
+    // Inspect the held parent descriptor, never a newly resolved pathname.
+    let acl;
+    try {
+      acl = await exec("getfacl", ["-c", "-p", "-n", `/proc/${process.pid}/fd/${handle.fd}`],
+        { timeout: 5000, maxBuffer: 8192, env: { PATH: "/usr/sbin:/usr/bin:/sbin:/bin", LC_ALL: "C" } });
+    } catch {
+      throw new BridgeError("workspace_permissions_changed", "Shared upload parent ACL is unproven", 409);
+    }
+    if (acl.stderr.trim() || acl.stdout.trim() !== "user::rwx\ngroup::rwx\nother::---") {
+      throw new BridgeError("workspace_permissions_changed", "Shared upload parent has extended or default ACLs", 409);
     }
   }
 }

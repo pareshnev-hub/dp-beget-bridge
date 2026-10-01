@@ -4,10 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import test from "node:test";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { FileManager } from "../apps/agent/src/files.js";
 import { PathPolicy } from "../packages/core/src/path-policy.js";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
+const exec = promisify(execFile);
 
 async function createFixture(t, options = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-files-"));
@@ -70,6 +73,14 @@ test("explicit isolated group uploads remain usable by the work group without ch
     assert.equal((await fs.stat(path.join(root, "nested/incoming/upload.txt"))).mode & 0o777, 0o660);
     assert.equal((await fs.stat(privateFile)).mode & 0o777, 0o600);
     assert.equal(await fs.readFile(privateFile, "utf8"), "keep-private");
+    for (const acl of ["u:65534:rwx", "d:u:65534:rwx"]) {
+      await exec("setfacl", ["-m", acl, root]);
+      try {
+        await assert.rejects(manager.upload(Readable.from("rejected"), "acl-rejected.txt"),
+          error => error.code === "workspace_permissions_changed");
+        await assert.rejects(fs.access(path.join(root, "acl-rejected.txt")), { code: "ENOENT" });
+      } finally { await exec("setfacl", ["-b", "-k", root]); }
+    }
     await fs.chmod(path.join(root, "nested"), 0o770);
     await assert.rejects(manager.upload(Readable.from("rejected"), "nested/rejected.txt"),
       error => error.code === "workspace_permissions_changed");

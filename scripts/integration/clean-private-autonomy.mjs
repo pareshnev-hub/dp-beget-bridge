@@ -116,13 +116,16 @@ export async function rehearseCleanPrivateAutonomy({ journalPath, trustDir } = {
     // denied fixture; no repair credential or private URL bypass is used.
     stage = "agent-upload-workspace";
     const uploadedName = "autonomy-ci-upload/nested/source.txt";
-    const uploadRoute = `/v1/files/content?${new URLSearchParams({ path: `${plan.allowedRoot}/${uploadedName}` })}`;
     const uploadBytes = "ci-upload-content\n";
-    const uploaded = await request(`http://127.0.0.1:8787${uploadRoute}`, { method: "PUT",
-      headers: { authorization: `Bearer ${profile.oauthAgentToken}`, "content-type": "application/octet-stream",
-        [AGENT_CONTEXT_HEADER]: createAgentContext({ secret: profile.contextSecret,
-          authorization: { ownerId: profile.ownerId, grantId: "ci-upload-roundtrip",
-            scopes: ["files:write"], executionProfile: "full-shell" }, method: "PUT", path: uploadRoute }) }, body: uploadBytes });
+    const uploadTo = target => {
+      const route = `/v1/files/content?${new URLSearchParams({ path: `${plan.allowedRoot}/${target}` })}`;
+      return request(`http://127.0.0.1:8787${route}`, { method: "PUT",
+        headers: { authorization: `Bearer ${profile.oauthAgentToken}`, "content-type": "application/octet-stream",
+          [AGENT_CONTEXT_HEADER]: createAgentContext({ secret: profile.contextSecret,
+            authorization: { ownerId: profile.ownerId, grantId: "ci-upload-roundtrip",
+              scopes: ["files:write"], executionProfile: "full-shell" }, method: "PUT", path: route }) }, body: uploadBytes });
+    };
+    const uploaded = await uploadTo(uploadedName);
     assert.equal(uploaded.status, 201);
     const receipt = await uploaded.json();
     assert.equal(receipt.size, Buffer.byteLength(uploadBytes));
@@ -134,6 +137,11 @@ export async function rehearseCleanPrivateAutonomy({ journalPath, trustDir } = {
       const stat = await lstat(`${plan.allowedRoot}/${directory}`);
       assert.equal(stat.mode & 0o7777, 0o2770); assert.equal(stat.gid, rootStat.gid);
     }
+    stage = "agent-upload-acl-refusal";
+    await exec("setfacl", ["-m", "d:u:65534:rwx", plan.allowedRoot], { timeout: 5000, maxBuffer: 4096 });
+    try { assert.equal((await uploadTo("acl-rejected.txt")).status, 409); }
+    finally { await exec("setfacl", ["-k", plan.allowedRoot], { timeout: 5000, maxBuffer: 4096 }); }
+    await assert.rejects(lstat(`${plan.allowedRoot}/acl-rejected.txt`), { code: "ENOENT" });
     const name = "autonomy-ci-probe.txt";
     stage = "terminal-command";
     const command = await call("run_terminal_command", { session_id: sessionId, idempotency_key: "ci-autonomy-command",
