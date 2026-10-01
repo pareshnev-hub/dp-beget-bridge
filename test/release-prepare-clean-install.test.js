@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -27,6 +27,10 @@ import { inspectCleanSystemdBoundary, inspectCleanSystemdInactivity } from
   "../scripts/release/inspect-clean-systemd-boundary.mjs";
 import { loadCleanSystemdUnits } from "../scripts/release/load-clean-systemd-units.mjs";
 import { recoverCompletedCleanSystemd } from "../scripts/release/recover-completed-clean-systemd.mjs";
+import { installCleanAdmissionPause } from "../scripts/release/install-clean-admission-pause.mjs";
+import { pauseAdmission, verifyAdmissionPause } from "../scripts/release/admission-pause.mjs";
+import { DEFAULT_ADMISSION_PAUSE_PATH, isAdmissionPaused } from
+  "../packages/core/src/admission-gate.js";
 import { CLEAN_INSTALL_UNIT_NAMES } from "../scripts/release/preflight-clean-install.mjs";
 import { recoverCompletedCleanReleaseRoot } from "../scripts/release/recover-completed-clean-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
@@ -490,6 +494,43 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
       inspectSystemd: () => inspectSystemd(unit => systemdState(unit)),
       advance: loadOptions.advance })).phase, "systemd-ready");
     await assert.rejects(stat(systemdLock), /ENOENT/);
+    const admissionParent = await mkdtemp("/var/lib/dp-clean-admission-test-");
+    t.after(() => rm(admissionParent, { recursive: true, force: true }));
+    await chmod(admissionParent, 0o755);
+    const admissionFlag = path.join(admissionParent, "maintenance", "admission-paused");
+    const inspectAdmissionTarget = async () => {
+      await assert.rejects(stat(admissionFlag), { code: "ENOENT" });
+      return { admission: "absent" };
+    };
+    const inspectPaused = () => verifyAdmissionPause({ flag: admissionFlag });
+    assert.equal((await advanceCleanInstallJournal({ journalPath,
+      transactionId: journal.transactionId, expectedPhase: "systemd-ready",
+      nextPhase: "admission-intent", trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }),
+      inspectSystemd: () => inspectSystemd(unit => systemdState(unit)),
+      inspectAdmissionTarget })).phase, "admission-intent");
+    const paused = await installCleanAdmissionPause({ journalPath, trustDir,
+      configDir, unitDirectory, dataRoot, inspectTarget: inspectAdmissionTarget,
+      inspectSystemd: () => inspectSystemd(unit => systemdState(unit)),
+      pause: async ({ flag }) => {
+        assert.equal(flag, DEFAULT_ADMISSION_PAUSE_PATH);
+        return pauseAdmission({ flag: admissionFlag });
+      },
+      inspectPaused: async ({ flag }) => {
+        assert.equal(flag, DEFAULT_ADMISSION_PAUSE_PATH);
+        return inspectPaused();
+      },
+      advance: options => advanceCleanInstallJournal({ ...options,
+        inspectCreated: async () => identityEvidence,
+        inspectData: input => inspectInstalledCleanData({ ...input,
+          inspectWork: async () => workEvidence }),
+        inspectSystemd: () => inspectSystemd(unit => systemdState(unit)),
+        inspectPaused }) });
+    assert.equal(paused.phase, "admission-ready");
+    assert.equal(await isAdmissionPaused(admissionFlag), true);
+    await assert.rejects(stat(`${journalPath}.admission-install.lock`), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
