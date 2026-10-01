@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { inspectCleanInstallTargets, inspectDirectListeners,
   preflightCleanInstall } from "../scripts/release/preflight-clean-install.mjs";
+import { inspectCleanLoopbackListeners } from
+  "../scripts/release/inspect-clean-systemd-boundary.mjs";
 
 const valid = { artifact: "/private/archive.tar.gz", manifest: "/private/manifest.json",
   signature: "/private/manifest.sig", domain: "bridge.example.com", expectedIp: "1.1.1.1",
@@ -24,6 +26,23 @@ test("OPS-01: occupied IPv4 or IPv6 Direct ports block clean installation", () =
     assert.throws(() => inspectDirectListeners(`LISTEN 0 4096 ${address} *:*\n`), /already occupied/);
   }
   assert.throws(() => inspectDirectListeners("unexpected output\n"), /inventory is invalid/);
+});
+
+test("OPS-01: running clean services bind both Direct ports only on IPv4 loopback", () => {
+  const line = address => `LISTEN 0 4096 ${address} 0.0.0.0:*\n`;
+  const validListeners = line("127.0.0.1:8787") + line("127.0.0.1:8788");
+  assert.deepEqual(inspectCleanLoopbackListeners(validListeners),
+    { directPorts: "loopback-bound" });
+  assert.throws(() => inspectCleanLoopbackListeners(line("127.0.0.1:8787")), /incomplete/);
+  for (const address of ["0.0.0.0:8787", "[::]:8788", "*:8787", "[::1]:8788"]) {
+    assert.throws(() => inspectCleanLoopbackListeners(validListeners + line(address)),
+      /non-loopback or duplicate/);
+  }
+  assert.throws(() => inspectCleanLoopbackListeners(
+    line("127.0.0.1:8787") + line("[::1]:8788")), /non-loopback/);
+  assert.throws(() => inspectCleanLoopbackListeners(validListeners + line("127.0.0.1:8788")),
+    /non-loopback or duplicate/);
+  assert.throws(() => inspectCleanLoopbackListeners(validListeners + "invalid\n"), /Invalid/);
 });
 
 test("OPS-01/02: read-only clean install refuses existing services, data, and release paths", async () => {

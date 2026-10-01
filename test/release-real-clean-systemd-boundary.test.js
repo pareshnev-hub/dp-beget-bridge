@@ -90,7 +90,7 @@ test("OPS-01: clean units load disabled and inactive with exact identities", asy
   await systemctl("daemon-reload");
   const running = () => inspectCleanLoadedSystemdUnits({ unitDirectory,
     releaseRoot, identityPlan: dummyPlan, expectActive: true,
-    inspectListeners: async () => { throw new Error("Active ports need health probes"); } });
+    inspectListeners: async () => ({ directPorts: "loopback-bound" }) });
   const inactive = () => inspectCleanLoadedSystemdUnits({ unitDirectory,
     releaseRoot, identityPlan: dummyPlan,
     inspectListeners: async () => ({ directPorts: "unoccupied" }) });
@@ -140,7 +140,7 @@ test("OPS-01: clean units load disabled and inactive with exact identities", asy
   assert.equal((await startCleanLocalServices(startOptions)).phase, "startup-ready");
   assert.equal((await readCleanInstallJournal(journalPath)).phase, "startup-ready");
   assert.deepEqual(await running(), { localSystemd: "active-bound",
-    directPorts: "local-health-required", publicIngress: "unproven" });
+    directPorts: "loopback-bound", publicIngress: "unproven" });
   await systemctl("stop", core[1]);
   await assert.rejects(running(), /active or overridden/);
 });
