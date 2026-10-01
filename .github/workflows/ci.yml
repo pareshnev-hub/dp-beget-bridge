@@ -10,6 +10,21 @@ permissions:
   contents: read
 
 jobs:
+  caddy-profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install distribution Caddy validator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y caddy
+      - name: Validate closed bootstrap profile and protected admin reads
+        run: env DP_TEST_CADDY_PROFILE=1 node --test test/release-clean-caddy-config.test.js
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10

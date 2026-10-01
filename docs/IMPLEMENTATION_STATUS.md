@@ -170,6 +170,8 @@ Only links to merged code, tests, CI/runtime evidence and release records can ad
 
 The new `probeCleanPublicRoute` API pins an HTTPS `/mcp` request to the prospective host's public IPv4 and domain, with DNS/TLS checks on both sides, a total request deadline and bounded response. Tests cover wrong targets, changed host evidence, authentication/redirect responses, oversized/truncated bodies and a trickling response. Its result explicitly leaves ingress **unproven**; no startup gate is opened. Loaded clean-host proxy topology and a real end-to-end route rehearsal remain the next boundary. This is supporting evidence work, not public release acceptance.
 
+Merged as `c0de3f1` (#250), with all three CI jobs successful (run 36872876924). The next implementation adds strict observation of a dedicated Caddy closed bootstrap profile through a private non-root Unix admin socket, brackets the public probe with matching configuration digests, and tests the socket reader against a real Unix HTTP fixture. A separate Ubuntu 24.04 CI job provisions the JSON with `caddy validate`. This does not yet bind the admin peer to the public listener or prove absence of alternate ingress; clean startup remains disabled by default.
+
 These implementation slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file
