@@ -180,6 +180,12 @@ The dedicated profile additionally accepts explicitly bound certificate/key path
 
 These implementation slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
+### Fresh private installation composition
+
+The combined Caddy/systemd/host/real-HTTPS rehearsal merged as `3fe5738` (#253). All four CI jobs passed on `b4754fa` (run 36885109579); Caddy 2.6.2 validation and the live non-root fixture had zero failures/skips. The integrated reader found a distribution-version admin Host mismatch, fixed by explicitly pinning `localhost`. DNS remained simulated and production startup remained closed.
+
+The next controller, `installCleanPrivateRuntime`, composes identities, config, units, data, signed promotion/pointer, systemd reload and admission pause into one fresh private installation. It verifies journal identity/phase around every mutation, rejects existing journals and unexpected transitions, stops after interruption, and ends only with inactive services and paused admission. Unit scenarios cover interrupted copies, changed candidate identity, missing/skip transitions and failed final state. Disposable root CI exercises the exact signed artifact, actual dependency preparation and all nine real mutation phases, with only external DNS/TLS simulated. This does not close OPS-01 or authorize service startup/public exposure; pairing/OAuth, real supported-domain topology and full failure/recovery acceptance remain open.
+
 ## Updating this file
 
 For each status change, add links in the related issue/PR and update:
