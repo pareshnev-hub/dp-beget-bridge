@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { lstat, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { CLEAN_INSTALL_UNIT_NAMES } from "../scripts/release/preflight-clean-install.mjs";
@@ -33,6 +33,7 @@ test("OPS-01: clean units load disabled and inactive with exact identities", asy
   const releaseRoot = await mkdtemp("/var/lib/dp-clean-manager-");
   const created = [];
   t.after(async () => {
+    for (const unit of [...core].reverse()) await systemctl("stop", unit).catch(() => {});
     for (const filename of created.reverse()) await rm(filename, { recursive: true, force: true });
     await systemctl("daemon-reload");
     for (const unit of core) await systemctl("reset-failed", unit).catch(() => {});
@@ -66,4 +67,27 @@ test("OPS-01: clean units load disabled and inactive with exact identities", asy
     "[Service]\nEnvironment=DP_TEST_OVERRIDE=1\n", { flag: "wx", mode: 0o644 });
   await systemctl("daemon-reload");
   await assert.rejects(inspect(), /active or overridden/);
+  await rm(override, { recursive: true });
+  // Start inert non-root dummy services on the disposable manager. The
+  // production templates and route stay outside this fixture.
+  await chmod(releaseRoot, 0o755);
+  const dummyPlan = { workUser: "nobody", ipcGroup: "nogroup",
+    agentUser: "nobody", mcpUser: "nobody" };
+  for (const [index, unit] of core.entries()) {
+    await writeFile(path.join(unitDirectory, unit),
+      `[Unit]\nDescription=Disposable clean ${unit}\n` +
+      `[Service]\nType=oneshot\nRemainAfterExit=yes\nUser=nobody\n` +
+      `Group=nogroup\nWorkingDirectory=${releaseRoot}/current\n` +
+      `${index === 0 ? "KillMode=process\n" : ""}ExecStart=/usr/bin/true\n` +
+      `[Install]\nWantedBy=multi-user.target\n`);
+  }
+  await systemctl("daemon-reload");
+  for (const unit of core) await systemctl("start", unit);
+  const running = () => inspectCleanLoadedSystemdUnits({ unitDirectory,
+    releaseRoot, identityPlan: dummyPlan, expectActive: true,
+    inspectListeners: async () => { throw new Error("Active ports need health probes"); } });
+  assert.deepEqual(await running(), { localSystemd: "active-bound",
+    directPorts: "local-health-required", publicIngress: "unproven" });
+  await systemctl("stop", core[1]);
+  await assert.rejects(running(), /active or overridden/);
 });

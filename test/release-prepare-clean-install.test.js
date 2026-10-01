@@ -29,6 +29,7 @@ import { loadCleanSystemdUnits } from "../scripts/release/load-clean-systemd-uni
 import { recoverCompletedCleanSystemd } from "../scripts/release/recover-completed-clean-systemd.mjs";
 import { installCleanAdmissionPause } from "../scripts/release/install-clean-admission-pause.mjs";
 import { recoverCompletedCleanAdmission } from "../scripts/release/recover-completed-clean-admission.mjs";
+import { startCleanLocalServices } from "../scripts/release/start-clean-local-services.mjs";
 import { pauseAdmission, verifyAdmissionPause } from "../scripts/release/admission-pause.mjs";
 import { DEFAULT_ADMISSION_PAUSE_PATH, isAdmissionPaused } from
   "../packages/core/src/admission-gate.js";
@@ -550,6 +551,58 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     assert.equal(paused.phase, "admission-ready");
     assert.equal(await isAdmissionPaused(admissionFlag), true);
     await assert.rejects(stat(admissionLock), /ENOENT/);
+    const failedStartupPath = path.join(workspaceParent, "failed-startup-journal.json");
+    await writeFile(failedStartupPath, await readFile(journalPath), { mode: 0o600 });
+    const closedIngress = async () => ({ publicIngress: "closed-exclusive" });
+    const healthy = async () => ({ drained: true, services: 3 });
+    const started = new Set();
+    const inactive = async () => {
+      assert.equal(started.size, 0);
+      return { localSystemd: "inactive-bound" };
+    };
+    const running = async () => {
+      assert.deepEqual([...started], ["dp-beget-session-host.service",
+        "dp-beget-agent.service", "dp-beget-mcp.service"]);
+      return { localSystemd: "active-bound" };
+    };
+    const advanceStartup = options => advanceCleanInstallJournal({ ...options,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }),
+      inspectSystemd: inactive, inspectPaused,
+      inspectClosedIngress: closedIngress, inspectRunning: running,
+      inspectHealth: healthy });
+    for (const filename of [journalPath, failedStartupPath]) {
+      assert.equal((await advanceStartup({ journalPath: filename,
+        transactionId: journal.transactionId, expectedPhase: "admission-ready",
+        nextPhase: "startup-intent", trustDir, configDir, unitDirectory, dataRoot })).phase,
+      "startup-intent");
+    }
+    const startOptions = filename => ({ journalPath: filename, trustDir,
+      configDir, unitDirectory, dataRoot, inspectInactive: inactive,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }),
+      inspectRunning: running, inspectPaused, inspectClosedIngress: closedIngress,
+      inspectHealth: healthy, advance: advanceStartup,
+      startUnit: async unit => { started.add(unit); },
+      stopUnit: async unit => { started.delete(unit); } });
+    await assert.rejects(startCleanLocalServices({ ...startOptions(journalPath),
+      inspectClosedIngress: undefined }), /verified closed public route/);
+    await assert.rejects(stat(`${journalPath}.startup-install.lock`), /ENOENT/);
+    await assert.rejects(startCleanLocalServices({ ...startOptions(failedStartupPath),
+      startUnit: async unit => {
+        started.add(unit);
+        if (unit === "dp-beget-agent.service") throw new Error("partial startup");
+      } }), /partial startup/);
+    assert.equal(started.size, 0);
+    assert.equal((await readCleanInstallJournal(failedStartupPath)).phase, "startup-intent");
+    assert.ok((await stat(`${failedStartupPath}.startup-install.lock`)).isFile());
+    assert.equal(await isAdmissionPaused(admissionFlag), true);
+    assert.equal((await startCleanLocalServices(startOptions(journalPath))).phase, "startup-ready");
+    assert.deepEqual([...started], ["dp-beget-session-host.service",
+      "dp-beget-agent.service", "dp-beget-mcp.service"]);
+    await assert.rejects(stat(`${journalPath}.startup-install.lock`), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,

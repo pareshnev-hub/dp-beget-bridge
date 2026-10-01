@@ -57,7 +57,7 @@ export async function inspectCleanSystemdInactivity({ showUnit = systemctlShow,
 // pointer checks so a disposable systemd host can exercise this boundary.
 export async function inspectCleanLoadedSystemdUnits({ unitDirectory = "/etc/systemd/system",
   releaseRoot, identityPlan, showUnit = systemctlShow,
-  inspectListeners = inspectCleanInstallListeners } = {}) {
+  inspectListeners = inspectCleanInstallListeners, expectActive = false } = {}) {
   if (process.getuid?.() !== 0 || !path.isAbsolute(unitDirectory || "") ||
       path.normalize(unitDirectory) !== unitDirectory ||
       !path.isAbsolute(releaseRoot || "") || path.normalize(releaseRoot) !== releaseRoot ||
@@ -66,7 +66,8 @@ export async function inspectCleanLoadedSystemdUnits({ unitDirectory = "/etc/sys
   const groups = [identityPlan.ipcGroup, identityPlan.agentUser, identityPlan.mcpUser];
   for (const [index, unit] of CLEAN_INSTALL_UNIT_NAMES.entries()) {
     const state = parse(await showUnit(unit));
-    if (state.ActiveState !== "inactive" || state.DropInPaths !== "") {
+    if (state.ActiveState !== (expectActive && index < 3 ? "active" : "inactive") ||
+        state.DropInPaths !== "") {
       throw new Error(`Clean-install systemd unit is active or overridden: ${unit}`);
     }
     if (index < 3) {
@@ -82,10 +83,11 @@ export async function inspectCleanLoadedSystemdUnits({ unitDirectory = "/etc/sys
       throw new Error(`Clean-install ingress unit exists: ${unit}`);
     }
   }
-  if ((await inspectListeners())?.directPorts !== "unoccupied") {
+  if (!expectActive && (await inspectListeners())?.directPorts !== "unoccupied") {
     throw new Error("Clean-install Direct service ports are occupied");
   }
-  return { localSystemd: "inactive-bound", directPorts: "unoccupied",
+  return { localSystemd: expectActive ? "active-bound" : "inactive-bound",
+    directPorts: expectActive ? "local-health-required" : "unoccupied",
     publicIngress: "unproven" };
 }
 
@@ -100,7 +102,7 @@ export async function inspectCleanSystemdBoundary({ journalPath, trustDir,
   if (process.getuid?.() !== 0) throw new Error("Root is required to inspect clean systemd boundary");
   const journal = await readCleanInstallJournal(journalPath);
   if (!["pointer-ready", "systemd-intent", "systemd-ready",
-    "admission-intent", "admission-ready"].includes(journal.phase)) {
+    "admission-intent", "admission-ready", "startup-intent"].includes(journal.phase)) {
     throw new Error("Clean pointer is not ready for systemd preflight");
   }
   if ((await inspectInstalled({ unitDirectory, workspace: journal.workspace,
@@ -114,6 +116,34 @@ export async function inspectCleanSystemdBoundary({ journalPath, trustDir,
   if ((await inspectPointer({ journal, trustDir,
     requireCurrent: true }))?.release !== "signed-inert") {
     throw new Error("Clean-install release changed during systemd preflight");
+  }
+  return report;
+}
+
+// The three core units may run only behind a separately proven closed public
+// route. This checks manager bindings; application health and route closure
+// are independent checks at the startup journal boundary.
+export async function inspectCleanRunningSystemd({ journalPath, trustDir,
+  unitDirectory = "/etc/systemd/system", showUnit = systemctlShow,
+  inspectInstalled = inspectInstalledCleanUnits,
+  inspectPointer = inspectPromotedCleanRelease,
+  inspectLoaded = inspectCleanLoadedSystemdUnits } = {}) {
+  if (process.getuid?.() !== 0) throw new Error("Root is required to inspect running clean units");
+  const journal = await readCleanInstallJournal(journalPath);
+  if (!["startup-intent", "startup-ready"].includes(journal.phase)) {
+    throw new Error("Clean startup has no journaled intent");
+  }
+  if ((await inspectInstalled({ unitDirectory, workspace: journal.workspace,
+    manifestSha256: journal.manifestSha256, trustDir }))?.units !== "bound-files" ||
+      (await inspectPointer({ journal, trustDir,
+        requireCurrent: true }))?.release !== "signed-inert") {
+    throw new Error("Running clean-install files or pointer are unproven");
+  }
+  const report = await inspectLoaded({ unitDirectory, releaseRoot: journal.releaseRoot,
+    identityPlan: journal.identityPlan, showUnit, expectActive: true });
+  if ((await inspectPointer({ journal, trustDir,
+    requireCurrent: true }))?.release !== "signed-inert") {
+    throw new Error("Clean-install release changed during running systemd inspection");
   }
   return report;
 }
