@@ -75,6 +75,24 @@ test("OPS-01: Caddy snapshot renderer refuses socket URLs, traversal and unsafe 
   assert.throws(() => renderClosedCleanCaddyConfig({ ...options, domain: "*.example.com" }), /hostname/);
 });
 
+test("OPS-01: explicit TLS file profile binds exactly one certificate/key pair and rejects substitutions", () => {
+  const input = { ...options, certificateFiles: { certificate: "/etc/caddy/bridge.crt", key: "/etc/caddy/bridge.key" } };
+  const config = renderClosedCleanCaddyConfig(input);
+  assert.deepEqual(config.apps.tls.certificates.load_files, [input.certificateFiles]);
+  assert.equal(validateClosedCleanCaddyConfig(bytes(config), input).caddyConfig, "closed-profile");
+  assert.throws(() => validateClosedCleanCaddyConfig(bytes(config), options), /does not match/);
+  const wrong = structuredClone(config);
+  wrong.apps.tls.certificates.load_files[0].key = "/etc/caddy/other.key";
+  assert.throws(() => validateClosedCleanCaddyConfig(bytes(wrong), input), /does not match/);
+  for (const certificateFiles of [null, [], {}, { certificate: "relative", key: "/etc/caddy/key" },
+    { certificate: "/etc/../cert", key: "/etc/caddy/key" },
+    { certificate: "/etc/caddy/key", key: "/etc/caddy/key" },
+    { certificate: options.adminSocket, key: "/etc/caddy/key" },
+    { ...input.certificateFiles, tags: ["unexpected"] }]) {
+    assert.throws(() => renderClosedCleanCaddyConfig({ ...options, certificateFiles }), /required|distinct/);
+  }
+});
+
 test("OPS-01: protected Caddy snapshots bracket the host-bound public observation", async () => {
   const report = validateClosedCleanCaddyConfig(bytes(renderClosedCleanCaddyConfig(options)), options);
   const calls = [];

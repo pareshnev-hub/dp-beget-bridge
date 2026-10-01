@@ -16,16 +16,30 @@ function socketPath(value) {
 
 // Candidate dedicated bootstrap profile only. No file is installed and no
 // daemon is reconfigured. This must not replace a shared proxy configuration.
-export function renderClosedCleanCaddyConfig({ domain, adminSocket } = {}) {
+export function renderClosedCleanCaddyConfig({ domain, adminSocket, certificateFiles } = {}) {
   domain = validateHostname(domain);
   adminSocket = socketPath(adminSocket);
-  return { admin: { listen: `unix/${adminSocket}` }, apps: { http: { servers: {
+  const config = { admin: { listen: `unix/${adminSocket}` }, apps: { http: { servers: {
     dp_clean: { listen: [":443"], protocols: ["h1", "h2"],
       automatic_https: { disable_redirects: true },
       routes: [{ match: [{ host: [domain] }], terminal: true,
         handle: [{ handler: "static_response", status_code: 502,
           body: "DP clean ingress closed\n" }] }] },
   } } } };
+  if (certificateFiles !== undefined) {
+    if (!certificateFiles || typeof certificateFiles !== "object" || Array.isArray(certificateFiles) ||
+        Object.keys(certificateFiles).length !== 2 ||
+        !["certificate", "key"].every(key => Object.hasOwn(certificateFiles, key))) {
+      throw new Error("Exact certificate and key paths are required");
+    }
+    const certificate = socketPath(certificateFiles.certificate);
+    const key = socketPath(certificateFiles.key);
+    if (certificate === key || [certificate, key].includes(adminSocket)) {
+      throw new Error("Certificate, key and admin socket paths must be distinct");
+    }
+    config.apps.tls = { certificates: { load_files: [{ certificate, key }] } };
+  }
+  return config;
 }
 
 export function validateClosedCleanCaddyConfig(bytes, options) {
@@ -106,9 +120,9 @@ function readConfig(adminSocket, timeoutMs) {
 // GET only. Trust is limited to the explicitly supplied service UID and its
 // protected socket, not the identity of the process actually serving :443.
 // Never substitute this report for the closed-exclusive startup gate.
-export async function inspectClosedCleanCaddyConfig({ domain, adminSocket, ownerUid,
+export async function inspectClosedCleanCaddyConfig({ domain, adminSocket, ownerUid, certificateFiles,
   timeoutMs = 5000 } = {}) {
-  const options = { domain: validateHostname(domain), adminSocket: socketPath(adminSocket) };
+  const options = { domain: validateHostname(domain), adminSocket: socketPath(adminSocket), certificateFiles };
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5000) {
     throw new Error("Invalid Caddy configuration read timeout");
   }
@@ -124,11 +138,11 @@ export async function inspectClosedCleanCaddyConfig({ domain, adminSocket, owner
 
 // Correlate the public observation with matching protected admin snapshots.
 // Process/listener ownership, NAT and other ingress remain outside this proof.
-export async function inspectCleanCaddyRoute({ domain, expectedIp, adminSocket, ownerUid,
+export async function inspectCleanCaddyRoute({ domain, expectedIp, adminSocket, ownerUid, certificateFiles,
   inspectConfig = inspectClosedCleanCaddyConfig, probePublic = probeCleanPublicRoute } = {}) {
   domain = validateHostname(domain);
   expectedIp = validatePublicIpv4(expectedIp);
-  const options = { domain, adminSocket: socketPath(adminSocket), ownerUid };
+  const options = { domain, adminSocket: socketPath(adminSocket), ownerUid, certificateFiles };
   const expected = validateClosedCleanCaddyConfig(
     Buffer.from(JSON.stringify(renderClosedCleanCaddyConfig(options))), options);
   const first = await inspectConfig(options);

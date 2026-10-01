@@ -160,4 +160,48 @@ test("OPS-01: real non-root Caddy owns the admin socket and TCP 443 on a disposa
   assert.deepEqual(await inspectCleanCaddyHost(serviceReport), host);
   await systemctl("stop", unitName);
   await assert.rejects(inspectCleanCaddySystemd(serviceOptions), /inactive|live service evidence unavailable/);
+
+  // A purpose-built CA and leaf certificate prove the real production TLS
+  // readers without internet access, insecure flags or a public-DNS claim.
+  const domain = "bridge.example.invalid", expectedIp = "1.1.1.1";
+  const caKey = path.join(root, "ca.key"), caCert = path.join(root, "ca.crt");
+  const key = path.join(root, "leaf.key"), certificate = path.join(root, "leaf.crt");
+  const csr = path.join(root, "leaf.csr"), extensions = path.join(root, "extensions.cnf");
+  const openssl = args => exec("openssl", args, { timeout: 15000, maxBuffer: 16384 });
+  await openssl(["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", caKey, "-out", caCert,
+    "-subj", "/CN=DP-Disposable-Fixture-CA", "-days", "1", "-addext", "basicConstraints=critical,CA:TRUE"]);
+  await openssl(["req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", csr,
+    "-subj", `/CN=${domain}`]);
+  await writeFile(extensions, `subjectAltName=DNS:${domain}\nbasicConstraints=critical,CA:FALSE\n` +
+    "extendedKeyUsage=serverAuth\nkeyUsage=digitalSignature,keyEncipherment\n", { mode: 0o600 });
+  await openssl(["x509", "-req", "-in", csr, "-CA", caCert, "-CAkey", caKey, "-CAcreateserial",
+    "-out", certificate, "-days", "1", "-sha256", "-extfile", extensions]);
+  await chmod(caKey, 0o600);
+  for (const filename of [key, certificate]) {
+    await chmod(filename, 0o600);
+    await chown(filename, ownerUid, ownerGid);
+  }
+  const certificateFiles = { certificate, key };
+  await writeFile(configPath, JSON.stringify(renderClosedCleanCaddyConfig({ domain, adminSocket, certificateFiles })));
+  await systemctl("start", unitName);
+  const tlsPid = Number((await systemctl("show", unitName, "--property=MainPID", "--value")).stdout.trim());
+  const tlsOptions = { ...serviceOptions, pid: tlsPid, domain, expectedIp, certificateFiles };
+  const client = path.resolve("scripts/integration/clean-caddy-https-client.mjs");
+  const runClient = (input, ca = caCert) => exec(process.execPath,
+    [client, "--fixture-options", JSON.stringify(input)], { timeout: 30000, maxBuffer: 4096,
+      env: { ...process.env, NODE_EXTRA_CA_CERTS: ca } });
+  let tlsReport;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    try { tlsReport = await runClient(tlsOptions); break; }
+    catch (error) { lastError = error; }
+    await delay(100);
+  }
+  if (!tlsReport) throw lastError;
+  assert.deepEqual(JSON.parse(tlsReport.stdout), { caddySystemd: "main-process-bound",
+    caddyProcess: "socket-listener-bound", hostIngress: "dedicated-profile", caddyConfig: "closed-profile",
+    publicResponse: "closed-upstream", publicIngress: "unproven", tls: "real-fixture-ca", dns: "simulated" });
+  await assert.rejects(runClient(tlsOptions, ""), error => error.code === 1);
+  await assert.rejects(runClient({ ...tlsOptions, scenario: "wrong-hostname" }), error => error.code === 1);
+  await systemctl("stop", unitName);
+  t.diagnostic("Real Caddy/systemd/host/TLS/config/closed HTTPS rehearsal passed; DNS simulated; production ingress unproven");
 });
