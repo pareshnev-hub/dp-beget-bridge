@@ -28,6 +28,13 @@ export function validateHostname(domain) {
   return domain.toLowerCase();
 }
 
+export function validatePublicIpv4(expectedIp) {
+  if (isIP(expectedIp) !== 4 || excludedIps.check(expectedIp, "ipv4")) {
+    throw new Error("Expected public IPv4 address is required");
+  }
+  return expectedIp;
+}
+
 export function assertSupportedOs(osRelease) {
   const fields = Object.fromEntries(osRelease.split("\n").filter(line => /^[A-Z_]+=/.test(line))
     .map(line => { const index = line.indexOf("="); return [line.slice(0, index), line.slice(index + 1).replace(/^"|"$/g, "")]; }));
@@ -67,9 +74,7 @@ export async function checkDnsAndTls({ domain, expectedIp,
   if (!Number.isSafeInteger(dnsTimeoutMs) || dnsTimeoutMs < 1 || dnsTimeoutMs > 30000) {
     throw new Error("Invalid DNS probe timeout");
   }
-  if (isIP(expectedIp) !== 4 || excludedIps.check(expectedIp, "ipv4")) {
-    throw new Error("Expected public IPv4 address is required");
-  }
+  validatePublicIpv4(expectedIp);
   const lookup = async resolve => {
     let timer;
     try {
