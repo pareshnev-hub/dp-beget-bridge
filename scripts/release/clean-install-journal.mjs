@@ -12,6 +12,8 @@ import { inspectCleanDataTargets, inspectInstalledCleanData } from "./clean-inst
 import { inspectCleanReleaseRootTarget, inspectCreatedCleanReleaseRoot } from "./clean-install-release-root.mjs";
 import { inspectPromotedCleanRelease } from "./inspect-promoted-clean-release.mjs";
 import { inspectCleanSystemdBoundary } from "./inspect-clean-systemd-boundary.mjs";
+import { inspectCleanAdmissionTarget } from "./install-clean-admission-pause.mjs";
+import { verifyAdmissionPause } from "./admission-pause.mjs";
 
 const SHA = /^[0-9a-f]{64}$/;
 // Later phases must be added together with real boundary verifiers.
@@ -19,7 +21,7 @@ const PHASES = ["prepared", "identities-intent", "identities-ready",
   "config-intent", "config-ready", "units-intent", "units-ready",
   "data-intent", "data-ready", "release-root-intent", "release-root-ready",
   "promotion-intent", "promotion-ready", "pointer-intent", "pointer-ready",
-  "systemd-intent", "systemd-ready"];
+  "systemd-intent", "systemd-ready", "admission-intent", "admission-ready"];
 const FORMAT = "dp-beget-clean-install-journal-v1";
 
 async function privateParent(filename) {
@@ -110,6 +112,8 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
   inspectReleaseRoot = inspectCreatedCleanReleaseRoot,
   inspectPromoted = inspectPromotedCleanRelease,
   inspectSystemd = inspectCleanSystemdBoundary,
+  inspectAdmissionTarget = inspectCleanAdmissionTarget,
+  inspectPaused = verifyAdmissionPause,
   configDir = "/etc/dp-beget-bridge",
   unitDirectory = "/etc/systemd/system", dataRoot = "/var/lib", trustDir } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to advance a clean-install journal");
@@ -179,6 +183,12 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
         throw new Error("Clean-install pointer has an unresolved lock");
       } catch (error) { if (error.code !== "ENOENT") throw error; }
     }
+    if (nextPhase === "admission-intent") {
+      try {
+        await lstat(`${journalPath}.systemd-install.lock`);
+        throw new Error("Clean-install systemd reload has an unresolved lock");
+      } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
     if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("identities-ready")) {
       const identities = await inspectCreated({ plan: current.identityPlan,
         transactionId: current.transactionId });
@@ -229,9 +239,17 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
             requireCurrent: true }))?.release !== "signed-inert") {
         throw new Error("Clean-install current pointer is unproven");
       }
-      if (nextPhase === "systemd-ready" &&
+      if (["systemd-ready", "admission-intent", "admission-ready"].includes(nextPhase) &&
           (await inspectSystemd({ journalPath, trustDir, unitDirectory }))?.localSystemd !== "inactive-bound") {
         throw new Error("Clean-install systemd boundary is unproven");
+      }
+      if (nextPhase === "admission-intent" &&
+          (await inspectAdmissionTarget())?.admission !== "absent") {
+        throw new Error("Clean-install admission target is occupied");
+      }
+      if (nextPhase === "admission-ready" &&
+          (await inspectPaused())?.paused !== true) {
+        throw new Error("Clean-install admission pause is unproven");
       }
     }
     const next = validate({ ...current, phase: nextPhase });
