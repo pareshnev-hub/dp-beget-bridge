@@ -227,6 +227,40 @@ The disposable signed integration deliberately interrupts before the owner journ
 
 An interrupted owner phase stops the controller with its intent and recovery lock retained. An existing journal is always refused, even after successful owner provisioning; recovery remains a separate deliberate operation. Controller tests cover invalid/static selection before all mutations, interrupted/missing/skipped owner commits, changed profile and failed final owner proof. A separate explicitly enabled disposable Linux run builds the signed artifact and exercises the normal composed owner installation followed by real paused application startup and startup recovery. Its external DNS/TLS preparation and public route gate remain simulated; the runtime dependency manager PATH is fixture-only, and no public install, browser consent or release acceptance is claimed.
 
+### Protected private operator entry
+
+`node scripts/release/install-clean-private.mjs --request /var/lib/dp-install/request.json` composes candidate preparation and the fresh OAuth owner controller. Use trusted operator code and an independently pinned release key; the command does not establish signing-key trust, install host dependencies or configure certificates/proxy routing. Ubuntu 24.04, a supported Node/SQLite runtime, existing non-root work identity and allowed directory, required host tools, and an already valid DNS/HTTPS route remain prerequisites. No service starts or public access opens. Success ends at owner-ready with inactive application services, paused admission and unproven public ingress.
+
+The request must be a regular root-owned mode 0600 file without symlinks/hardlinks in a real root-owned mode 0700 directory. Reading is bounded to 16 KiB and checks descriptor/path identity before and after. The JSON object requires exactly these non-secret fields (replace the example paths, existing work identity and host bindings for the target):
+
+```json
+{
+  "format": "dp-beget-clean-private-request-v1",
+  "artifact": "/var/lib/dp-install/artifacts/dp-beget-bridge-0.1.0.tar.gz",
+  "manifest": "/var/lib/dp-install/artifacts/manifest.json",
+  "signature": "/var/lib/dp-install/artifacts/manifest.sig",
+  "trustDir": "/etc/dp-beget-release-trust",
+  "domain": "bridge.example.com",
+  "expectedIp": "1.1.1.1",
+  "workUser": "bridge-work",
+  "workGroup": "bridge-work",
+  "agentUser": "dp-agent",
+  "mcpUser": "dp-mcp",
+  "ipcGroup": "dp-bridge-work",
+  "allowedRoot": "/srv/bridge-work",
+  "workspaceParent": "/var/lib/dp-install",
+  "workspace": "/var/lib/dp-install/candidate",
+  "releaseRoot": "/opt/dp-beget-bridge-runtime",
+  "journalPath": "/var/lib/dp-install/installation.json",
+  "ownerId": "owner-primary",
+  "executionProfile": "files-read"
+}
+```
+
+The trust directory must be outside the canonical clean installation targets; the historical default under `/etc/dp-beget-bridge` would occupy a target that fresh preflight deliberately rejects. Use an explicitly independently pinned external trust directory. The example artifact remains version 0.1.0 and is not a published 1.0.0 release. `files-read` and explicit `full-shell` are the supported profile selections; selecting a profile does not issue grants or bypass later human browser consent. Unknown fields, root identities, malformed/overlapping paths and unsupported profiles reject before preparation. Existing journal paths, including dangling symlinks, reject before candidate staging. Live interruption preserves the candidate and any transaction journal/locks; this command does not auto-retry, repair, purge or remove a partially installed owner. Read the retained phase and use its explicit recovery API after the original installer stopped.
+
+Completion prints only transaction ID, signed version/commit and inactive/paused owner-ready status. Failures print a fixed message without exception text, child output, request content or credentials. Disposable CI reads the real protected request and performs real signed preparation, account/file/unit/data/pointer/systemd/pause and owner mutations, then separately rehearses paused startup/recovery. Its DNS/TLS preparation and startup route gate remain explicit injections. Public topology, runtime dependency provisioning, public installation CLI acceptance, actual pairing, updates and OPS-01 remain open.
+
 The version-pointer module is an **unwired deployment primitive**. It accepts only a prepared `releases/<version>-<40-character-commit>` directory matching its package version, refuses unmanaged `current`/`previous` paths, takes an exclusive activation lock and switches the `current` symlink atomically. The caller supplies a health callback; failure restores the former pointer, and success records it as `previous`. The candidate's signed-archive `release-compatibility.json` must declare the three implemented SQLite schema versions; an existing managed `current` must carry the same record with identical versions. A schema-changing update fails before changing the pointer and needs a separate verified migration and rollback transaction. Equal version numbers alone do not prove data or API compatibility, actual live database state, or N/N−1 rollback acceptance. The module neither installs dependencies nor restarts services. The full updater must freeze admission, back up state, manage systemd units, prove readiness and restore service health after pointer rollback before OPS-06/07/09 can pass.
 
 The separate root-only promotion primitive rechecks the pinned signature and extracted source files against the signed archive, rejects source changes and dependency links outside the release, and atomically moves the prepared directory to an unused `releases/<version>-<commit>` path on the same filesystem. Code becomes root-owned and readable by service identities only during that move. It does **not** change `current`, configure systemd, migrate data or stop any service:
