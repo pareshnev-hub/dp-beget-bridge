@@ -6,6 +6,7 @@ import { inspectCleanInstallIdentityPlan } from "./clean-install-identity-plan.m
 import { inspectCreatedCleanIdentities } from "./inspect-clean-install-created-identities.mjs";
 import { advanceCleanInstallJournal, readCleanInstallJournal } from "./clean-install-journal.mjs";
 import { readRegularFile } from "./verify-artifact.mjs";
+import { configureCleanWorkspace } from "./clean-install-workspace.mjs";
 
 const FILES = ["session-host.env", "agent.env", "mcp.env"];
 
@@ -37,6 +38,7 @@ export async function installCleanConfig({ journalPath, trustDir,
   configDir = "/etc/dp-beget-bridge", verify = verifyCleanInstallManifest,
   inspectPlan = inspectCleanInstallIdentityPlan,
   inspectCreated = inspectCreatedCleanIdentities,
+  configureWorkspace = configureCleanWorkspace,
   advance = advanceCleanInstallJournal } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to install clean configuration");
   const journal = await readCleanInstallJournal(journalPath);
@@ -70,6 +72,7 @@ export async function installCleanConfig({ journalPath, trustDir,
   try {
     await missing(configDir);
     mutationStarted = true;
+    await configureWorkspace({ identityPlan: journal.identityPlan, identities });
     await mkdir(configDir, { mode: 0o700 });
     await chmod(configDir, 0o711);
     await syncDirectory(parent);

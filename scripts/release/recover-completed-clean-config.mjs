@@ -6,6 +6,7 @@ import { inspectCleanInstallIdentityPlan } from "./clean-install-identity-plan.m
 import { inspectCreatedCleanIdentities } from "./inspect-clean-install-created-identities.mjs";
 import { inspectInstalledCleanConfig } from "./inspect-installed-clean-config.mjs";
 import { advanceCleanInstallJournal, readCleanInstallJournal } from "./clean-install-journal.mjs";
+import { inspectCleanWorkspace } from "./clean-install-workspace.mjs";
 
 async function syncDirectory(directory) {
   const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
@@ -29,6 +30,7 @@ export async function recoverCompletedCleanConfig({ journalPath, trustDir,
   inspectPlan = inspectCleanInstallIdentityPlan,
   inspectCreated = inspectCreatedCleanIdentities,
   inspectConfig = inspectInstalledCleanConfig,
+  inspectWorkspace = inspectCleanWorkspace,
   advance = advanceCleanInstallJournal } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to recover clean configuration");
   const initial = await readCleanInstallJournal(journalPath);
@@ -63,12 +65,12 @@ export async function recoverCompletedCleanConfig({ journalPath, trustDir,
     if (identities?.identities !== "journal-bound" ||
         (await inspectConfig({ configDir, workspace: current.workspace,
           manifestSha256: current.manifestSha256, trustDir,
-          identityPlan: current.identityPlan, identities }))?.config !== "bound-private") {
+          identityPlan: current.identityPlan, identities, inspectWorkspace }))?.config !== "bound-private") {
       throw new Error("Installed clean-install configuration is incomplete or unproven");
     }
     const next = current.phase === "config-ready" ? current : await advance({ journalPath,
       transactionId: current.transactionId, expectedPhase: "config-intent",
-      nextPhase: "config-ready", configDir, trustDir });
+      nextPhase: "config-ready", configDir, trustDir, inspectWorkspace });
     await unlink(lock);
     await syncDirectory(parent);
     return { transactionId: next.transactionId, phase: next.phase,

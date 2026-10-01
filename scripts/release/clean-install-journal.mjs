@@ -17,6 +17,7 @@ import { verifyAdmissionPause } from "./admission-pause.mjs";
 import { localReleaseHealthProbes, waitForAdmissionDrain } from "./wait-admission-drain.mjs";
 import { inspectCleanInstallAuthProfile } from "./clean-install-auth-profile.mjs";
 import { inspectInitializedCleanOwner } from "./clean-install-owner-data.mjs";
+import { inspectCleanWorkspace } from "./clean-install-workspace.mjs";
 
 const SHA = /^[0-9a-f]{64}$/;
 // Later phases must be added together with real boundary verifiers.
@@ -113,6 +114,7 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
   inspectPlan = inspectCleanInstallIdentityPlan,
   inspectCreated = inspectCreatedCleanIdentities,
   inspectConfig = inspectInstalledCleanConfig,
+  inspectWorkspace = inspectCleanWorkspace,
   inspectUnitTargets = inspectCleanInstallUnitTargets,
   inspectUnits = inspectInstalledCleanUnits,
   inspectDataTargets = inspectCleanDataTargets,
@@ -233,7 +235,7 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
       if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("config-ready")) {
         if ((await inspectConfig({ configDir, workspace: current.workspace,
           manifestSha256: current.manifestSha256, trustDir,
-          identityPlan: current.identityPlan, identities }))?.config !== "bound-private") {
+          identityPlan: current.identityPlan, identities, inspectWorkspace }))?.config !== "bound-private") {
           throw new Error("Installed clean-install configuration is unproven");
         }
       }

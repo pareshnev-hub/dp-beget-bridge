@@ -3,11 +3,13 @@ import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { verifyCleanInstallManifest } from "./clean-install-manifest.mjs";
 import { readRegularFile } from "./verify-artifact.mjs";
+import { inspectCleanWorkspace } from "./clean-install-workspace.mjs";
 
 const FILES = ["agent.env", "mcp.env", "session-host.env"];
 
 export async function inspectInstalledCleanConfig({ configDir = "/etc/dp-beget-bridge",
   workspace, manifestSha256, trustDir, identityPlan, identities,
+  inspectWorkspace = inspectCleanWorkspace,
   verify = verifyCleanInstallManifest } = {}) {
   if (typeof configDir !== "string" || !path.isAbsolute(configDir) ||
       path.normalize(configDir) !== configDir || configDir === "/" ||
@@ -15,6 +17,9 @@ export async function inspectInstalledCleanConfig({ configDir = "/etc/dp-beget-b
     throw new Error("Bound service identities and absolute configuration directory are required");
   }
   await verify({ workspace, manifestSha256, trustDir });
+  if ((await inspectWorkspace({ identityPlan, identities }))?.workspace !== "shared-private") {
+    throw new Error("Installed clean workspace access is unproven");
+  }
   const parent = path.dirname(configDir);
   const parentInfo = await stat(parent);
   const dir = await lstat(configDir);

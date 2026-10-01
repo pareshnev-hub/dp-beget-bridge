@@ -1,6 +1,6 @@
 # DP Beget Bridge — Implementation Status
 
-Date: 2026-09-23
+Date: 2026-10-01
 Baseline: `f1a9b553500af1326cf2c8604a10b6f254d51598`
 
 This is the live implementation index. Architecture documents describe targets; this file records what has implementation and verification evidence.
@@ -215,3 +215,5 @@ For each status change, add links in the related issue/PR and update:
 5. remaining limitations.
 
 Do not mark a release VERIFIED merely because all issue numbers are closed; evaluate the release gate in `docs/ROADMAP.md` and traceability matrix.
+
+The disposable autonomy rehearsal exposed a clean-install defect: the work-owned private root had no Agent traversal/read access. The config-install transaction now binds the root to the isolated IPC group with mode 2770 through a held directory descriptor. Installed configuration, startup and recovery recheck that owner/group/mode and absence of extended/default ACLs. Existing descendants are never recursively changed. The actual fixture retains a pre-existing owner-private file unchanged and rejects world-access and named/default ACL drift. This fixes terminal-created group-readable file access; it does not promise to override private permissions chosen for arbitrary existing files. Public acceptance remains open.

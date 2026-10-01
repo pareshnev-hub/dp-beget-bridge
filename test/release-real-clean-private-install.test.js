@@ -24,6 +24,7 @@ import { inspectInitializedCleanOwner } from "../scripts/release/clean-install-o
 import { installCleanOwner } from "../scripts/release/install-clean-owner.mjs";
 import { recoverCompletedCleanOwner } from "../scripts/release/recover-completed-clean-owner.mjs";
 import { installCleanPrivate } from "../scripts/release/install-clean-private.mjs";
+import { inspectCleanWorkspace } from "../scripts/release/clean-install-workspace.mjs";
 import { rehearseCleanPrivateAutonomy } from "../scripts/integration/clean-private-autonomy.mjs";
 
 const exec = promisify(execFile);
@@ -60,7 +61,7 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   await assert.rejects(lstat(allowedRoot), { code: "ENOENT" });
   t.after(async () => {
     // This runner was proven empty at fixture entry. The optional startup
-    // rehearsal never admits requests or creates terminal/user content.
+    // rehearsal admits only the optional disposable autonomy session.
     for (const unit of core.toReversed()) await systemctl("stop", unit).catch(() => {});
     for (const unit of core) await rm(`/etc/systemd/system/${unit}`, { force: true });
     await systemctl("daemon-reload");
@@ -72,6 +73,9 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   await chmod(base, 0o700);
   await mkdir(allowedRoot, { mode: 0o700 });
   await chown(allowedRoot, ownerUid, ownerGid);
+  const canary = path.join(allowedRoot, "existing-private-canary.txt");
+  await writeFile(canary, "private-existing-workspace-fixture\n", { mode: 0o600 });
+  await chown(canary, ownerUid, ownerGid);
   const commit = (await exec("git", ["rev-parse", "HEAD"])).stdout.trim();
   const built = await buildArtifact({ commit, outputDir: path.join(base, "artifact") });
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -123,6 +127,26 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   const installedPhase = controller.initializeOwner ? "owner-ready" : "admission-ready";
   assert.equal(result.phase, installedPhase);
   assert.equal(result.localServices, "inactive");
+  assert.equal((await lstat(allowedRoot)).mode & 0o7777, 0o2770);
+  assert.equal((await lstat(canary)).mode & 0o7777, 0o600);
+  assert.equal((await lstat(canary)).uid, ownerUid);
+  assert.equal((await lstat(canary)).gid, ownerGid);
+  const workspaceJournal = await readCleanInstallJournal(journalPath);
+  const workspaceInputs = { identityPlan: workspaceJournal.identityPlan,
+    identities: await inspectCreatedCleanIdentities({ plan: workspaceJournal.identityPlan,
+      transactionId: workspaceJournal.transactionId }) };
+  assert.equal((await inspectCleanWorkspace(workspaceInputs)).workspace, "shared-private");
+  await chmod(allowedRoot, 0o2775);
+  await assert.rejects(inspectCleanWorkspace(workspaceInputs), /shared privately/);
+  await chmod(allowedRoot, 0o2770);
+  await exec("setfacl", ["-m", "u:0:rwx", "--", allowedRoot]);
+  await assert.rejects(inspectCleanWorkspace(workspaceInputs), /extended\/default ACLs/);
+  await exec("setfacl", ["-b", "--", allowedRoot]);
+  await exec("setfacl", ["-m", "d:u::rwx,d:g::rwx,d:o::---", "--", allowedRoot]);
+  await assert.rejects(inspectCleanWorkspace(workspaceInputs), /extended\/default ACLs/);
+  await exec("setfacl", ["-k", "--", allowedRoot]);
+  assert.equal((await inspectCleanWorkspace(workspaceInputs)).workspace, "shared-private");
+  t.diagnostic("Actual journaled private workspace group/setgid binding passed; outside access, named/default ACL drift rejected; existing private child unchanged");
   assert.equal(result.admission, "paused");
   assert.equal(result.publicIngress, "unproven");
   assert.equal((await readCleanInstallJournal(journalPath)).commit, commit);

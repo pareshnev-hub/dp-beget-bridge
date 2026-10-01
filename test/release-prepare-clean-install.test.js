@@ -8,13 +8,13 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { buildArtifact } from "../scripts/release/build-artifact.mjs";
 import { verifyCleanInstallManifest } from "../scripts/release/clean-install-manifest.mjs";
-import { advanceCleanInstallJournal, readCleanInstallJournal,
+import { advanceCleanInstallJournal as advanceCleanInstallJournalProduction, readCleanInstallJournal,
   startCleanInstallJournal } from "../scripts/release/clean-install-journal.mjs";
 import { installCleanIdentities } from "../scripts/release/install-clean-identities.mjs";
-import { installCleanConfig } from "../scripts/release/install-clean-config.mjs";
+import { installCleanConfig as installCleanConfigProduction } from "../scripts/release/install-clean-config.mjs";
 import { installCleanUnits } from "../scripts/release/install-clean-units.mjs";
 import { installCleanData } from "../scripts/release/install-clean-data.mjs";
-import { inspectInstalledCleanConfig } from "../scripts/release/inspect-installed-clean-config.mjs";
+import { inspectInstalledCleanConfig as inspectInstalledCleanConfigProduction } from "../scripts/release/inspect-installed-clean-config.mjs";
 import { inspectInstalledCleanUnits } from "../scripts/release/inspect-installed-clean-units.mjs";
 import { inspectInstalledCleanData } from "../scripts/release/clean-install-data-directories.mjs";
 import { installCleanReleaseRoot, inspectCreatedCleanReleaseRoot } from "../scripts/release/clean-install-release-root.mjs";
@@ -37,7 +37,7 @@ import { DEFAULT_ADMISSION_PAUSE_PATH, isAdmissionPaused } from
 import { CLEAN_INSTALL_UNIT_NAMES } from "../scripts/release/preflight-clean-install.mjs";
 import { recoverCompletedCleanReleaseRoot } from "../scripts/release/recover-completed-clean-release-root.mjs";
 import { recoverCompletedCleanIdentities } from "../scripts/release/recover-completed-clean-identities.mjs";
-import { recoverCompletedCleanConfig } from "../scripts/release/recover-completed-clean-config.mjs";
+import { recoverCompletedCleanConfig as recoverCompletedCleanConfigProduction } from "../scripts/release/recover-completed-clean-config.mjs";
 import { recoverCompletedCleanUnits } from "../scripts/release/recover-completed-clean-units.mjs";
 import { recoverCompletedCleanData } from "../scripts/release/recover-completed-clean-data.mjs";
 import { pinReleaseKey } from "../scripts/release/pin-release-key.mjs";
@@ -46,6 +46,12 @@ import { prepareRelease } from "../scripts/release/prepare-release.mjs";
 import { signManifest } from "../scripts/release/sign-manifest.mjs";
 
 const exec = promisify(execFile);
+// Isolated component fixture: synthetic NSS plan, no actual work directory.
+const workspaceProof = async () => ({ workspace: "shared-private" });
+const advanceCleanInstallJournal = options => advanceCleanInstallJournalProduction({ ...options, inspectWorkspace: workspaceProof });
+const installCleanConfig = options => installCleanConfigProduction({ ...options, configureWorkspace: async () => {} });
+const inspectInstalledCleanConfig = options => inspectInstalledCleanConfigProduction({ ...options, inspectWorkspace: workspaceProof });
+const recoverCompletedCleanConfig = options => recoverCompletedCleanConfigProduction({ ...options, inspectWorkspace: workspaceProof });
 
 test("OPS-01/05: signed clean-install candidate stages config and units without a live install", {
   skip: process.getuid?.() !== 0
@@ -584,6 +590,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     }
     const startOptions = filename => ({ journalPath: filename, trustDir,
       configDir, unitDirectory, dataRoot, inspectInactive: inactive,
+      inspectConfig: inspectInstalledCleanConfig,
       inspectCreated: async () => identityEvidence,
       inspectData: simulatedStartupData,
       inspectRunning: running, inspectPaused, inspectClosedIngress: closedIngress,
@@ -605,6 +612,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     assert.equal(await isAdmissionPaused(admissionFlag), true);
     const recoverStartup = options => recoverCleanLocalStartup({
       journalPath: failedStartupPath, trustDir, configDir, unitDirectory, dataRoot,
+      inspectConfig: inspectInstalledCleanConfig,
       inspectCreated: async () => identityEvidence,
       inspectData: simulatedStartupData,
       inspectInactive: inactive, inspectRunning: running,
