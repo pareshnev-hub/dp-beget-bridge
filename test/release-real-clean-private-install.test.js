@@ -24,6 +24,7 @@ import { inspectInitializedCleanOwner } from "../scripts/release/clean-install-o
 import { installCleanOwner } from "../scripts/release/install-clean-owner.mjs";
 import { recoverCompletedCleanOwner } from "../scripts/release/recover-completed-clean-owner.mjs";
 import { installCleanPrivate } from "../scripts/release/install-clean-private.mjs";
+import { inspectCleanInstallRoute } from "../scripts/release/inspect-clean-install-route.mjs";
 import { inspectCleanWorkspace } from "../scripts/release/clean-install-workspace.mjs";
 import { rehearseCleanPrivateAutonomy } from "../scripts/integration/clean-private-autonomy.mjs";
 
@@ -161,6 +162,34 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
     await assert.rejects(lstat(`${journalPath}.owner-install.lock`), { code: "ENOENT" });
     assert.equal((await inspectInitializedCleanOwner({ journal: await readCleanInstallJournal(journalPath), trustDir })).owner, "candidate-bound");
     t.diagnostic("One fresh controller composed all real signed private phases and committed OAuth owner readiness; no active service or grant");
+    if (useEntry) {
+      const requestPath = path.join(workspaceParent, "private-request.json"), policyPath = path.join(workspaceParent, "route-policy.json");
+      const record = await readCleanInstallJournal(journalPath);
+      const policy = { format: "dp-beget-clean-route-policy-v1", transactionId: record.transactionId,
+        artifactSha256: record.artifactSha256, manifestSha256: record.manifestSha256, commit: record.commit,
+        domain, expectedIp, unitName: "dp-clean-caddy.service", unitFile: "/etc/systemd/system/dp-clean-caddy.service",
+        unitFileSha256: "a".repeat(64), ownerUser: "nobody", ownerUid: 65534,
+        executable: "/usr/bin/caddy", executableSha256: "b".repeat(64), adminSocket: "/run/dp-caddy/admin.sock" };
+      await writeFile(policyPath, JSON.stringify(policy), { mode: 0o600, flag: "wx" });
+      const route = { pid: 9001, ownerUid: policy.ownerUid, unitName: policy.unitName, domain, expectedIp,
+        caddySystemd: "main-process-bound", caddyProcess: "socket-listener-bound", hostIngress: "dedicated-profile",
+        localAddress: "host-bound", localRoute: "local-loopback", policyRules: "default-ipv4",
+        caddyConfig: "closed-profile", publicResponse: "closed-upstream", publicIngress: "unproven" };
+      // Only the proxy observation/PID is simulated here. The original root
+      // request/policy/journal, signed candidate/auth profile and NSS are real;
+      // actual Caddy/TLS/host readers remain in their separate netns fixture.
+      const inputs = { requestPath, journalPath, policyPath, trustDir,
+        readPid: async () => 9001, inspectRoute: async () => ({ ...route }) };
+      assert.equal((await inspectCleanInstallRoute(inputs)).installRoute, "signed-install-bound");
+      await chmod(policyPath, 0o644); await assert.rejects(inspectCleanInstallRoute(inputs), /untrusted policy file/);
+      await chmod(policyPath, 0o600);
+      await assert.rejects(inspectCleanInstallRoute({ ...inputs, inspectRoute: async () => {
+        await writeFile(policyPath, JSON.stringify({ ...policy, unitFileSha256: "c".repeat(64) })); return { ...route };
+      } }), /changed around inspection/);
+      await writeFile(policyPath, JSON.stringify(policy));
+      assert.equal((await inspectCleanInstallRoute(inputs)).publicIngress, "unproven");
+      t.diagnostic("Actual protected original request/policy/journal and signed candidate/OAuth/NSS binding passed with simulated proxy observation; policy permission/change rejected; startup not authorized");
+    }
   }
   if (process.env.DP_TEST_REAL_CLEAN_OAUTH_STAGING === "1") {
     const agent = await readFile("/etc/dp-beget-bridge/agent.env", "utf8");
