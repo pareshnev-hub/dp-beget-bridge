@@ -223,11 +223,15 @@ test("OPS-01: real non-root Caddy owns the admin socket and TCP 443 on a disposa
   // joins this disposable namespace for the actual Caddy/TLS inspection.
   // A distinct existing non-root work identity avoids reusing Caddy's UID.
   const joinedOptions = { ...tlsOptions, namespacePath, caCert };
+  // A child of node:test inherits its internal reporter context. This is
+  // an independent test process whose bounded TAP evidence we must collect.
+  const childEnv = { ...process.env };
+  delete childEnv.NODE_TEST_CONTEXT;
   let installed;
   try {
     installed = await exec("nsenter", ["--net=/proc/1/ns/net", "--", process.execPath,
-      "--test", "test/release-real-clean-private-install.test.js"], { timeout: 180000, maxBuffer: 65536,
-      env: { ...process.env, SUDO_UID: "65534", SUDO_GID: "65534",
+      "--test", "--test-reporter=tap", "test/release-real-clean-private-install.test.js"], { timeout: 180000, maxBuffer: 65536,
+      env: { ...childEnv, SUDO_UID: "65534", SUDO_GID: "65534",
         DP_TEST_REAL_PRIVATE_INSTALL: "1", DP_TEST_REAL_CLEAN_OAUTH_STAGING: "1",
         DP_TEST_REAL_CLEAN_OAUTH_OWNER: "1", DP_TEST_REAL_CLEAN_OAUTH_COMPOSED: "1",
         DP_TEST_REAL_CLEAN_PRIVATE_ENTRY: "1", DP_TEST_REAL_CLEAN_STARTUP: "0",
