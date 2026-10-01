@@ -48,8 +48,9 @@ export function validateCleanCaddyAddress({ addresses, rules, route, expectedIp 
   const lookup = jsonArray(route, 65536, 16);
   const local = lookup[0];
   check(lookup.length === 1 && local &&
-    Object.keys(local).every(key => ["type", "dst", "dev", "prefsrc", "flags", "uid", "cache"].includes(key)) &&
+    Object.keys(local).every(key => ["type", "dst", "dev", "table", "prefsrc", "flags", "uid", "cache"].includes(key)) &&
     local.type === "local" && local.dst === expectedIp && local.dev === "lo" && local.prefsrc === expectedIp &&
+    (!Object.hasOwn(local, "table") || local.table === "local") &&
     Array.isArray(local.flags) && local.flags.length === 0 &&
     (!Object.hasOwn(local, "uid") || local.uid === 0) && Array.isArray(local.cache) &&
     local.cache.length === 1 && local.cache[0] === "local", "expected public IP does not route to this host");

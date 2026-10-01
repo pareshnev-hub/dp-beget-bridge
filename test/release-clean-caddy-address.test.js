@@ -7,7 +7,7 @@ const policy = [{ priority: 0, src: "all", table: "local" },
   { priority: 32766, src: "all", table: "main" }, { priority: 32767, src: "all", table: "default" }];
 const address = { family: "inet", local: expectedIp, prefixlen: 32, scope: "global" };
 const network = { ifindex: 2, ifname: "eth0", flags: ["UP", "LOWER_UP"], addr_info: [address] };
-const local = { type: "local", dst: expectedIp, dev: "lo", prefsrc: expectedIp, flags: [], uid: 0, cache: ["local"] };
+const local = { type: "local", dst: expectedIp, dev: "lo", table: "local", prefsrc: expectedIp, flags: [], uid: 0, cache: ["local"] };
 const encode = JSON.stringify;
 const inputs = changes => ({ addresses: encode([network]), rules: encode(policy), route: encode([local]), expectedIp, ...changes });
 
@@ -42,7 +42,7 @@ test("OPS-01: policy routing, remote gateway, mismatched source and route modifi
     assert.throws(() => validateCleanCaddyAddress(inputs({ rules: encode(rules) })), /policy routing/);
   }
   for (const change of [{ type: "unicast" }, { gateway: "8.8.8.8" }, { dev: "eth0" },
-    { dst: "8.8.8.8" }, { prefsrc: "8.8.8.8" }, { uid: 1001 },
+    { dst: "8.8.8.8" }, { prefsrc: "8.8.8.8" }, { table: "main" }, { uid: 1001 },
     { flags: ["onlink"] }, { cache: [] }, { encap: {} }, { multipath: [] }]) {
     assert.throws(() => validateCleanCaddyAddress(inputs({ route: encode([{ ...local, ...change }]) })), /route to this host/);
   }

@@ -196,7 +196,13 @@ test("OPS-01: real non-root Caddy owns the admin socket and TCP 443 on a disposa
     catch (error) { lastError = error; }
     await delay(100);
   }
-  if (!tlsReport) throw lastError;
+  if (!tlsReport) {
+    // This exact public-test address lives only in our fresh isolated
+    // namespace. Bounded route JSON contains no real host/user credentials.
+    const route = await exec("ip", ["-j", "-4", "route", "get", expectedIp], { timeout: 5000, maxBuffer: 4096 });
+    t.diagnostic(`Disposable route format: ${route.stdout.trim()}`);
+    throw lastError;
+  }
   assert.deepEqual(JSON.parse(tlsReport.stdout), { caddySystemd: "main-process-bound",
     caddyProcess: "socket-listener-bound", hostIngress: "dedicated-profile", caddyConfig: "closed-profile",
     localAddress: "host-bound", localRoute: "local-loopback", policyRules: "default-ipv4",
