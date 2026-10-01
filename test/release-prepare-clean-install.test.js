@@ -30,6 +30,7 @@ import { recoverCompletedCleanSystemd } from "../scripts/release/recover-complet
 import { installCleanAdmissionPause } from "../scripts/release/install-clean-admission-pause.mjs";
 import { recoverCompletedCleanAdmission } from "../scripts/release/recover-completed-clean-admission.mjs";
 import { startCleanLocalServices } from "../scripts/release/start-clean-local-services.mjs";
+import { recoverCleanLocalStartup } from "../scripts/release/recover-clean-local-startup.mjs";
 import { pauseAdmission, verifyAdmissionPause } from "../scripts/release/admission-pause.mjs";
 import { DEFAULT_ADMISSION_PAUSE_PATH, isAdmissionPaused } from
   "../packages/core/src/admission-gate.js";
@@ -597,8 +598,39 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
       } }), /partial startup/);
     assert.equal(started.size, 0);
     assert.equal((await readCleanInstallJournal(failedStartupPath)).phase, "startup-intent");
-    assert.ok((await stat(`${failedStartupPath}.startup-install.lock`)).isFile());
+    const failedStartupLock = `${failedStartupPath}.startup-install.lock`;
+    assert.ok((await stat(failedStartupLock)).isFile());
     assert.equal(await isAdmissionPaused(admissionFlag), true);
+    const recoverStartup = options => recoverCleanLocalStartup({
+      journalPath: failedStartupPath, trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }),
+      inspectInactive: inactive, inspectRunning: running,
+      inspectPaused, inspectClosedIngress: closedIngress,
+      inspectHealth: healthy, advance: advanceStartup, ...options });
+    const journalTransitionLock = `${failedStartupPath}.lock`;
+    await writeFile(journalTransitionLock, "unresolved transition\n", { mode: 0o600 });
+    await assert.rejects(recoverStartup(), /unresolved lock/);
+    assert.ok((await stat(failedStartupLock)).isFile());
+    await rm(journalTransitionLock);
+    await assert.rejects(recoverStartup({
+      inspectClosedIngress: async () => ({ publicIngress: "unproven" }) }),
+    /closed route are unproven/);
+    assert.ok((await stat(failedStartupLock)).isFile());
+    started.add("dp-beget-session-host.service");
+    await assert.rejects(recoverStartup());
+    assert.ok((await stat(failedStartupLock)).isFile());
+    started.clear();
+    assert.deepEqual((await recoverStartup()).phase, "startup-intent");
+    await assert.rejects(stat(failedStartupLock), /ENOENT/);
+    // Simulate a process dying after all starts but before the journal write.
+    for (const unit of ["dp-beget-session-host.service", "dp-beget-agent.service",
+      "dp-beget-mcp.service"]) started.add(unit);
+    await writeFile(failedStartupLock, `${journal.transactionId}\n`, { mode: 0o600 });
+    assert.equal((await recoverStartup()).phase, "startup-ready");
+    await assert.rejects(stat(failedStartupLock), /ENOENT/);
+    started.clear();
     assert.equal((await startCleanLocalServices(startOptions(journalPath))).phase, "startup-ready");
     assert.deepEqual([...started], ["dp-beget-session-host.service",
       "dp-beget-agent.service", "dp-beget-mcp.service"]);

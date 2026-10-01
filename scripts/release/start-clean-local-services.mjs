@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { open, unlink } from "node:fs/promises";
+import { lstat, open, unlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { verifyAdmissionPause } from "./admission-pause.mjs";
@@ -49,6 +49,10 @@ export async function startCleanLocalServices({ journalPath, trustDir,
   const journal = await readCleanInstallJournal(journalPath);
   if (journal.phase !== "startup-intent") throw new Error("Clean startup requires journaled intent");
   async function preflight() {
+    try {
+      await lstat(`${journalPath}.lock`);
+      throw new Error("Clean-install journal transition has an unresolved lock");
+    } catch (error) { if (error.code !== "ENOENT") throw error; }
     const candidate = await verify({ workspace: journal.workspace,
       manifestSha256: journal.manifestSha256, trustDir });
     if (candidate.artifactSha256 !== journal.artifactSha256 ||
@@ -81,6 +85,7 @@ export async function startCleanLocalServices({ journalPath, trustDir,
   finally { await handle.close(); }
   await syncDirectory(parent);
   const started = [];
+  let committed = false;
   try {
     await preflight();
     for (const unit of START_ORDER) {
@@ -102,11 +107,17 @@ export async function startCleanLocalServices({ journalPath, trustDir,
       expectedPhase: "startup-intent", nextPhase: "startup-ready",
       configDir, unitDirectory, dataRoot, trustDir,
       inspectClosedIngress, inspectRunning, inspectHealth, inspectPaused });
+    committed = true;
     await unlink(lock);
     await syncDirectory(parent);
     return { transactionId: next.transactionId, phase: next.phase,
       services: [...START_ORDER], admission: "paused" };
   } catch (error) {
+    // An interrupted journal commit may already say startup-ready. Keep the
+    // paused services and lock together for deliberate recovery in that case.
+    if (committed || (await readCleanInstallJournal(journalPath).catch(() => null))?.phase === "startup-ready") {
+      throw error;
+    }
     if (started.length === 0) {
       await unlink(lock).catch(() => {});
       await syncDirectory(parent);
