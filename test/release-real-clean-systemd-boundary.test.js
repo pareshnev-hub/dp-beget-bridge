@@ -121,6 +121,7 @@ test("OPS-01: clean units load disabled and inactive with exact identities", asy
     inspectInactive: inactive, inspectSystemd: inactive,
     inspectRunning: running, inspectPaused: paused,
     inspectClosedIngress: closed, inspectHealth: healthy,
+    inspectAuthProfile: async () => ({ authMode: "static" }),
   };
   const advance = options => advanceCleanInstallJournal({ ...options, ...inspectors });
   const startOptions = { journalPath, trustDir: journalParent,

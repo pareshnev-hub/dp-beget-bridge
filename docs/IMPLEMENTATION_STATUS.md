@@ -192,6 +192,10 @@ The actual signed application startup/recovery merged as 96bd53c (#255). All fou
 
 The next clean candidate preparation supports an explicit OAuth profile. It generates separate local repair, restricted OAuth Agent, context-signing and owner-approval secrets; MCP receives the restricted credential and no static MCP token or unrestricted Agent credential. Session Host remains credential-free and telemetry stays disabled. Files-read is the default OAuth profile; full-shell is an explicit staged selection whose later browser owner consent remains required. Real private OAuth config installation and group separation are rehearsed separately from owner creation/startup/pairing.
 
+The clean OAuth configuration merged as 6dd3691 (#256). All four CI jobs passed at ac6478b (run 36891903203); the actual signed private OAuth install and cross-service credential-readability fixture passed 1, failed 0, skipped 0.
+
+The current owner integration adds owner-intent/owner-ready journal phases for OAuth while retaining direct admission-ready/startup-intent for the static fixture profile. Exact auth configuration re-rendering binds the selected mode, owner/profile and separated credentials to the candidate manifest. New owner bootstrap executes the promoted signed script as the MCP service user under a minimal environment, behind inactive units and paused admission. Candidate-bound owner inspection checks private files, schema/integrity, consumed bootstrap digest and absence of clients/grants/token families; SQLite reads also run as MCP to preserve coordination-file ownership. Explicit recovery adopts only a completed exact owner and clears its matching lock. CI now rehearses an interrupted owner commit, refused replay, unsafe modes/foreign owner rejection, deliberate recovery and actual paused OAuth startup. Real-domain pairing/exposure, production closed-route proof and full release acceptance remain open.
+
 ## Updating this file
 
 For each status change, add links in the related issue/PR and update:

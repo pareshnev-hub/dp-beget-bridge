@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { inspectCleanOwnerData } from "./clean-install-owner-data.mjs";
 
 const exec = promisify(execFile);
 const NAMES = ["dp-beget-bridge", "dp-beget-bridge-agent", "dp-beget-bridge-mcp"];
@@ -49,9 +50,10 @@ export async function inspectCleanWorkIdentity({ plan, lookup = getent } = {}) {
 // three paths must be private and owned by their journal-bound accounts.
 export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
   identities, inspectWork = inspectCleanWorkIdentity, startupState = false,
-  requireInitialized = false } = {}) {
+  requireInitialized = false, authMode = "static", ownerReady = false } = {}) {
   if (typeof startupState !== "boolean" || typeof requireInitialized !== "boolean" ||
-      (requireInitialized && !startupState)) throw new Error("Invalid clean data boundary");
+      typeof ownerReady !== "boolean" || !["static", "oauth"].includes(authMode) ||
+      (ownerReady && authMode !== "oauth") || (requireInitialized && !startupState)) throw new Error("Invalid clean data boundary");
   await safeParent(dataRoot);
   if (identities?.identities !== "journal-bound") {
     throw new Error("Journal-bound service identities are required for data directories");
@@ -60,7 +62,7 @@ export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
   const expected = [
     [NAMES[0], work.uid, work.gid, ["tmux"]],
     [NAMES[1], identities.agentUid, identities.agentGid, []],
-    [NAMES[2], identities.mcpUid, identities.mcpGid, []]
+    [NAMES[2], identities.mcpUid, identities.mcpGid, ownerReady ? ["auth"] : []]
   ];
   for (const [name, uid, gid, children] of expected) {
     if (![uid, gid].every(id => Number.isSafeInteger(id) && id > 0)) {
@@ -78,7 +80,7 @@ export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
         ? ["tmux", "sessions", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm", "state.sqlite.backup-v0"]
         : name === NAMES[1]
           ? ["installation-id", "session-owners.sqlite", "session-owners.sqlite-journal",
-            "session-owners.sqlite-wal", "session-owners.sqlite-shm"] : [];
+            "session-owners.sqlite-wal", "session-owners.sqlite-shm"] : ownerReady ? ["auth"] : [];
       const names = await readdir(directory);
       const required = name === NAMES[0] ? ["tmux", "sessions", "state.sqlite"]
         : name === NAMES[1] ? ["installation-id", "session-owners.sqlite"] : [];
@@ -89,7 +91,7 @@ export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
         if (!allowed.includes(child)) throw new Error("Unexpected clean startup data entry");
         const filename = path.join(directory, child);
         const entry = await lstat(filename);
-        if (child === "tmux") continue; // Independently checked below.
+        if (child === "tmux" || child === "auth") continue; // Independently checked below.
         const group = name === NAMES[0] ? identities.ipcGid : gid;
         if (!Number.isSafeInteger(group) || group < 1 || entry.uid !== uid ||
             ![gid, group].includes(entry.gid) || await realpath(filename) !== filename ||
@@ -102,6 +104,7 @@ export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
       }
     }
   }
+  if (ownerReady) await inspectCleanOwnerData({ dataRoot, identities });
   const tmux = path.join(dataRoot, NAMES[0], "tmux");
   const info = await lstat(tmux);
   if (!info.isDirectory() || info.uid !== work.uid || info.gid !== work.gid ||

@@ -19,6 +19,10 @@ import { recoverCleanLocalStartup } from "../scripts/release/recover-clean-local
 import { inspectCleanStartupData, inspectInstalledCleanData } from "../scripts/release/clean-install-data-directories.mjs";
 import { inspectCreatedCleanIdentities } from "../scripts/release/inspect-clean-install-created-identities.mjs";
 import { localReleaseHealthProbes, waitForAdmissionDrain } from "../scripts/release/wait-admission-drain.mjs";
+import { inspectCleanInstallAuthProfile } from "../scripts/release/clean-install-auth-profile.mjs";
+import { inspectInitializedCleanOwner } from "../scripts/release/clean-install-owner-data.mjs";
+import { installCleanOwner } from "../scripts/release/install-clean-owner.mjs";
+import { recoverCompletedCleanOwner } from "../scripts/release/recover-completed-clean-owner.mjs";
 
 const exec = promisify(execFile);
 const systemctl = (...args) => exec("systemctl", args, { timeout: 20000, maxBuffer: 4096 });
@@ -124,9 +128,48 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
       await exec("runuser", ["-u", user, "--", "test", "-r", `/etc/dp-beget-bridge/${file}`]);
     }
     t.diagnostic("Real signed private OAuth configuration installed with isolated service-readable groups and no static/repair credential in MCP; owner bootstrap, OAuth app startup and pairing remain separate");
-    assert.notEqual(process.env.DP_TEST_REAL_CLEAN_STARTUP, "1", "OAuth startup requires separate owner provisioning");
+    if (process.env.DP_TEST_REAL_CLEAN_OAUTH_OWNER !== "1") {
+      assert.notEqual(process.env.DP_TEST_REAL_CLEAN_STARTUP, "1", "OAuth startup requires separate owner provisioning");
+    }
   }
   t.diagnostic("Real signed artifact, dependencies, identities, config, data, promotion, pointer, systemd and admission installation passed; public DNS/TLS simulated; no service startup");
+  const authProfile = await inspectCleanInstallAuthProfile(controller);
+  assert.equal(Object.keys(authProfile).some(key => /secret|token/i.test(key)), false);
+  if (process.env.DP_TEST_REAL_CLEAN_OAUTH_OWNER === "1") {
+    assert.equal(authProfile.authMode, "oauth");
+    const journal = await readCleanInstallJournal(journalPath);
+    const skippedPath = path.join(workspaceParent, "rejected-owner-skip.json");
+    await writeFile(skippedPath, JSON.stringify(journal) + "\n", { flag: "wx", mode: 0o600 });
+    await assert.rejects(advanceCleanInstallJournal({ journalPath: skippedPath, trustDir,
+      transactionId: journal.transactionId, expectedPhase: "admission-ready", nextPhase: "startup-intent",
+      inspectClosedIngress: async () => ({ publicIngress: "closed-exclusive" }) }), /authorization phase/);
+    await advanceCleanInstallJournal({ journalPath, trustDir, transactionId: journal.transactionId,
+      expectedPhase: "admission-ready", nextPhase: "owner-intent" });
+    await assert.rejects(installCleanOwner({ journalPath, trustDir,
+      advance: async () => { throw new Error("CI interrupted before owner journal commit"); } }), /interrupted before owner journal commit/);
+    assert.equal((await readCleanInstallJournal(journalPath)).phase, "owner-intent");
+    assert.equal((await inspectInitializedCleanOwner({ journal: await readCleanInstallJournal(journalPath), trustDir })).owner, "candidate-bound");
+    assert.ok((await lstat(`${journalPath}.owner-install.lock`)).isFile());
+    await assert.rejects(installCleanOwner({ journalPath, trustDir }));
+    const authDatabase = "/var/lib/dp-beget-bridge-mcp/auth/auth.sqlite";
+    await chmod(authDatabase, 0o644);
+    await assert.rejects(recoverCompletedCleanOwner({ journalPath, trustDir }), /Untrusted/);
+    assert.ok((await lstat(`${journalPath}.owner-install.lock`)).isFile());
+    await chmod(authDatabase, 0o600);
+    const updateOwner = async owner => exec("runuser", ["-u", mcpUser, "--", process.execPath,
+      "--input-type=module", "--eval",
+      "import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(process.env.DP_CI_OWNER_DB);try{db.prepare('UPDATE owners SET id=?').run(process.env.DP_CI_OWNER_ID);}finally{db.close();}"],
+    { env: { PATH: "/usr/bin:/bin", DP_CI_OWNER_DB: authDatabase, DP_CI_OWNER_ID: owner }, timeout: 10000, maxBuffer: 4096 });
+    await updateOwner("owner-foreign");
+    await assert.rejects(recoverCompletedCleanOwner({ journalPath, trustDir }), /initialized owner is unproven/);
+    assert.ok((await lstat(`${journalPath}.owner-install.lock`)).isFile());
+    await updateOwner(authProfile.ownerId);
+    assert.equal((await recoverCompletedCleanOwner({ journalPath, trustDir })).phase, "owner-ready");
+    await assert.rejects(lstat(`${journalPath}.owner-install.lock`), { code: "ENOENT" });
+    await assert.rejects(installCleanOwner({ journalPath, trustDir }), /journaled intent/);
+    assert.equal((await verifyAdmissionPause()).paused, true);
+    t.diagnostic("Real owner bootstrap completed under MCP identity; interrupted commit recovered only after exact candidate-bound owner proof; altered ownership/profile refused; no OAuth client/grant created");
+  }
   if (process.env.DP_TEST_REAL_CLEAN_STARTUP !== "1") return;
   // The production route verifier still rejects every public startup. This
   // explicitly enabled disposable local rehearsal injects only that gate;
@@ -136,8 +179,9 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   const common = { journalPath, trustDir, inspectClosedIngress };
   const journal = await readCleanInstallJournal(journalPath);
   await advanceCleanInstallJournal({ ...common, transactionId: journal.transactionId,
-    expectedPhase: "admission-ready", nextPhase: "startup-intent" });
+    expectedPhase: authProfile.authMode === "oauth" ? "owner-ready" : "admission-ready", nextPhase: "startup-intent" });
   const startupData = async (options = {}) => inspectCleanStartupData({ ...options, plan: journal.identityPlan,
+    authMode: authProfile.authMode, ownerReady: authProfile.authMode === "oauth",
     identities: await inspectCreatedCleanIdentities({ plan: journal.identityPlan,
       transactionId: journal.transactionId }) });
   await assert.rejects(startCleanLocalServices({ ...common,
