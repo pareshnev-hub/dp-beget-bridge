@@ -105,14 +105,17 @@ export async function rehearseCleanPrivateAutonomy({ journalPath, trustDir } = {
     client = new Client({ name: "disposable-direct-autonomy", version: "1" });
     await client.connect(new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), {
       requestInit: { headers: { authorization: `Bearer ${token}` } } }));
-    stage = "terminal-and-file";
+    stage = "bridge-status";
     assert.equal((await call("get_bridge_status")).product, "DP Beget Bridge");
+    stage = "terminal-open";
     sessionId = (await call("open_terminal", { cwd: plan.allowedRoot, label: "Disposable autonomy fixture" })).id;
     assert.ok(typeof sessionId === "string");
     const name = "autonomy-ci-probe.txt";
+    stage = "terminal-command";
     const command = await call("run_terminal_command", { session_id: sessionId, idempotency_key: "ci-autonomy-command",
       command: `printf 'ci-autonomy-content\\n' > ${name}; printf 'ci-autonomy-ready\\n'`, wait_ms: 50 });
     assert.ok(typeof command.operationId === "string");
+    stage = "terminal-completion";
     let complete = false;
     for (let attempt = 0; attempt < 100; attempt++) {
       const operation = await call("get_terminal_operation", { session_id: sessionId, operation_id: command.operationId });
@@ -120,19 +123,26 @@ export async function rehearseCleanPrivateAutonomy({ journalPath, trustDir } = {
       await delay(100);
     }
     assert.equal(complete, true);
+    stage = "terminal-output";
     const read = await call("read_terminal", { session_id: sessionId, cursor: 0, max_bytes: 8192 });
     assert.ok(read.output.includes("ci-autonomy-ready"));
+    stage = "file-list";
     const files = await call("list_files", { path: plan.allowedRoot });
     assert.ok(files.entries.some(entry => entry.name === name));
+    stage = "file-download-descriptor";
     const download = await call("download_file", { path: `${plan.allowedRoot}/${name}` });
     const link = new URL(download.uri);
     assert.equal(link.origin, `https://${plan.domain}`);
     // Local transport rehearsal only: preserve the exact issued download
     // path, never forward its token to another origin or print the URL.
+    stage = "file-download-bytes";
     const bytes = await request(`${origin}${link.pathname}`); assert.equal(bytes.status, 200);
     assert.equal(await bytes.text(), "ci-autonomy-content\n");
+    stage = "terminal-close";
     await call("close_terminal", { session_id: sessionId });
+    stage = "terminal-purge";
     await call("purge_terminal", { session_id: sessionId }); sessionId = undefined;
+    stage = "file-delete";
     await call("delete_path", { path: `${plan.allowedRoot}/${name}`, recursive: false });
     stage = "revocation";
     assert.equal((await postForm("/oauth/revoke", { token, token_type_hint: "access_token", client_id: clientId })).status, 200);
