@@ -28,6 +28,7 @@ import { inspectCleanSystemdBoundary, inspectCleanSystemdInactivity } from
 import { loadCleanSystemdUnits } from "../scripts/release/load-clean-systemd-units.mjs";
 import { recoverCompletedCleanSystemd } from "../scripts/release/recover-completed-clean-systemd.mjs";
 import { installCleanAdmissionPause } from "../scripts/release/install-clean-admission-pause.mjs";
+import { recoverCompletedCleanAdmission } from "../scripts/release/recover-completed-clean-admission.mjs";
 import { pauseAdmission, verifyAdmissionPause } from "../scripts/release/admission-pause.mjs";
 import { DEFAULT_ADMISSION_PAUSE_PATH, isAdmissionPaused } from
   "../packages/core/src/admission-gate.js";
@@ -511,7 +512,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
         inspectWork: async () => workEvidence }),
       inspectSystemd: () => inspectSystemd(unit => systemdState(unit)),
       inspectAdmissionTarget })).phase, "admission-intent");
-    const paused = await installCleanAdmissionPause({ journalPath, trustDir,
+    await assert.rejects(installCleanAdmissionPause({ journalPath, trustDir,
       configDir, unitDirectory, dataRoot, inspectTarget: inspectAdmissionTarget,
       inspectSystemd: () => inspectSystemd(unit => systemdState(unit)),
       pause: async ({ flag }) => {
@@ -522,6 +523,24 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
         assert.equal(flag, DEFAULT_ADMISSION_PAUSE_PATH);
         return inspectPaused();
       },
+      advance: async () => { throw new Error("interrupted before admission journal write"); } }),
+    /interrupted before admission journal write/);
+    assert.equal((await readCleanInstallJournal(journalPath)).phase, "admission-intent");
+    const admissionLock = `${journalPath}.admission-install.lock`;
+    assert.ok((await stat(admissionLock)).isFile());
+    const originalAdmission = await readFile(admissionFlag);
+    await writeFile(admissionFlag, "changed admission flag\n");
+    const recoverAdmission = options => recoverCompletedCleanAdmission({ journalPath,
+      trustDir, configDir, unitDirectory, dataRoot,
+      inspectCreated: async () => identityEvidence,
+      inspectData: input => inspectInstalledCleanData({ ...input,
+        inspectWork: async () => workEvidence }),
+      inspectSystemd: () => inspectSystemd(unit => systemdState(unit)),
+      inspectPaused, ...options });
+    await assert.rejects(recoverAdmission(), /Unexpected admission pause flag content/);
+    assert.ok((await stat(admissionLock)).isFile());
+    await writeFile(admissionFlag, originalAdmission);
+    const paused = await recoverAdmission({
       advance: options => advanceCleanInstallJournal({ ...options,
         inspectCreated: async () => identityEvidence,
         inspectData: input => inspectInstalledCleanData({ ...input,
@@ -530,7 +549,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
         inspectPaused }) });
     assert.equal(paused.phase, "admission-ready");
     assert.equal(await isAdmissionPaused(admissionFlag), true);
-    await assert.rejects(stat(`${journalPath}.admission-install.lock`), /ENOENT/);
+    await assert.rejects(stat(admissionLock), /ENOENT/);
   }
   const secondJournalPath = path.join(workspaceParent, "interrupted-install-journal.json");
   const secondJournal = await startCleanInstallJournal({ journalPath: secondJournalPath,
