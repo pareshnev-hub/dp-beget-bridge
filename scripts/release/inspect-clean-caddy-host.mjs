@@ -5,6 +5,7 @@ import { isDeepStrictEqual, promisify } from "node:util";
 import { inspectBegetLegacyBackends } from "./inspect-beget-oauth-nat.mjs";
 import { inspectCleanCaddySystemd, validateCleanCaddyUnitInputs } from "./inspect-clean-caddy-systemd.mjs";
 import { inspectCleanCaddyRoute } from "./inspect-clean-caddy-config.mjs";
+import { inspectCleanCaddyAddress } from "./inspect-clean-caddy-address.mjs";
 
 const exec = promisify(execFile);
 function check(ok, reason) {
@@ -196,7 +197,8 @@ export async function inspectCleanCaddyHost({ pid, ownerUid, adminKernelInode, p
 }
 
 export async function inspectCleanCaddyHostRoute({ inspectSystemd = inspectCleanCaddySystemd,
-  inspectHost = inspectCleanCaddyHost, inspectRoute = inspectCleanCaddyRoute, ...options } = {}) {
+  inspectHost = inspectCleanCaddyHost, inspectRoute = inspectCleanCaddyRoute,
+  inspectAddress = inspectCleanCaddyAddress, ...options } = {}) {
   validateCleanCaddyUnitInputs(options);
   const first = await inspectSystemd(options);
   check(first?.pid === options.pid && first.ownerUid === options.ownerUid &&
@@ -208,14 +210,21 @@ export async function inspectCleanCaddyHostRoute({ inspectSystemd = inspectClean
   check(host?.hostIngress === "dedicated-profile" && host.socketOwners === "sole-process" &&
     host.legacyRules === "empty" && host.publicIngress === "unproven" &&
     host.netNamespace === first.netNamespace, "host ingress inventory unproven");
+  const addressInputs = { expectedIp: options.expectedIp, netNamespace: first.netNamespace };
+  const address = await inspectAddress(addressInputs);
+  check(address?.expectedIp === options.expectedIp && address.netNamespace === first.netNamespace &&
+    address.localAddress === "host-bound" && address.localRoute === "local-loopback" &&
+    address.policyRules === "default-ipv4" && address.publicIngress === "unproven",
+  "public address assignment is unproven");
   const route = await inspectRoute(options);
   check(route?.domain === options.domain && route.expectedIp === options.expectedIp &&
     route.caddyConfig === "closed-profile" && route.publicResponse === "closed-upstream" &&
     route.publicIngress === "unproven", "closed route observation unproven");
-  check(isDeepStrictEqual(host, await inspectHost(first)) &&
+  check(isDeepStrictEqual(address, await inspectAddress(addressInputs)) &&
+    isDeepStrictEqual(host, await inspectHost(first)) &&
     isDeepStrictEqual(first, await inspectSystemd(options)), "host or service changed around route observation");
   return { ...route, pid: first.pid, ownerUid: first.ownerUid, startTicks: first.startTicks,
     unitName: first.unitName, invocationId: first.invocationId, caddySystemd: first.caddySystemd,
-    caddyProcess: first.caddyProcess, ...host,
-    scope: "dedicated host sockets, filter-only nft/empty legacy, pinned Caddy/systemd and closed response" };
+    caddyProcess: first.caddyProcess, ...host, ...address,
+    scope: "local public IPv4/default routing, dedicated host sockets, filter-only nft/empty legacy, pinned Caddy/systemd and closed response" };
 }

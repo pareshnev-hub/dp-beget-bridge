@@ -199,9 +199,19 @@ test("OPS-01: real non-root Caddy owns the admin socket and TCP 443 on a disposa
   if (!tlsReport) throw lastError;
   assert.deepEqual(JSON.parse(tlsReport.stdout), { caddySystemd: "main-process-bound",
     caddyProcess: "socket-listener-bound", hostIngress: "dedicated-profile", caddyConfig: "closed-profile",
+    localAddress: "host-bound", localRoute: "local-loopback", policyRules: "default-ipv4",
     publicResponse: "closed-upstream", publicIngress: "unproven", tls: "real-fixture-ca", dns: "simulated" });
   await assert.rejects(runClient(tlsOptions, ""), error => error.code === 1);
   await assert.rejects(runClient({ ...tlsOptions, scenario: "wrong-hostname" }), error => error.code === 1);
+  // Mutate only the explicitly disposable namespace. These failures occur
+  // before any HTTPS request to the now-unassigned fixture address.
+  await exec("ip", ["addr", "del", `${expectedIp}/32`, "dev", "dp-public-test"]);
+  try { await assert.rejects(runClient(tlsOptions), error => error.code === 1 && /address binding/.test(error.stderr)); }
+  finally { await exec("ip", ["addr", "add", `${expectedIp}/32`, "dev", "dp-public-test"]); }
+  await exec("ip", ["-4", "rule", "add", "priority", "100", "lookup", "main"]);
+  try { await assert.rejects(runClient(tlsOptions), error => error.code === 1 && /policy routing/.test(error.stderr)); }
+  finally { await exec("ip", ["-4", "rule", "del", "priority", "100", "lookup", "main"]); }
+  assert.deepEqual(JSON.parse((await runClient(tlsOptions)).stdout), JSON.parse(tlsReport.stdout));
   await systemctl("stop", unitName);
   t.diagnostic("Real Caddy/systemd/host/TLS/config/closed HTTPS rehearsal passed; DNS simulated; production ingress unproven");
 });
