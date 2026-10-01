@@ -72,12 +72,14 @@ test("OPS-01: clean units load disabled and inactive with exact identities", asy
   // production templates and route stay outside this fixture.
   await chmod(releaseRoot, 0o755);
   const dummyPlan = { workUser: "nobody", ipcGroup: "nogroup",
-    agentUser: "nobody", mcpUser: "nobody" };
+    agentUser: "www-data", mcpUser: "daemon" };
+  const dummyUsers = [dummyPlan.workUser, dummyPlan.agentUser, dummyPlan.mcpUser];
+  const dummyGroups = [dummyPlan.ipcGroup, dummyPlan.agentUser, dummyPlan.mcpUser];
   for (const [index, unit] of core.entries()) {
     await writeFile(path.join(unitDirectory, unit),
       `[Unit]\nDescription=Disposable clean ${unit}\n` +
-      `[Service]\nType=oneshot\nRemainAfterExit=yes\nUser=nobody\n` +
-      `Group=nogroup\nWorkingDirectory=${releaseRoot}/current\n` +
+      `[Service]\nType=oneshot\nRemainAfterExit=yes\nUser=${dummyUsers[index]}\n` +
+      `Group=${dummyGroups[index]}\nWorkingDirectory=${releaseRoot}/current\n` +
       `${index === 0 ? "KillMode=process\n" : ""}ExecStart=/usr/bin/true\n` +
       `[Install]\nWantedBy=multi-user.target\n`);
   }
