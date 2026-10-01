@@ -159,7 +159,7 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
     const updateOwner = async owner => exec("runuser", ["-u", mcpUser, "--", process.execPath,
       "--input-type=module", "--eval",
       "import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(process.env.DP_CI_OWNER_DB);try{db.prepare('UPDATE owners SET id=?').run(process.env.DP_CI_OWNER_ID);}finally{db.close();}"],
-    { env: { PATH: "/usr/bin:/bin", DP_CI_OWNER_DB: authDatabase, DP_CI_OWNER_ID: owner }, timeout: 10000, maxBuffer: 4096 });
+    { env: { PATH: "/usr/sbin:/usr/bin:/sbin:/bin", DP_CI_OWNER_DB: authDatabase, DP_CI_OWNER_ID: owner }, timeout: 10000, maxBuffer: 4096 });
     await updateOwner("owner-foreign");
     await assert.rejects(recoverCompletedCleanOwner({ journalPath, trustDir }), /initialized owner is unproven/);
     assert.ok((await lstat(`${journalPath}.owner-install.lock`)).isFile());
