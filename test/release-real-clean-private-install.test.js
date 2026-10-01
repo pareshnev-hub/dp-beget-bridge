@@ -208,7 +208,13 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
           "--fixture-install-options", JSON.stringify({ requestPath, journalPath, policyPath, trustDir })];
         const runJoined = (ca = joinedCaddy.caCert) => exec("nsenter", workerArgs,
           { timeout: 30000, maxBuffer: 8192, env: { ...process.env, NODE_EXTRA_CA_CERTS: ca } });
-        const joined = JSON.parse((await runJoined()).stdout);
+        let observed;
+        try { observed = await runJoined(); }
+        catch (error) {
+          const safe = error.stderr?.match(/^Disposable joined installation HTTPS fixture rejected: [A-Za-z0-9 :;.,_/-]{1,180}$/m)?.[0];
+          throw new Error(safe || "Disposable joined installation HTTPS fixture rejected: worker unavailable");
+        }
+        const joined = JSON.parse(observed.stdout);
         assert.equal(joined.commit, record.commit); assert.equal(joined.artifactSha256, record.artifactSha256);
         assert.equal(joined.installRoute, "signed-install-bound"); assert.equal(joined.publicIngress, "unproven");
         assert.equal(joined.proxy, "actual-Caddy-systemd-host"); assert.equal(joined.tls, "real-fixture-ca");

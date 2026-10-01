@@ -236,8 +236,10 @@ test("OPS-01: real non-root Caddy owns the admin socket and TCP 443 on a disposa
         DP_TEST_REAL_CLEAN_OAUTH_OWNER: "1", DP_TEST_REAL_CLEAN_OAUTH_COMPOSED: "1",
         DP_TEST_REAL_CLEAN_PRIVATE_ENTRY: "1", DP_TEST_REAL_CLEAN_STARTUP: "0",
         DP_TEST_CADDY_INSTALL_ROUTE_JSON: JSON.stringify(joinedOptions) } });
-  } catch {
-    throw new Error("Joined signed-install/Caddy fixture failed; nested output withheld");
+  } catch (error) {
+    const safe = error.stdout?.match(/Disposable joined installation HTTPS fixture rejected: [A-Za-z0-9 :;.,_/-]{1,180}/)?.[0];
+    const location = error.stdout?.match(/release-real-clean-private-install\.test\.js:\d+:\d+/)?.[0];
+    throw new Error(`Joined signed-install/Caddy fixture failed: ${safe || location || "nested evidence unavailable"}; nested output withheld`);
   }
   assert.match(installed.stdout, /^# pass 1$/m); assert.match(installed.stdout, /^# fail 0$/m);
   assert.match(installed.stdout, /^# skipped 0$/m);
