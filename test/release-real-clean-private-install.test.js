@@ -35,6 +35,14 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   if (process.env.DP_TEST_REAL_PRIVATE_INSTALL !== "1" || process.platform !== "linux" || process.getuid?.() !== 0) {
     t.skip("requires explicitly enabled disposable root Linux installation CI"); return;
   }
+  const joinedCaddy = process.env.DP_TEST_CADDY_INSTALL_ROUTE_JSON
+    ? JSON.parse(process.env.DP_TEST_CADDY_INSTALL_ROUTE_JSON) : null;
+  if (joinedCaddy) {
+    assert.equal(process.env.DP_TEST_REAL_CADDY_PROCESS, "1");
+    assert.equal(process.env.DP_TEST_REAL_CLEAN_PRIVATE_ENTRY, "1");
+    assert.notEqual(process.env.DP_TEST_REAL_CLEAN_STARTUP, "1");
+    assert.match(joinedCaddy.namespacePath, /^\/run\/netns\/dp-clean-caddy-[a-z0-9-]+$/);
+  }
   const ownerUid = Number(process.env.SUDO_UID), ownerGid = Number(process.env.SUDO_GID);
   assert.ok(Number.isSafeInteger(ownerUid) && ownerUid > 0 && Number.isSafeInteger(ownerGid) && ownerGid > 0);
   const workUser = (await exec("getent", ["passwd", String(ownerUid)])).stdout.trim().split(":")[0];
@@ -168,7 +176,8 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
       const policy = { format: "dp-beget-clean-route-policy-v1", transactionId: record.transactionId,
         artifactSha256: record.artifactSha256, manifestSha256: record.manifestSha256, commit: record.commit,
         domain, expectedIp, unitName: "dp-clean-caddy.service", unitFile: "/etc/systemd/system/dp-clean-caddy.service",
-        unitFileSha256: "a".repeat(64), ownerUser: "nobody", ownerUid: 65534,
+        unitFileSha256: "a".repeat(64), ownerUser: joinedCaddy?.ownerUser || "nobody",
+        ownerUid: joinedCaddy?.ownerUid || 65534,
         executable: "/usr/bin/caddy", executableSha256: "b".repeat(64), adminSocket: "/run/dp-caddy/admin.sock" };
       await writeFile(policyPath, JSON.stringify(policy), { mode: 0o600, flag: "wx" });
       const route = { pid: 9001, ownerUid: policy.ownerUid, unitName: policy.unitName, domain, expectedIp,
@@ -189,6 +198,35 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
       await writeFile(policyPath, JSON.stringify(policy));
       assert.equal((await inspectCleanInstallRoute(inputs)).publicIngress, "unproven");
       t.diagnostic("Actual protected original request/policy/journal and signed candidate/OAuth/NSS binding passed with simulated proxy observation; policy permission/change rejected; startup not authorized");
+      if (joinedCaddy) {
+        const proxy = {};
+        for (const key of ["unitName", "unitFile", "unitFileSha256", "ownerUser", "ownerUid",
+          "executable", "executableSha256", "adminSocket", "certificateFiles"]) proxy[key] = joinedCaddy[key];
+        const actualPolicy = { ...policy, ...proxy };
+        await writeFile(policyPath, JSON.stringify(actualPolicy));
+        const worker = path.resolve("scripts/integration/clean-install-https-client.mjs");
+        const workerArgs = ["--net=" + joinedCaddy.namespacePath, "--", process.execPath, worker,
+          "--fixture-install-options", JSON.stringify({ requestPath, journalPath, policyPath, trustDir })];
+        const runJoined = (ca = joinedCaddy.caCert) => exec("nsenter", workerArgs,
+          { timeout: 30000, maxBuffer: 8192, env: { ...process.env, NODE_EXTRA_CA_CERTS: ca } });
+        let observed;
+        try { observed = await runJoined(); }
+        catch (error) {
+          const safe = error.stderr?.match(/^Disposable joined installation HTTPS fixture rejected: [A-Za-z0-9 :;.,_/-]{1,180}$/m)?.[0];
+          throw new Error(safe || "Disposable joined installation HTTPS fixture rejected: worker unavailable");
+        }
+        const joined = JSON.parse(observed.stdout);
+        assert.equal(joined.commit, record.commit); assert.equal(joined.artifactSha256, record.artifactSha256);
+        assert.equal(joined.installRoute, "signed-install-bound"); assert.equal(joined.publicIngress, "unproven");
+        assert.equal(joined.proxy, "actual-Caddy-systemd-host"); assert.equal(joined.tls, "real-fixture-ca");
+        await assert.rejects(runJoined(""), error => error.code === 1);
+        await writeFile(policyPath, JSON.stringify({ ...actualPolicy, executableSha256: "0".repeat(64) }));
+        await assert.rejects(runJoined(), error => error.code === 1);
+        await writeFile(policyPath, JSON.stringify(actualPolicy));
+        assert.deepEqual(JSON.parse((await runJoined()).stdout), joined);
+        t.diagnostic(JSON.stringify(joined));
+        t.diagnostic("Joined actual signed private install and actual Caddy/systemd/host/TLS route correlation passed; untrusted CA and wrong executable rejected; DNS simulated; no startup/public acceptance");
+      }
     }
   }
   if (process.env.DP_TEST_REAL_CLEAN_OAUTH_STAGING === "1") {

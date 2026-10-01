@@ -12,7 +12,7 @@ permissions:
 jobs:
   caddy-profile:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,7 +21,7 @@ jobs:
       - name: Install distribution Caddy validator
         run: |
           sudo apt-get update
-          sudo apt-get install -y caddy nftables iproute2
+          sudo apt-get install -y caddy nftables iproute2 acl
       - name: Validate closed bootstrap profile and protected admin reads
         run: env DP_TEST_CADDY_PROFILE=1 node --test test/release-clean-caddy-config.test.js
       - name: Bind real non-root Caddy, systemd and isolated host ingress

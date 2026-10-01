@@ -218,6 +218,38 @@ test("OPS-01: real non-root Caddy owns the admin socket and TCP 443 on a disposa
   try { await assert.rejects(runClient(tlsOptions), error => error.code === 1 && /policy routing/.test(error.stderr)); }
   finally { await exec("ip", ["-4", "rule", "del", "priority", "100", "lookup", "main"]); }
   assert.deepEqual(JSON.parse((await runClient(tlsOptions)).stdout), JSON.parse(tlsReport.stdout));
+  // Prepare the actual signed private install in the runner's initial
+  // network namespace (npm needs connectivity), then its guarded worker
+  // joins this disposable namespace for the actual Caddy/TLS inspection.
+  // A distinct existing non-root work identity avoids reusing Caddy's UID.
+  const joinedOptions = { ...tlsOptions, namespacePath, caCert };
+  // A child of node:test inherits its internal reporter context. This is
+  // an independent test process whose bounded TAP evidence we must collect.
+  const childEnv = { ...process.env };
+  delete childEnv.NODE_TEST_CONTEXT;
+  let installed;
+  try {
+    installed = await exec("nsenter", ["--net=/proc/1/ns/net", "--", process.execPath,
+      "--test", "--test-reporter=tap", "test/release-real-clean-private-install.test.js"], { timeout: 180000, maxBuffer: 65536,
+      env: { ...childEnv, SUDO_UID: "65534", SUDO_GID: "65534",
+        DP_TEST_REAL_PRIVATE_INSTALL: "1", DP_TEST_REAL_CLEAN_OAUTH_STAGING: "1",
+        DP_TEST_REAL_CLEAN_OAUTH_OWNER: "1", DP_TEST_REAL_CLEAN_OAUTH_COMPOSED: "1",
+        DP_TEST_REAL_CLEAN_PRIVATE_ENTRY: "1", DP_TEST_REAL_CLEAN_STARTUP: "0",
+        DP_TEST_CADDY_INSTALL_ROUTE_JSON: JSON.stringify(joinedOptions) } });
+  } catch (error) {
+    const safe = error.stdout?.match(/Disposable joined installation HTTPS fixture rejected: [A-Za-z0-9 :;.,_/-]{1,180}/)?.[0];
+    const location = error.stdout?.match(/release-real-clean-private-install\.test\.js:\d+:\d+/)?.[0];
+    throw new Error(`Joined signed-install/Caddy fixture failed: ${safe || location || "nested evidence unavailable"}; nested output withheld`);
+  }
+  assert.match(installed.stdout, /^# pass 1$/m); assert.match(installed.stdout, /^# fail 0$/m);
+  assert.match(installed.stdout, /^# skipped 0$/m);
+  const line = installed.stdout.split("\n").find(value => value.startsWith('# {"commit":') && value.includes('"proxy":"actual-Caddy-systemd-host"'));
+  assert.ok(line, "Joined signed-install/Caddy bounded report missing");
+  const joined = JSON.parse(line.slice(2));
+  assert.match(joined.commit, /^[0-9a-f]{40}$/); assert.match(joined.artifactSha256, /^[0-9a-f]{64}$/);
+  assert.match(joined.policySha256, /^[0-9a-f]{64}$/); assert.equal(joined.installRoute, "signed-install-bound");
+  assert.equal(joined.publicIngress, "unproven");
+  t.diagnostic(JSON.stringify(joined));
   await systemctl("stop", unitName);
-  t.diagnostic("Real Caddy/systemd/host/TLS/config/closed HTTPS rehearsal passed; DNS simulated; production ingress unproven");
+  t.diagnostic("Real Caddy/systemd/host/TLS/config/closed HTTPS rehearsal and joined actual signed private installation passed; DNS simulated; production ingress unproven");
 });
