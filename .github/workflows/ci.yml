@@ -94,5 +94,7 @@ jobs:
         run: sudo env "PATH=$PATH" DP_TEST_REAL_SYSTEMD=1 node --test test/release-real-systemd-migration-boundary.test.js
       - name: Disposable clean-install systemd startup and rollback
         run: sudo env "PATH=$PATH" DP_TEST_REAL_SYSTEMD=1 node --test test/release-real-clean-systemd-boundary.test.js
+      - name: Disposable real clean-install TCP listener inventory
+        run: env DP_TEST_REAL_LISTENERS=1 node --test test/release-real-clean-listeners.test.js
       - name: MCP and Agent systemd lifecycle smoke
         run: sudo env "PATH=$PATH" npm run test:integration:systemd
