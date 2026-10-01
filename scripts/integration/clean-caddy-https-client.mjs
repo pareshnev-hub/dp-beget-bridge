@@ -34,6 +34,7 @@ try {
           resolve4: async () => [options.expectedIp], resolve6: async () => [] }); } }) }) });
   console.log(JSON.stringify({ caddySystemd: report.caddySystemd, caddyProcess: report.caddyProcess,
     hostIngress: report.hostIngress, caddyConfig: report.caddyConfig,
+    localAddress: report.localAddress, localRoute: report.localRoute, policyRules: report.policyRules,
     publicResponse: report.publicResponse, publicIngress: report.publicIngress,
     tls: "real-fixture-ca", dns: "simulated" }));
   }

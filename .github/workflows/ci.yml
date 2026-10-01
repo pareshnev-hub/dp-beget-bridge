@@ -29,7 +29,9 @@ jobs:
           sudo ip netns add dp-clean-caddy-ci
           trap 'sudo ip netns del dp-clean-caddy-ci' EXIT
           sudo ip -n dp-clean-caddy-ci link set lo up
-          sudo ip -n dp-clean-caddy-ci addr add 1.1.1.1/32 dev lo
+          sudo ip -n dp-clean-caddy-ci link add dp-public-test type dummy
+          sudo ip -n dp-clean-caddy-ci addr add 1.1.1.1/32 dev dp-public-test
+          sudo ip -n dp-clean-caddy-ci link set dp-public-test up
           sudo ip netns exec dp-clean-caddy-ci env "PATH=$PATH" "SUDO_UID=$(id -u)" "SUDO_GID=$(id -g)" DP_TEST_CADDY_NETNS=/run/netns/dp-clean-caddy-ci DP_TEST_REAL_CADDY_PROCESS=1 node --test test/release-real-clean-caddy-process.test.js
 
   test:

@@ -100,12 +100,22 @@ test("OPS-01: matching service and host snapshots bracket the public route; drif
     hostIngress: "dedicated-profile", socketOwners: "sole-process", legacyRules: "empty", publicIngress: "unproven" };
   const route = { domain: options.domain, expectedIp: options.expectedIp, caddyConfig: "closed-profile",
     publicResponse: "closed-upstream", publicIngress: "unproven" };
+  const address = { expectedIp: options.expectedIp, netNamespace: service.netNamespace,
+    localAddress: "host-bound", localRoute: "local-loopback", policyRules: "default-ipv4",
+    addressSha256: "f".repeat(64), publicIngress: "unproven" };
   const calls = [];
   const fixture = { ...options, inspectSystemd: async () => { calls.push("systemd"); return service; },
     inspectHost: async () => { calls.push("host"); return host; },
+    inspectAddress: async () => { calls.push("address"); return address; },
     inspectRoute: async () => { calls.push("route"); return route; } };
   assert.equal((await inspectCleanCaddyHostRoute(fixture)).publicIngress, "unproven");
-  assert.deepEqual(calls, ["systemd", "host", "route", "host", "systemd"]);
+  assert.deepEqual(calls, ["systemd", "host", "address", "route", "address", "host", "systemd"]);
+  let addressReads = 0;
+  await assert.rejects(inspectCleanCaddyHostRoute({ ...fixture,
+    inspectAddress: async () => ++addressReads === 1 ? address : { ...address, addressSha256: "0".repeat(64) } }), /changed around/);
+  await assert.rejects(inspectCleanCaddyHostRoute({ ...fixture,
+    inspectAddress: async () => ({ ...address, expectedIp: "8.8.8.8" }),
+    inspectRoute: () => assert.fail("foreign local IP reached public route") }), /address assignment/);
   for (const change of [{ nftSha256: "f".repeat(64) }, { listenersSha256: "f".repeat(64) }, { netNamespace: "net:[11]" }]) {
     let count = 0;
     await assert.rejects(inspectCleanCaddyHostRoute({ ...fixture,
