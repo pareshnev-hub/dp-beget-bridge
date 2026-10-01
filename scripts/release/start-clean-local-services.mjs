@@ -14,6 +14,8 @@ import { advanceCleanInstallJournal, readCleanInstallJournal,
 import { inspectCleanSystemdBoundary, inspectCleanRunningSystemd } from
   "./inspect-clean-systemd-boundary.mjs";
 import { localReleaseHealthProbes, waitForAdmissionDrain } from "./wait-admission-drain.mjs";
+import { inspectCleanInstallAuthProfile } from "./clean-install-auth-profile.mjs";
+import { inspectInitializedCleanOwner } from "./clean-install-owner-data.mjs";
 
 const exec = promisify(execFile);
 const START_ORDER = Object.freeze(["dp-beget-session-host.service",
@@ -42,6 +44,7 @@ export async function startCleanLocalServices({ journalPath, trustDir,
   inspectData = inspectCleanStartupData,
   inspectClosedIngress = requireCleanClosedIngress,
   inspectHealth = () => waitForAdmissionDrain({ probes: localReleaseHealthProbes() }),
+  inspectAuthProfile = inspectCleanInstallAuthProfile, inspectOwner = inspectInitializedCleanOwner,
   startUnit = unit => systemctl("start", unit),
   stopUnit = unit => systemctl("stop", unit),
   advance = advanceCleanInstallJournal } = {}) {
@@ -64,12 +67,19 @@ export async function startCleanLocalServices({ journalPath, trustDir,
     }
     const identities = await inspectCreated({ plan: journal.identityPlan,
       transactionId: journal.transactionId });
+    const authProfile = await inspectAuthProfile({ workspace: journal.workspace,
+      manifestSha256: journal.manifestSha256, trustDir });
+    if (!["static", "oauth"].includes(authProfile?.authMode) ||
+        (authProfile.authMode === "oauth" &&
+          (await inspectOwner({ journal, trustDir, dataRoot }))?.owner !== "candidate-bound")) {
+      throw new Error("Clean local startup authorization profile or owner is unproven");
+    }
     if (identities?.identities !== "journal-bound" ||
         (await inspectConfig({ configDir, workspace: journal.workspace,
           manifestSha256: journal.manifestSha256, trustDir,
           identityPlan: journal.identityPlan, identities }))?.config !== "bound-private" ||
         (await inspectData({ dataRoot, plan: journal.identityPlan,
-          identities }))?.data !== "private-owned" ||
+          identities, authMode: authProfile.authMode, ownerReady: authProfile.authMode === "oauth" }))?.data !== "private-owned" ||
         (await inspectInactive({ journalPath, trustDir, unitDirectory }))?.localSystemd !== "inactive-bound" ||
         (await inspectPaused())?.paused !== true ||
         (await inspectClosedIngress())?.publicIngress !== "closed-exclusive") {
@@ -108,7 +118,7 @@ export async function startCleanLocalServices({ journalPath, trustDir,
     const next = await advance({ journalPath, transactionId: journal.transactionId,
       expectedPhase: "startup-intent", nextPhase: "startup-ready",
       configDir, unitDirectory, dataRoot, trustDir,
-      inspectClosedIngress, inspectRunning, inspectHealth, inspectPaused });
+      inspectClosedIngress, inspectRunning, inspectHealth, inspectPaused, inspectAuthProfile, inspectOwner });
     committed = true;
     await unlink(lock);
     await syncDirectory(parent);

@@ -15,6 +15,8 @@ import { inspectCleanSystemdBoundary, inspectCleanRunningSystemd } from "./inspe
 import { inspectCleanAdmissionTarget } from "./install-clean-admission-pause.mjs";
 import { verifyAdmissionPause } from "./admission-pause.mjs";
 import { localReleaseHealthProbes, waitForAdmissionDrain } from "./wait-admission-drain.mjs";
+import { inspectCleanInstallAuthProfile } from "./clean-install-auth-profile.mjs";
+import { inspectInitializedCleanOwner } from "./clean-install-owner-data.mjs";
 
 const SHA = /^[0-9a-f]{64}$/;
 // Later phases must be added together with real boundary verifiers.
@@ -23,6 +25,7 @@ const PHASES = ["prepared", "identities-intent", "identities-ready",
   "data-intent", "data-ready", "release-root-intent", "release-root-ready",
   "promotion-intent", "promotion-ready", "pointer-intent", "pointer-ready",
   "systemd-intent", "systemd-ready", "admission-intent", "admission-ready",
+  "owner-intent", "owner-ready",
   "startup-intent", "startup-ready"];
 const FORMAT = "dp-beget-clean-install-journal-v1";
 
@@ -123,6 +126,7 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
   inspectPaused = verifyAdmissionPause,
   inspectClosedIngress = requireCleanClosedIngress,
   inspectHealth = () => waitForAdmissionDrain({ probes: localReleaseHealthProbes() }),
+  inspectAuthProfile = inspectCleanInstallAuthProfile, inspectOwner = inspectInitializedCleanOwner,
   configDir = "/etc/dp-beget-bridge",
   unitDirectory = "/etc/systemd/system", dataRoot = "/var/lib", trustDir } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to advance a clean-install journal");
@@ -135,8 +139,9 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
   await syncDirectory(parent);
   try {
     const current = await readCleanInstallJournal(journalPath);
+    const staticStartup = expectedPhase === "admission-ready" && nextPhase === "startup-intent";
     if (current.transactionId !== transactionId || current.phase !== expectedPhase ||
-        PHASES.indexOf(nextPhase) !== PHASES.indexOf(expectedPhase) + 1) {
+        (!staticStartup && PHASES.indexOf(nextPhase) !== PHASES.indexOf(expectedPhase) + 1)) {
       throw new Error("Clean-install journal transition rejected");
     }
     const candidate = await verify({ workspace: current.workspace,
@@ -149,6 +154,17 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
       manifestSha256: current.manifestSha256, trustDir })) !==
         JSON.stringify(current.identityPlan)) {
       throw new Error("Clean-install identity plan changed during transaction");
+    }
+    let authProfile = { authMode: "static" };
+    if (["owner-intent", "owner-ready", "startup-intent", "startup-ready"].includes(nextPhase)) {
+      authProfile = await inspectAuthProfile({ workspace: current.workspace,
+        manifestSha256: current.manifestSha256, trustDir });
+      if (!["static", "oauth"].includes(authProfile?.authMode) ||
+          (staticStartup && authProfile.authMode !== "static") ||
+          (["owner-intent", "owner-ready"].includes(nextPhase) && authProfile.authMode !== "oauth") ||
+          (expectedPhase === "owner-ready" && authProfile.authMode !== "oauth")) {
+        throw new Error("Clean-install authorization phase does not match its bound profile");
+      }
     }
     if (nextPhase === "config-intent") {
       try {
@@ -198,11 +214,15 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
         throw new Error("Clean-install systemd reload has an unresolved lock");
       } catch (error) { if (error.code !== "ENOENT") throw error; }
     }
-    if (nextPhase === "startup-intent") {
+    if (["owner-intent", "startup-intent"].includes(nextPhase)) {
       try {
         await lstat(`${journalPath}.admission-install.lock`);
         throw new Error("Clean-install admission pause has an unresolved lock");
       } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+    if (nextPhase === "startup-intent" && authProfile.authMode === "oauth") {
+      try { await lstat(`${journalPath}.owner-install.lock`); throw new Error("Clean owner installation has an unresolved lock"); }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
     }
     if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("identities-ready")) {
       const identities = await inspectCreated({ plan: current.identityPlan,
@@ -234,7 +254,8 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
       if (PHASES.indexOf(nextPhase) >= PHASES.indexOf("data-ready")) {
         if ((await inspectData({ dataRoot, plan: current.identityPlan,
           identities, startupState: nextPhase === "startup-ready",
-          requireInitialized: nextPhase === "startup-ready" }))?.data !== "private-owned") {
+          requireInitialized: nextPhase === "startup-ready", authMode: authProfile.authMode,
+          ownerReady: authProfile.authMode === "oauth" && nextPhase !== "owner-intent" }))?.data !== "private-owned") {
           throw new Error("Installed clean-install data directories are unproven");
         }
       }
@@ -255,7 +276,7 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
             requireCurrent: true }))?.release !== "signed-inert") {
         throw new Error("Clean-install current pointer is unproven");
       }
-      if (["systemd-ready", "admission-intent", "admission-ready", "startup-intent"].includes(nextPhase) &&
+      if (["systemd-ready", "admission-intent", "admission-ready", "owner-intent", "owner-ready", "startup-intent"].includes(nextPhase) &&
           (await inspectSystemd({ journalPath, trustDir, unitDirectory }))?.localSystemd !== "inactive-bound") {
         throw new Error("Clean-install systemd boundary is unproven");
       }
@@ -263,13 +284,17 @@ export async function advanceCleanInstallJournal({ journalPath, transactionId,
           (await inspectAdmissionTarget())?.admission !== "absent") {
         throw new Error("Clean-install admission target is occupied");
       }
-      if (["admission-ready", "startup-intent", "startup-ready"].includes(nextPhase) &&
+      if (["admission-ready", "owner-intent", "owner-ready", "startup-intent", "startup-ready"].includes(nextPhase) &&
           (await inspectPaused())?.paused !== true) {
         throw new Error("Clean-install admission pause is unproven");
       }
       if (["startup-intent", "startup-ready"].includes(nextPhase) &&
           (await inspectClosedIngress())?.publicIngress !== "closed-exclusive") {
         throw new Error("Clean-install public ingress is not proven closed");
+      }
+      if (authProfile.authMode === "oauth" && ["owner-ready", "startup-intent", "startup-ready"].includes(nextPhase) &&
+          (await inspectOwner({ journal: current, trustDir, dataRoot }))?.owner !== "candidate-bound") {
+        throw new Error("Clean-install OAuth owner is unproven");
       }
       if (nextPhase === "startup-ready" &&
           ((await inspectRunning({ journalPath, trustDir,

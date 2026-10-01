@@ -12,6 +12,8 @@ import { inspectCleanSystemdBoundary, inspectCleanRunningSystemd } from
   "./inspect-clean-systemd-boundary.mjs";
 import { verifyAdmissionPause } from "./admission-pause.mjs";
 import { localReleaseHealthProbes, waitForAdmissionDrain } from "./wait-admission-drain.mjs";
+import { inspectCleanInstallAuthProfile } from "./clean-install-auth-profile.mjs";
+import { inspectInitializedCleanOwner } from "./clean-install-owner-data.mjs";
 import { advanceCleanInstallJournal, readCleanInstallJournal,
   requireCleanClosedIngress } from "./clean-install-journal.mjs";
 
@@ -47,6 +49,7 @@ export async function recoverCleanLocalStartup({ journalPath, trustDir,
   inspectPaused = verifyAdmissionPause,
   inspectClosedIngress = requireCleanClosedIngress,
   inspectHealth = () => waitForAdmissionDrain({ probes: localReleaseHealthProbes() }),
+  inspectAuthProfile = inspectCleanInstallAuthProfile, inspectOwner = inspectInitializedCleanOwner,
   advance = advanceCleanInstallJournal } = {}) {
   if (process.getuid?.() !== 0) throw new Error("Root is required to recover clean local startup");
   const initial = await readCleanInstallJournal(journalPath);
@@ -82,6 +85,13 @@ export async function recoverCleanLocalStartup({ journalPath, trustDir,
     }
     const identities = await inspectCreated({ plan: current.identityPlan,
       transactionId: current.transactionId });
+    const authProfile = await inspectAuthProfile({ workspace: current.workspace,
+      manifestSha256: current.manifestSha256, trustDir });
+    if (!["static", "oauth"].includes(authProfile?.authMode) ||
+        (authProfile.authMode === "oauth" &&
+          (await inspectOwner({ journal: current, trustDir, dataRoot }))?.owner !== "candidate-bound")) {
+      throw new Error("Clean startup recovery authorization profile or owner is unproven");
+    }
     if (identities?.identities !== "journal-bound" ||
         (await inspectConfig({ configDir, workspace: current.workspace,
           manifestSha256: current.manifestSha256, trustDir,
@@ -89,7 +99,8 @@ export async function recoverCleanLocalStartup({ journalPath, trustDir,
         (await inspectUnits({ unitDirectory, workspace: current.workspace,
           manifestSha256: current.manifestSha256, trustDir }))?.units !== "bound-files" ||
         (await inspectData({ dataRoot, plan: current.identityPlan,
-          identities, requireInitialized: current.phase === "startup-ready" }))?.data !== "private-owned" ||
+          identities, requireInitialized: current.phase === "startup-ready",
+          authMode: authProfile.authMode, ownerReady: authProfile.authMode === "oauth" }))?.data !== "private-owned" ||
         (await inspectPointer({ journal: current, trustDir,
           requireCurrent: true }))?.release !== "signed-inert" ||
         (await inspectPaused())?.paused !== true ||
@@ -106,7 +117,8 @@ export async function recoverCleanLocalStartup({ journalPath, trustDir,
     let next = current;
     if (!inactive) {
       if ((await inspectData({ dataRoot, plan: current.identityPlan,
-        identities, requireInitialized: true }))?.data !== "private-owned" ||
+        identities, requireInitialized: true,
+        authMode: authProfile.authMode, ownerReady: authProfile.authMode === "oauth" }))?.data !== "private-owned" ||
           (await inspectRunning({ journalPath, trustDir,
         unitDirectory }))?.localSystemd !== "active-bound" ||
           (await inspectHealth())?.drained !== true) {
@@ -116,7 +128,7 @@ export async function recoverCleanLocalStartup({ journalPath, trustDir,
         next = await advance({ journalPath, transactionId: current.transactionId,
           expectedPhase: "startup-intent", nextPhase: "startup-ready",
           configDir, unitDirectory, dataRoot, trustDir,
-          inspectClosedIngress, inspectRunning, inspectHealth, inspectPaused });
+          inspectClosedIngress, inspectRunning, inspectHealth, inspectPaused, inspectAuthProfile, inspectOwner });
       }
     }
     if ((await inspectPaused())?.paused !== true ||
