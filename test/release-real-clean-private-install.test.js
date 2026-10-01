@@ -114,7 +114,7 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   const journal = await readCleanInstallJournal(journalPath);
   await advanceCleanInstallJournal({ ...common, transactionId: journal.transactionId,
     expectedPhase: "admission-ready", nextPhase: "startup-intent" });
-  const startupData = async () => inspectCleanStartupData({ plan: journal.identityPlan,
+  const startupData = async (options = {}) => inspectCleanStartupData({ ...options, plan: journal.identityPlan,
     identities: await inspectCreatedCleanIdentities({ plan: journal.identityPlan,
       transactionId: journal.transactionId }) });
   await assert.rejects(startCleanLocalServices({ ...common,
@@ -128,6 +128,7 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   assert.equal((await verifyAdmissionPause()).paused, true);
   assert.ok((await lstat(`${journalPath}.startup-install.lock`)).isFile());
   assert.equal((await startupData()).data, "private-owned");
+  await assert.rejects(startupData({ requireInitialized: true }), /incomplete/);
   await assert.rejects(inspectInstalledCleanData({ plan: journal.identityPlan,
     identities: await inspectCreatedCleanIdentities({ plan: journal.identityPlan,
       transactionId: journal.transactionId }) }), /untrusted/);
@@ -149,10 +150,13 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   assert.equal((await startCleanLocalServices(common)).phase, "startup-ready");
   assert.equal((await waitForAdmissionDrain({ probes: localReleaseHealthProbes() })).drained, true);
   assert.equal((await readCleanInstallJournal(journalPath)).phase, "startup-ready");
-  assert.equal((await startupData()).data, "private-owned");
+  assert.equal((await startupData({ requireInitialized: true })).data, "private-owned");
+  await writeFile(`${journalPath}.startup-install.lock`, `${journal.transactionId}\n`, { mode: 0o600, flag: "wx" });
+  assert.equal((await recoverCleanLocalStartup(common)).localSystemd, "active-bound");
+  await assert.rejects(lstat(`${journalPath}.startup-install.lock`), { code: "ENOENT" });
   for (const port of [8787, 8788]) {
     const response = await fetch(`http://127.0.0.1:${port}/${port === 8788 ? "mcp" : "sessions"}`,
-      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(5000) });
     assert.equal(response.status, 503);
   }
   t.diagnostic("Actual signed Session Host, Agent and MCP started with paused health; second-start interruption stopped attempted units; initialized private data survived deliberate recovery and explicit retry; public route gate remains simulated");

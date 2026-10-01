@@ -89,7 +89,7 @@ export async function recoverCleanLocalStartup({ journalPath, trustDir,
         (await inspectUnits({ unitDirectory, workspace: current.workspace,
           manifestSha256: current.manifestSha256, trustDir }))?.units !== "bound-files" ||
         (await inspectData({ dataRoot, plan: current.identityPlan,
-          identities }))?.data !== "private-owned" ||
+          identities, requireInitialized: current.phase === "startup-ready" }))?.data !== "private-owned" ||
         (await inspectPointer({ journal: current, trustDir,
           requireCurrent: true }))?.release !== "signed-inert" ||
         (await inspectPaused())?.paused !== true ||
@@ -105,7 +105,9 @@ export async function recoverCleanLocalStartup({ journalPath, trustDir,
     }
     let next = current;
     if (!inactive) {
-      if ((await inspectRunning({ journalPath, trustDir,
+      if ((await inspectData({ dataRoot, plan: current.identityPlan,
+        identities, requireInitialized: true }))?.data !== "private-owned" ||
+          (await inspectRunning({ journalPath, trustDir,
         unitDirectory }))?.localSystemd !== "active-bound" ||
           (await inspectHealth())?.drained !== true) {
         throw new Error("Clean startup is partial or paused health is unproven");

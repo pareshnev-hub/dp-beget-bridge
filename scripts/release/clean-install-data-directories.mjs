@@ -48,7 +48,10 @@ export async function inspectCleanWorkIdentity({ plan, lookup = getent } = {}) {
 // Before activation the work state contains only its tmux directory. All
 // three paths must be private and owned by their journal-bound accounts.
 export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
-  identities, inspectWork = inspectCleanWorkIdentity, startupState = false } = {}) {
+  identities, inspectWork = inspectCleanWorkIdentity, startupState = false,
+  requireInitialized = false } = {}) {
+  if (typeof startupState !== "boolean" || typeof requireInitialized !== "boolean" ||
+      (requireInitialized && !startupState)) throw new Error("Invalid clean data boundary");
   await safeParent(dataRoot);
   if (identities?.identities !== "journal-bound") {
     throw new Error("Journal-bound service identities are required for data directories");
@@ -72,11 +75,17 @@ export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
     }
     if (startupState) {
       const allowed = name === NAMES[0]
-        ? ["tmux", "sessions", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm"]
+        ? ["tmux", "sessions", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm", "state.sqlite.backup-v0"]
         : name === NAMES[1]
           ? ["installation-id", "session-owners.sqlite", "session-owners.sqlite-journal",
             "session-owners.sqlite-wal", "session-owners.sqlite-shm"] : [];
-      for (const child of await readdir(directory)) {
+      const names = await readdir(directory);
+      const required = name === NAMES[0] ? ["tmux", "sessions", "state.sqlite"]
+        : name === NAMES[1] ? ["installation-id", "session-owners.sqlite"] : [];
+      if (requireInitialized && required.some(child => !names.includes(child))) {
+        throw new Error("Clean startup initialized data is incomplete");
+      }
+      for (const child of names) {
         if (!allowed.includes(child)) throw new Error("Unexpected clean startup data entry");
         const filename = path.join(directory, child);
         const entry = await lstat(filename);
@@ -87,7 +96,7 @@ export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
             (child === "sessions"
               ? !entry.isDirectory() || (entry.mode & 0o777) !== 0o700 || (await readdir(filename)).length !== 0
               : !entry.isFile() || entry.nlink !== 1 || entry.size > 128 * 1024 * 1024 ||
-                ![0o600, ...(name === NAMES[0] ? [0o640, 0o660] : [0o640, 0o644])].includes(entry.mode & 0o777))) {
+                ![0o600, ...(name === NAMES[0] ? [0o640] : [0o640, 0o644])].includes(entry.mode & 0o777))) {
           throw new Error(`Clean startup data ownership or type is untrusted (${name}/${child}: uid=${entry.uid}, gid=${entry.gid}, mode=${(entry.mode & 0o777).toString(8)})`);
         }
       }
