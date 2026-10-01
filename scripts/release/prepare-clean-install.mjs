@@ -4,13 +4,14 @@ import { DEFAULT_TRUST_DIR } from "./pin-release-key.mjs";
 import { verifyCleanInstallManifest, writeCleanInstallManifest } from "./clean-install-manifest.mjs";
 import { preflightCleanInstall } from "./preflight-clean-install.mjs";
 import { prepareRelease } from "./prepare-release.mjs";
-import { stageCleanInstallConfig } from "./stage-clean-install-config.mjs";
+import { stageCleanInstallConfig, validateCleanInstallAuthSelection } from "./stage-clean-install-config.mjs";
 import { stageCleanInstallUnits } from "./stage-clean-install-units.mjs";
 
 // The only mutation is a new private candidate workspace. No live path,
 // account, unit, port or reverse-proxy route is touched here.
 export async function prepareCleanInstall({ artifact, manifest, signature, domain,
   expectedIp, workUser, workGroup, agentUser, mcpUser, ipcGroup, allowedRoot,
+  authMode = "static", ownerId = "owner-primary", executionProfile = "files-read",
   workspaceParent, workspace, releaseRoot, trustDir = DEFAULT_TRUST_DIR,
   inspect = preflightCleanInstall, prepare = prepareRelease,
   stageUnits = stageCleanInstallUnits, stageConfig = stageCleanInstallConfig,
@@ -22,6 +23,7 @@ export async function prepareCleanInstall({ artifact, manifest, signature, domai
       path.basename(workspace).startsWith(".")) {
     throw new Error("Root and a new direct child of the private workspace parent are required");
   }
+  validateCleanInstallAuthSelection({ authMode, ownerId, executionProfile });
   const inputs = { artifact, manifest, signature, domain, expectedIp, workUser,
     workGroup, agentUser, mcpUser, ipcGroup, allowedRoot, workspaceParent, releaseRoot, trustDir };
   const proof = await inspect(inputs);
@@ -43,7 +45,8 @@ export async function prepareCleanInstall({ artifact, manifest, signature, domai
     if (units.sha256 !== candidate.sha256) {
       throw new Error("Signed service templates differ from prepared release");
     }
-    const config = await stageConfig({ stageDir: path.join(staging, "config"), domain, allowedRoot });
+    const config = await stageConfig({ stageDir: path.join(staging, "config"), domain, allowedRoot,
+      authMode, ownerId, executionProfile });
     if (JSON.stringify(units.units) !== JSON.stringify([
       "dp-beget-session-host.service", "dp-beget-agent.service", "dp-beget-mcp.service"]) ||
         JSON.stringify(config.files) !== JSON.stringify([

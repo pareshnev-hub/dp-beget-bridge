@@ -186,6 +186,12 @@ The combined Caddy/systemd/host/real-HTTPS rehearsal merged as `3fe5738` (#253).
 
 The next controller, `installCleanPrivateRuntime`, composes identities, config, units, data, signed promotion/pointer, systemd reload and admission pause into one fresh private installation. It verifies journal identity/phase around every mutation, rejects existing journals and unexpected transitions, stops after interruption, and ends only with inactive services and paused admission. Unit scenarios cover interrupted copies, changed candidate identity, missing/skip transitions and failed final state. Disposable root CI exercises the exact signed artifact, actual dependency preparation and all nine real mutation phases, with only external DNS/TLS simulated. This does not close OPS-01 or authorize service startup/public exposure; pairing/OAuth, real supported-domain topology and full failure/recovery acceptance remain open.
 
+The private controller merged as 96955d8 (#254). All four CI jobs passed at 2c52bd4 (run 36888258448); the complete signed Linux install fixture passed 1, failed 0, skipped 0. The actual-app rehearsal covers signed Session Host/Agent/MCP startup, a deliberate second-start failure, preserved initial database files, explicit recovery and retry with admission continuously paused. Startup data checks now distinguish empty installed state from bounded initialized state; Type=simple readiness waits for actual health before requiring bound listeners. Production closed-route proof remains deliberately blocked; the local CI route gate is simulated.
+
+The actual signed application startup/recovery merged as 96bd53c (#255). All four CI jobs passed at ebbf4aa (run 36890264973); the real install/start/interruption/recovery fixture passed 1, failed 0, skipped 0. It additionally verified expected SQLite 0640 files and the initial state.sqlite.backup-v0 inventory, required initialized database/identity files at completion, and recovered an active completed start with its leftover lock.
+
+The next clean candidate preparation supports an explicit OAuth profile. It generates separate local repair, restricted OAuth Agent, context-signing and owner-approval secrets; MCP receives the restricted credential and no static MCP token or unrestricted Agent credential. Session Host remains credential-free and telemetry stays disabled. Files-read is the default OAuth profile; full-shell is an explicit staged selection whose later browser owner consent remains required. Real private OAuth config installation and group separation are rehearsed separately from owner creation/startup/pairing.
+
 ## Updating this file
 
 For each status change, add links in the related issue/PR and update:
@@ -197,5 +203,3 @@ For each status change, add links in the related issue/PR and update:
 5. remaining limitations.
 
 Do not mark a release VERIFIED merely because all issue numbers are closed; evaluate the release gate in `docs/ROADMAP.md` and traceability matrix.
-
-The private controller merged as 96955d8 (#254). All four CI jobs passed at 2c52bd4 (run 36888258448); the complete signed Linux install fixture passed 1, failed 0, skipped 0. The next actual-app rehearsal covers signed Session Host/Agent/MCP startup, a deliberate second-start failure, preserved initial database files, explicit recovery and retry with admission continuously paused. Startup data checks now distinguish empty installed state from bounded initialized state; Type=simple readiness waits for actual health before requiring bound listeners. Production closed-route proof remains deliberately blocked; the local CI route gate is simulated.

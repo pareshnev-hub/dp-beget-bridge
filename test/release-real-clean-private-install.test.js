@@ -82,7 +82,9 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   const domain = "bridge.example.invalid", expectedIp = "1.1.1.1";
   const inputs = { ...built, signature, trustDir, workspaceParent,
     workspace: path.join(workspaceParent, "candidate"), releaseRoot, allowedRoot,
-    workUser, workGroup, agentUser, mcpUser, ipcGroup, domain, expectedIp };
+    workUser, workGroup, agentUser, mcpUser, ipcGroup, domain, expectedIp,
+    ...(process.env.DP_TEST_REAL_CLEAN_OAUTH_STAGING === "1"
+      ? { authMode: "oauth", ownerId: "owner-ci", executionProfile: "full-shell" } : {}) };
   // Only the external DNS/TLS prerequisite is simulated in this private
   // installation fixture. Trust, signatures, extraction, actual npm ci,
   // capacity, NSS, accounts, ownership, units, pointers and manager are real.
@@ -103,6 +105,27 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
   assert.equal((await lstat(path.join(releaseRoot, "current"))).isSymbolicLink(), true);
   await assert.rejects(installCleanPrivateRuntime(controller), /fresh journal/);
   assert.equal((await readCleanInstallJournal(journalPath)).phase, "admission-ready");
+  if (process.env.DP_TEST_REAL_CLEAN_OAUTH_STAGING === "1") {
+    const agent = await readFile("/etc/dp-beget-bridge/agent.env", "utf8");
+    const mcp = await readFile("/etc/dp-beget-bridge/mcp.env", "utf8");
+    const repairToken = agent.match(/^DP_AGENT_TOKEN=([0-9a-f]{64})$/m)?.[1];
+    const oauthToken = agent.match(/^DP_AGENT_OAUTH_TOKEN=([0-9a-f]{64})$/m)?.[1];
+    assert.ok(repairToken && oauthToken && repairToken !== oauthToken);
+    assert.ok(!mcp.includes(repairToken));
+    assert.ok(mcp.includes(`DP_AGENT_TOKEN=${oauthToken}\n`));
+    assert.match(mcp, /DP_MCP_AUTH_MODE=oauth\n/);
+    assert.match(mcp, /DP_OWNER_ID=owner-ci\n/);
+    assert.doesNotMatch(mcp, /DP_MCP_ACCESS_TOKEN=/);
+    for (const [user, file] of [[workUser, "agent.env"], [workUser, "mcp.env"],
+      [agentUser, "mcp.env"], [mcpUser, "agent.env"]]) {
+      await assert.rejects(exec("runuser", ["-u", user, "--", "test", "-r", `/etc/dp-beget-bridge/${file}`]), error => error.code === 1);
+    }
+    for (const [user, file] of [[agentUser, "agent.env"], [mcpUser, "mcp.env"]]) {
+      await exec("runuser", ["-u", user, "--", "test", "-r", `/etc/dp-beget-bridge/${file}`]);
+    }
+    t.diagnostic("Real signed private OAuth configuration installed with isolated service-readable groups and no static/repair credential in MCP; owner bootstrap, OAuth app startup and pairing remain separate");
+    assert.notEqual(process.env.DP_TEST_REAL_CLEAN_STARTUP, "1", "OAuth startup requires separate owner provisioning");
+  }
   t.diagnostic("Real signed artifact, dependencies, identities, config, data, promotion, pointer, systemd and admission installation passed; public DNS/TLS simulated; no service startup");
   if (process.env.DP_TEST_REAL_CLEAN_STARTUP !== "1") return;
   // The production route verifier still rejects every public startup. This
