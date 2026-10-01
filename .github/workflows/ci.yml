@@ -106,6 +106,11 @@ jobs:
           sudo systemctl set-environment "PATH=$PATH"
           trap 'sudo systemctl unset-environment PATH' EXIT
           sudo env "PATH=$PATH" DP_TEST_REAL_PRIVATE_INSTALL=1 DP_TEST_REAL_CLEAN_OAUTH_STAGING=1 DP_TEST_REAL_CLEAN_OAUTH_OWNER=1 DP_TEST_REAL_CLEAN_OAUTH_COMPOSED=1 DP_TEST_REAL_CLEAN_PRIVATE_ENTRY=1 DP_TEST_REAL_CLEAN_STARTUP=1 node --test test/release-clean-private-entry.test.js test/release-real-clean-private-install.test.js
+      - name: Disposable signed Direct autonomy with effective application egress denial
+        run: |
+          sudo systemctl set-environment "PATH=$PATH"
+          trap 'sudo systemctl unset-environment PATH' EXIT
+          sudo env "PATH=$PATH" DP_TEST_REAL_PRIVATE_INSTALL=1 DP_TEST_REAL_CLEAN_OAUTH_STAGING=1 DP_TEST_REAL_CLEAN_OAUTH_OWNER=1 DP_TEST_REAL_CLEAN_OAUTH_COMPOSED=1 DP_TEST_REAL_CLEAN_PRIVATE_ENTRY=1 DP_TEST_REAL_CLEAN_STARTUP=1 DP_TEST_REAL_PRIVATE_AUTONOMY=1 node --test test/release-real-clean-private-install.test.js
       - name: Root-only grouped state snapshot and restore
         run: sudo env "PATH=$PATH" node --test test/release-state-bundle.test.js
       - name: Root-only admission pause and verified resume

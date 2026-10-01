@@ -24,6 +24,7 @@ import { inspectInitializedCleanOwner } from "../scripts/release/clean-install-o
 import { installCleanOwner } from "../scripts/release/install-clean-owner.mjs";
 import { recoverCompletedCleanOwner } from "../scripts/release/recover-completed-clean-owner.mjs";
 import { installCleanPrivate } from "../scripts/release/install-clean-private.mjs";
+import { rehearseCleanPrivateAutonomy } from "../scripts/integration/clean-private-autonomy.mjs";
 
 const exec = promisify(execFile);
 const systemctl = (...args) => exec("systemctl", args, { timeout: 20000, maxBuffer: 4096 });
@@ -255,4 +256,14 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
     assert.equal(response.status, 503);
   }
   t.diagnostic("Actual signed Session Host, Agent and MCP started with paused health; second-start interruption stopped attempted units; initialized private data survived deliberate recovery and explicit retry; public route gate remains simulated");
+  if (process.env.DP_TEST_REAL_PRIVATE_AUTONOMY === "1") {
+    const autonomy = await rehearseCleanPrivateAutonomy({ journalPath, trustDir });
+    assert.equal(autonomy.externalEgress, "denied");
+    assert.equal(autonomy.terminal, "pass");
+    assert.equal(autonomy.fileDownload, "pass");
+    assert.equal(autonomy.revocation, "pass");
+    assert.equal((await verifyAdmissionPause()).paused, true);
+    t.diagnostic(JSON.stringify(autonomy));
+    t.diagnostic("AUTO-01..04 supporting fixture: actual signed Direct OAuth DCR/consent, terminal, file download and revocation worked with effective app egress denial; telemetry off; local transport and synthetic owner only");
+  }
 });
