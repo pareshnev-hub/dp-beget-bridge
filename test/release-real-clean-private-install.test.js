@@ -27,6 +27,7 @@ import { installCleanPrivate } from "../scripts/release/install-clean-private.mj
 import { inspectCleanInstallRoute } from "../scripts/release/inspect-clean-install-route.mjs";
 import { inspectCleanWorkspace } from "../scripts/release/clean-install-workspace.mjs";
 import { rehearseCleanPrivateAutonomy } from "../scripts/integration/clean-private-autonomy.mjs";
+import { startCleanProtected } from "../scripts/release/start-clean-protected.mjs";
 
 const exec = promisify(execFile);
 const systemctl = (...args) => exec("systemctl", args, { timeout: 20000, maxBuffer: 4096 });
@@ -197,6 +198,13 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
       } }), /changed around inspection/);
       await writeFile(policyPath, JSON.stringify(policy));
       assert.equal((await inspectCleanInstallRoute(inputs)).publicIngress, "unproven");
+      // The real operator sees a non-running/unproven proxy. Its default
+      // gate must refuse before touching the actual signed install journal.
+      await assert.rejects(startCleanProtected({ requestPath, policyPath }), /running proxy PID unavailable/);
+      assert.equal((await readCleanInstallJournal(journalPath)).phase, "owner-ready");
+      await assert.rejects(lstat(`${journalPath}.lock`), { code: "ENOENT" });
+      await assert.rejects(lstat(`${journalPath}.startup-install.lock`), { code: "ENOENT" });
+      assert.equal((await inspectCleanSystemdBoundary({ journalPath, trustDir })).localSystemd, "inactive-bound");
       t.diagnostic("Actual protected original request/policy/journal and signed candidate/OAuth/NSS binding passed with simulated proxy observation; policy permission/change rejected; startup not authorized");
       if (joinedCaddy) {
         const proxy = {};
@@ -219,6 +227,7 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
         assert.equal(joined.commit, record.commit); assert.equal(joined.artifactSha256, record.artifactSha256);
         assert.equal(joined.installRoute, "signed-install-bound"); assert.equal(joined.publicIngress, "unproven");
         assert.equal(joined.proxy, "actual-Caddy-systemd-host"); assert.equal(joined.tls, "real-fixture-ca");
+        assert.equal(joined.hostStartupGate, "rejected-isolated-namespace");
         await assert.rejects(runJoined(""), error => error.code === 1);
         await writeFile(policyPath, JSON.stringify({ ...actualPolicy, executableSha256: "0".repeat(64) }));
         await assert.rejects(runJoined(), error => error.code === 1);

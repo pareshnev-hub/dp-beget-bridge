@@ -7,6 +7,8 @@ import { inspectCleanCaddyHostRoute } from "../release/inspect-clean-caddy-host.
 import { inspectCleanCaddyRoute } from "../release/inspect-clean-caddy-config.mjs";
 import { probeCleanPublicRoute } from "../release/probe-clean-public-route.mjs";
 import { checkDnsAndTls } from "../release/host-preflight.mjs";
+import assert from "node:assert/strict";
+import { inspectCleanClosedIngress } from "../release/inspect-clean-closed-ingress.mjs";
 
 if (process.env.DP_TEST_REAL_CADDY_PROCESS !== "1" || process.env.DP_TEST_REAL_PRIVATE_INSTALL !== "1" ||
     process.platform !== "linux" || process.getuid?.() !== 0 || process.argv.length !== 4 ||
@@ -24,9 +26,13 @@ try {
         probePublic: binding => probeCleanPublicRoute({ ...binding,
           inspectHost: target => checkDnsAndTls({ ...target,
             resolve4: async () => [request.expectedIp], resolve6: async () => [] }) }) }) }) });
+  // This real isolated proxy must never authorize PID 1's application units.
+  // The production gate rejects before any DNS simulation or state mutation.
+  await assert.rejects(inspectCleanClosedIngress(inputs), /initial host network namespace required/);
   console.log(JSON.stringify({ commit: report.commit, artifactSha256: report.artifactSha256,
     policySha256: report.policySha256, installRoute: report.installRoute, publicIngress: report.publicIngress,
-    dns: "simulated", tls: "real-fixture-ca", proxy: "actual-Caddy-systemd-host" }));
+    dns: "simulated", tls: "real-fixture-ca", proxy: "actual-Caddy-systemd-host",
+    hostStartupGate: "rejected-isolated-namespace" }));
 } catch (error) {
   const reason = /^(?:Clean installation route:|Caddy |Clean Caddy |Clean public |Closed Caddy |HTTPS certificate)/.test(error.message || "")
     ? error.message.slice(0, 160) : "joined evidence unavailable";
