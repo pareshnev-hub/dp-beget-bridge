@@ -566,10 +566,13 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
         "dp-beget-agent.service", "dp-beget-mcp.service"]);
       return { localSystemd: "active-bound" };
     };
+    // These starts are deliberately simulated and do not initialize any
+    // application database; actual initialized state is covered separately.
+    const simulatedStartupData = input => inspectInstalledCleanData({ ...input,
+      startupState: false, requireInitialized: false, inspectWork: async () => workEvidence });
     const advanceStartup = options => advanceCleanInstallJournal({ ...options,
       inspectCreated: async () => identityEvidence,
-      inspectData: input => inspectInstalledCleanData({ ...input,
-        inspectWork: async () => workEvidence }),
+      inspectData: simulatedStartupData,
       inspectSystemd: inactive, inspectPaused,
       inspectClosedIngress: closedIngress, inspectRunning: running,
       inspectHealth: healthy });
@@ -582,8 +585,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     const startOptions = filename => ({ journalPath: filename, trustDir,
       configDir, unitDirectory, dataRoot, inspectInactive: inactive,
       inspectCreated: async () => identityEvidence,
-      inspectData: input => inspectInstalledCleanData({ ...input,
-        inspectWork: async () => workEvidence }),
+      inspectData: simulatedStartupData,
       inspectRunning: running, inspectPaused, inspectClosedIngress: closedIngress,
       inspectHealth: healthy, advance: advanceStartup,
       startUnit: async unit => { started.add(unit); },
@@ -604,8 +606,7 @@ test("OPS-01/05: signed clean-install candidate stages config and units without 
     const recoverStartup = options => recoverCleanLocalStartup({
       journalPath: failedStartupPath, trustDir, configDir, unitDirectory, dataRoot,
       inspectCreated: async () => identityEvidence,
-      inspectData: input => inspectInstalledCleanData({ ...input,
-        inspectWork: async () => workEvidence }),
+      inspectData: simulatedStartupData,
       inspectInactive: inactive, inspectRunning: running,
       inspectPaused, inspectClosedIngress: closedIngress,
       inspectHealth: healthy, advance: advanceStartup, ...options });

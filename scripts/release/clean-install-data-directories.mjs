@@ -48,7 +48,10 @@ export async function inspectCleanWorkIdentity({ plan, lookup = getent } = {}) {
 // Before activation the work state contains only its tmux directory. All
 // three paths must be private and owned by their journal-bound accounts.
 export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
-  identities, inspectWork = inspectCleanWorkIdentity } = {}) {
+  identities, inspectWork = inspectCleanWorkIdentity, startupState = false,
+  requireInitialized = false } = {}) {
+  if (typeof startupState !== "boolean" || typeof requireInitialized !== "boolean" ||
+      (requireInitialized && !startupState)) throw new Error("Invalid clean data boundary");
   await safeParent(dataRoot);
   if (identities?.identities !== "journal-bound") {
     throw new Error("Journal-bound service identities are required for data directories");
@@ -67,8 +70,36 @@ export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
     const info = await lstat(directory);
     if (!info.isDirectory() || info.uid !== uid || info.gid !== gid ||
         (info.mode & 0o777) !== 0o700 || await realpath(directory) !== directory ||
-        JSON.stringify((await readdir(directory)).sort()) !== JSON.stringify(children)) {
+        (!startupState && JSON.stringify((await readdir(directory)).sort()) !== JSON.stringify(children))) {
       throw new Error("Installed clean-install data directory is untrusted");
+    }
+    if (startupState) {
+      const allowed = name === NAMES[0]
+        ? ["tmux", "sessions", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm", "state.sqlite.backup-v0"]
+        : name === NAMES[1]
+          ? ["installation-id", "session-owners.sqlite", "session-owners.sqlite-journal",
+            "session-owners.sqlite-wal", "session-owners.sqlite-shm"] : [];
+      const names = await readdir(directory);
+      const required = name === NAMES[0] ? ["tmux", "sessions", "state.sqlite"]
+        : name === NAMES[1] ? ["installation-id", "session-owners.sqlite"] : [];
+      if (requireInitialized && required.some(child => !names.includes(child))) {
+        throw new Error("Clean startup initialized data is incomplete");
+      }
+      for (const child of names) {
+        if (!allowed.includes(child)) throw new Error("Unexpected clean startup data entry");
+        const filename = path.join(directory, child);
+        const entry = await lstat(filename);
+        if (child === "tmux") continue; // Independently checked below.
+        const group = name === NAMES[0] ? identities.ipcGid : gid;
+        if (!Number.isSafeInteger(group) || group < 1 || entry.uid !== uid ||
+            ![gid, group].includes(entry.gid) || await realpath(filename) !== filename ||
+            (child === "sessions"
+              ? !entry.isDirectory() || (entry.mode & 0o777) !== 0o700 || (await readdir(filename)).length !== 0
+              : !entry.isFile() || entry.nlink !== 1 || entry.size > 128 * 1024 * 1024 ||
+                ![0o600, ...(name === NAMES[0] ? [0o640] : [0o640, 0o644])].includes(entry.mode & 0o777))) {
+          throw new Error(`Clean startup data ownership or type is untrusted (${name}/${child}: uid=${entry.uid}, gid=${entry.gid}, mode=${(entry.mode & 0o777).toString(8)})`);
+        }
+      }
     }
   }
   const tmux = path.join(dataRoot, NAMES[0], "tmux");
@@ -79,4 +110,12 @@ export async function inspectInstalledCleanData({ dataRoot = "/var/lib", plan,
     throw new Error("Clean-install tmux directory is untrusted");
   }
   return { data: "private-owned", directories: 4 };
+}
+
+// Only for a journaled startup/recovery behind paused admission. Services
+// create their initial SQLite/identity files even without user requests.
+// Keep the ordinary pre-install verifier strict about empty directories.
+// No terminal session, transcript, tmux socket or unknown entry is adopted.
+export function inspectCleanStartupData(options = {}) {
+  return inspectInstalledCleanData({ ...options, startupState: true });
 }

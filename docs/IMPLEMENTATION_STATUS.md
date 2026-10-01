@@ -197,3 +197,5 @@ For each status change, add links in the related issue/PR and update:
 5. remaining limitations.
 
 Do not mark a release VERIFIED merely because all issue numbers are closed; evaluate the release gate in `docs/ROADMAP.md` and traceability matrix.
+
+The private controller merged as 96955d8 (#254). All four CI jobs passed at 2c52bd4 (run 36888258448); the complete signed Linux install fixture passed 1, failed 0, skipped 0. The next actual-app rehearsal covers signed Session Host/Agent/MCP startup, a deliberate second-start failure, preserved initial database files, explicit recovery and retry with admission continuously paused. Startup data checks now distinguish empty installed state from bounded initialized state; Type=simple readiness waits for actual health before requiring bound listeners. Production closed-route proof remains deliberately blocked; the local CI route gate is simulated.
