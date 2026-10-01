@@ -41,7 +41,9 @@ test("OPS-01/05: real signed private installation reaches inactive/paused state 
     await assert.rejects(exec("getent", ["group", name]), error => error.code === 2);
   }
   const base = await mkdtemp("/var/lib/dp-ci-private-install-");
-  const releaseRoot = `/opt/dp-ci-release-${suffix}`, allowedRoot = `/srv/dp-ci-work-${suffix}`;
+  // GitHub runners preinstall user-writable tools under /opt. Keep their
+  // existing permissions intact and use a genuinely root-owned parent.
+  const releaseRoot = `/var/lib/dp-ci-release-${suffix}`, allowedRoot = `/srv/dp-ci-work-${suffix}`;
   await assert.rejects(lstat(releaseRoot), { code: "ENOENT" });
   await assert.rejects(lstat(allowedRoot), { code: "ENOENT" });
   t.after(async () => {
