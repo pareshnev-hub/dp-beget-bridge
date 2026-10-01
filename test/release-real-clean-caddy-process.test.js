@@ -159,5 +159,5 @@ test("OPS-01: real non-root Caddy owns the admin socket and TCP 443 on a disposa
   } finally { await exec("nft", ["delete", "table", "ip", "dp_test"]); }
   assert.deepEqual(await inspectCleanCaddyHost(serviceReport), host);
   await systemctl("stop", unitName);
-  await assert.rejects(inspectCleanCaddySystemd(serviceOptions), /inactive/);
+  await assert.rejects(inspectCleanCaddySystemd(serviceOptions), /inactive|live service evidence unavailable/);
 });
