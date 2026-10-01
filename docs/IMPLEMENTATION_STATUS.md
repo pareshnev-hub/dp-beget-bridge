@@ -172,6 +172,8 @@ The new `probeCleanPublicRoute` API pins an HTTPS `/mcp` request to the prospect
 
 Merged as `c0de3f1` (#250), with all three CI jobs successful (run 36872876924). The next implementation adds strict observation of a dedicated Caddy closed bootstrap profile through a private non-root Unix admin socket, brackets the public probe with matching configuration digests, and tests the socket reader against a real Unix HTTP fixture. A separate Ubuntu 24.04 CI job provisions the JSON with `caddy validate`. This does not yet bind the admin peer to the public listener or prove absence of alternate ingress; clean startup remains disabled by default.
 
+The protected Caddy configuration slice merged as `2775294` (#251). All four CI jobs passed (run 36875475150); distribution Caddy 2.6.2 accepted the profile and the six Caddy tests passed. The current process-binding slice maps the private admin socket and sole host TCP 443 listener to FD ownership by one expected non-root PID with pinned executable bytes, matching birth ticks and host network namespace. It brackets route observations with repeated process evidence. A real disposable non-root Caddy process fixture covers the live Linux reader; host NAT, alternate ingress, systemd identity and public TLS acceptance remain open. No default startup gate is opened.
+
 These implementation slices are **not** a 1.0.0 release. The package version remains 0.1.0. OPS-01…09, the supported install/update/rollback matrix, public documentation and independent security review are still open. The running Beget R0003 deployment has not been replaced by this R0004 work.
 
 ## Updating this file

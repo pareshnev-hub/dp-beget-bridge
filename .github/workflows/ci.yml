@@ -24,6 +24,8 @@ jobs:
           sudo apt-get install -y caddy
       - name: Validate closed bootstrap profile and protected admin reads
         run: env DP_TEST_CADDY_PROFILE=1 node --test test/release-clean-caddy-config.test.js
+      - name: Bind a real non-root Caddy process to admin and public sockets
+        run: sudo env "PATH=$PATH" DP_TEST_REAL_CADDY_PROCESS=1 node --test test/release-real-clean-caddy-process.test.js
 
   test:
     runs-on: ubuntu-latest

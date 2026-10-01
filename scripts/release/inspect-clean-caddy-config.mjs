@@ -44,7 +44,7 @@ export function validateClosedCleanCaddyConfig(bytes, options) {
     caddyConfig: "closed-profile", publicIngress: "unproven" };
 }
 
-async function inspectSocket(adminSocket, ownerUid) {
+export async function inspectPrivateCaddyAdminSocket(adminSocket, ownerUid) {
   if (!Number.isSafeInteger(ownerUid) || ownerUid < 1) {
     throw new Error("An explicit non-root Caddy service UID is required");
   }
@@ -112,10 +112,10 @@ export async function inspectClosedCleanCaddyConfig({ domain, adminSocket, owner
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5000) {
     throw new Error("Invalid Caddy configuration read timeout");
   }
-  const before = await inspectSocket(options.adminSocket, ownerUid);
+  const before = await inspectPrivateCaddyAdminSocket(options.adminSocket, ownerUid);
   const bytes = await readConfig(options.adminSocket, timeoutMs);
   const report = validateClosedCleanCaddyConfig(bytes, options);
-  const after = await inspectSocket(options.adminSocket, ownerUid);
+  const after = await inspectPrivateCaddyAdminSocket(options.adminSocket, ownerUid);
   if (!isDeepStrictEqual(before, after)) {
     throw new Error("Caddy admin socket changed during configuration inspection");
   }
