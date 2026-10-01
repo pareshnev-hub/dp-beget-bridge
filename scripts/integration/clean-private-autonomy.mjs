@@ -13,6 +13,7 @@ import { inspectCleanRunningSystemd } from "../release/inspect-clean-systemd-bou
 import { pauseAdmission, resumeAdmission, verifyAdmissionPause } from "../release/admission-pause.mjs";
 import { localReleaseHealthProbes, waitForAdmissionDrain } from "../release/wait-admission-drain.mjs";
 import { oauthDefaults } from "../../packages/auth/src/oauth-spike.js";
+import { AGENT_CONTEXT_HEADER, createAgentContext } from "../../packages/auth/src/agent-context.js";
 
 const exec = promisify(execFile);
 const units = ["dp-beget-session-host.service", "dp-beget-agent.service", "dp-beget-mcp.service"];
@@ -110,10 +111,42 @@ export async function rehearseCleanPrivateAutonomy({ journalPath, trustDir } = {
     stage = "terminal-open";
     sessionId = (await call("open_terminal", { cwd: plan.allowedRoot, label: "Disposable autonomy fixture" })).id;
     assert.ok(typeof sessionId === "string");
+    // Real Agent upload route with a synthetic narrow OAuth service context.
+    // MCP's external attachment fetch is deliberately outside this egress-
+    // denied fixture; no repair credential or private URL bypass is used.
+    stage = "agent-upload-workspace";
+    const uploadedName = "autonomy-ci-upload/nested/source.txt";
+    const uploadBytes = "ci-upload-content\n";
+    const uploadTo = target => {
+      const route = `/v1/files/content?${new URLSearchParams({ path: `${plan.allowedRoot}/${target}` })}`;
+      return request(`http://127.0.0.1:8787${route}`, { method: "PUT",
+        headers: { authorization: `Bearer ${profile.oauthAgentToken}`, "content-type": "application/octet-stream",
+          [AGENT_CONTEXT_HEADER]: createAgentContext({ secret: profile.contextSecret,
+            authorization: { ownerId: profile.ownerId, grantId: "ci-upload-roundtrip",
+              scopes: ["files:write"], executionProfile: "full-shell" }, method: "PUT", path: route }) }, body: uploadBytes });
+    };
+    const uploaded = await uploadTo(uploadedName);
+    assert.equal(uploaded.status, 201);
+    const receipt = await uploaded.json();
+    assert.equal(receipt.size, Buffer.byteLength(uploadBytes));
+    assert.equal(receipt.sha256, createHash("sha256").update(uploadBytes).digest("hex"));
+    const rootStat = await lstat(plan.allowedRoot), uploadStat = await lstat(`${plan.allowedRoot}/${uploadedName}`);
+    assert.equal(uploadStat.mode & 0o7777, 0o660); assert.equal(uploadStat.gid, rootStat.gid);
+    assert.notEqual(uploadStat.uid, rootStat.uid);
+    for (const directory of ["autonomy-ci-upload", "autonomy-ci-upload/nested"]) {
+      const stat = await lstat(`${plan.allowedRoot}/${directory}`);
+      assert.equal(stat.mode & 0o7777, 0o2770); assert.equal(stat.gid, rootStat.gid);
+    }
+    stage = "agent-upload-acl-refusal";
+    await exec("setfacl", ["-m", "d:u:65534:rwx", plan.allowedRoot], { timeout: 5000, maxBuffer: 4096 });
+    try { assert.equal((await uploadTo("acl-rejected.txt")).status, 409); }
+    finally { await exec("setfacl", ["-k", plan.allowedRoot], { timeout: 5000, maxBuffer: 4096 }); }
+    await assert.rejects(lstat(`${plan.allowedRoot}/acl-rejected.txt`), { code: "ENOENT" });
     const name = "autonomy-ci-probe.txt";
     stage = "terminal-command";
     const command = await call("run_terminal_command", { session_id: sessionId, idempotency_key: "ci-autonomy-command",
-      command: `printf 'ci-autonomy-content\\n' > ${name}; printf 'ci-autonomy-ready\\n'`, wait_ms: 50 });
+      command: `cat ${uploadedName} && printf 'ci-upload-written\\n' >> ${uploadedName} && ` +
+        `printf 'ci-autonomy-content\\n' > ${name} && printf 'ci-autonomy-ready\\n'`, wait_ms: 50 });
     assert.ok(typeof command.operationId === "string");
     stage = "terminal-completion";
     let complete = false;
@@ -126,6 +159,11 @@ export async function rehearseCleanPrivateAutonomy({ journalPath, trustDir } = {
     stage = "terminal-output";
     const read = await call("read_terminal", { session_id: sessionId, cursor: 0, max_bytes: 8192 });
     assert.ok(read.output.includes("ci-autonomy-ready"));
+    assert.ok(read.output.includes("ci-upload-content"));
+    assert.equal(await readFile(`${plan.allowedRoot}/${uploadedName}`, "utf8"), "ci-upload-content\nci-upload-written\n");
+    const privateCanary = `${plan.allowedRoot}/existing-private-canary.txt`;
+    assert.equal((await lstat(privateCanary)).mode & 0o777, 0o600);
+    assert.equal(await readFile(privateCanary, "utf8"), "private-existing-workspace-fixture\n");
     stage = "file-list";
     const files = await call("list_files", { path: plan.allowedRoot });
     assert.ok(files.entries.some(entry => entry.name === name));
@@ -144,6 +182,9 @@ export async function rehearseCleanPrivateAutonomy({ journalPath, trustDir } = {
     await call("purge_terminal", { session_id: sessionId }); sessionId = undefined;
     stage = "file-delete";
     await call("delete_path", { path: `${plan.allowedRoot}/${name}`, recursive: false });
+    await call("delete_path", { path: `${plan.allowedRoot}/${uploadedName}`, recursive: false });
+    await call("delete_path", { path: `${plan.allowedRoot}/autonomy-ci-upload/nested`, recursive: false });
+    await call("delete_path", { path: `${plan.allowedRoot}/autonomy-ci-upload`, recursive: false });
     stage = "revocation";
     assert.equal((await postForm("/oauth/revoke", { token, token_type_hint: "access_token", client_id: clientId })).status, 200);
     const revoked = await request(`${origin}/mcp`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
@@ -156,6 +197,7 @@ export async function rehearseCleanPrivateAutonomy({ journalPath, trustDir } = {
         tmux: (await exec("tmux", ["-V"], { timeout: 5000, maxBuffer: 4096 })).stdout.trim() },
       externalEgress: "denied", enforcement: "effective-control-probe", telemetry: "off",
       oauth: "synthetic-owner-consent", terminal: "pass", fileDownload: "pass", revocation: "pass",
+      agentUploadTerminalRoundtrip: "pass", uploadTransport: "local-Agent-synthetic-OAuth-context",
       publicTransport: "unproven", scope: "disposable signed local Direct runtime; not real-client or public release acceptance" };
   } catch {
     throw new Error(`Disposable Direct autonomy is unproven at ${stage}; credentials withheld`);

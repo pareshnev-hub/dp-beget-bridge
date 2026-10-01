@@ -16,6 +16,7 @@ RestartSec=3
 TimeoutStopSec=15
 TasksMax=128
 LimitNOFILE=4096
+UMask=0007
 MemoryMax=512M
 MemorySwapMax=512M
 NoNewPrivileges=true

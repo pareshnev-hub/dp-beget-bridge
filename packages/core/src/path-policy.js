@@ -1,11 +1,14 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { BridgeError } from "./errors.js";
 
 const DIRECTORY_OPEN_FLAGS = fs.constants.O_RDONLY
   | fs.constants.O_DIRECTORY
   | fs.constants.O_NOFOLLOW;
+const exec = promisify(execFile);
 
 function isWithin(candidate, root) {
   return candidate === root || candidate.startsWith(`${root}${path.sep}`);
@@ -16,9 +19,14 @@ function procFdPath(handle, name = "") {
 }
 
 export class PathPolicy {
-  constructor(roots, { fileSystem = fsp } = {}) {
+  constructor(roots, { fileSystem = fsp, workspaceSharing = "private" } = {}) {
     this.roots = roots.map((root) => path.resolve(root));
     this.fileSystem = fileSystem;
+    if (!["private", "ipc-group"].includes(workspaceSharing)) {
+      throw new BridgeError("invalid_config", "Unsupported workspace sharing policy", 500);
+    }
+    this.workspaceSharing = workspaceSharing;
+    this.createdDirectoryMode = workspaceSharing === "ipc-group" ? 0o2770 : 0o700;
     if (this.roots.length === 0) {
       throw new BridgeError("invalid_config", "At least one allowed root is required", 500);
     }
@@ -29,6 +37,21 @@ export class PathPolicy {
         throw new BridgeError("invalid_config", `Allowed root does not exist: ${root}`, 500);
       }
     });
+    this.sharedGroups = new Map();
+    if (workspaceSharing === "ipc-group") {
+      if (process.platform !== "linux" || (process.umask() & 0o070) !== 0) {
+        throw new BridgeError("invalid_config", "Shared workspace requires Linux and a group-writable creation mask", 500);
+      }
+      const groups = new Set([process.getgid(), ...process.getgroups()]);
+      for (const [index, root] of this.canonicalRoots.entries()) {
+        const stat = fs.lstatSync(root);
+        if (this.roots[index] !== root || !stat.isDirectory() || stat.gid === 0 ||
+            !groups.has(stat.gid) || (stat.mode & 0o7777) !== 0o2770) {
+          throw new BridgeError("invalid_config", "Shared workspace requires an isolated group and private setgid root", 500);
+        }
+        this.sharedGroups.set(root, stat.gid);
+      }
+    }
   }
 
   resolve(candidate) {
@@ -132,8 +155,9 @@ export class PathPolicy {
       for (const segment of target.segments.slice(0, -1)) {
         const nextPath = procFdPath(current, segment);
         if (createParents) {
+          await this.assertSharedUploadParent(current, target.root);
           try {
-            await this.fileSystem.mkdir(nextPath, { mode: 0o700 });
+            await this.fileSystem.mkdir(nextPath, { mode: this.createdDirectoryMode });
           } catch (error) {
             if (error.code !== "EEXIST") throw error;
           }
@@ -151,17 +175,39 @@ export class PathPolicy {
         await current.close();
         current = next;
       }
+      if (createParents) await this.assertSharedUploadParent(current, target.root);
       const handle = current;
       current = undefined;
       return {
         reference: target,
         path: procFdPath(handle, target.segments.at(-1)),
         parentPath: procFdPath(handle),
+        assertUploadParent: () => this.assertSharedUploadParent(handle, target.root),
         async close() { await handle.close(); },
       };
     } catch (error) {
       await current?.close().catch(() => {});
       throw error;
+    }
+  }
+
+  async assertSharedUploadParent(handle, root) {
+    if (this.workspaceSharing !== "ipc-group") return;
+    const stat = await handle.stat();
+    if (stat.gid !== this.sharedGroups.get(root) || (stat.mode & 0o7777) !== 0o2770) {
+      throw new BridgeError("workspace_permissions_changed", "Upload parent no longer has the isolated shared workspace permissions", 409);
+    }
+    // Named/default ACLs could grant inherited upload access beyond IPC.
+    // Inspect the held parent descriptor, never a newly resolved pathname.
+    let acl;
+    try {
+      acl = await exec("getfacl", ["-c", "-p", "-n", `/proc/${process.pid}/fd/${handle.fd}`],
+        { timeout: 5000, maxBuffer: 8192, env: { PATH: "/usr/sbin:/usr/bin:/sbin:/bin", LC_ALL: "C" } });
+    } catch {
+      throw new BridgeError("workspace_permissions_changed", "Shared upload parent ACL is unproven", 409);
+    }
+    if (acl.stderr.trim() || acl.stdout.trim() !== "user::rwx\ngroup::rwx\nother::---") {
+      throw new BridgeError("workspace_permissions_changed", "Shared upload parent has extended or default ACLs", 409);
     }
   }
 }

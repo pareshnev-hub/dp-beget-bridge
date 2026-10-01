@@ -4,10 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import test from "node:test";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { FileManager } from "../apps/agent/src/files.js";
 import { PathPolicy } from "../packages/core/src/path-policy.js";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
+const exec = promisify(execFile);
 
 async function createFixture(t, options = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-files-"));
@@ -47,6 +50,54 @@ test("download metadata reports exact size and SHA-256", async (t) => {
   assert.match(metadata.modifiedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(metadata.sha256, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
   assert.equal(manager.activeTransfers, 0);
+});
+
+test("explicit isolated group uploads remain usable by the work group without changing existing private files", async t => {
+  if (process.platform !== "linux" || process.getgid?.() === 0) {
+    t.skip("requires a non-root Linux group; separate signed runtime fixture proves distinct users"); return;
+  }
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dpb-shared-files-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.chmod(root, 0o2770);
+  const privateFile = path.join(root, "private-existing.txt");
+  await fs.writeFile(privateFile, "keep-private", { mode: 0o600 });
+  const previousMask = process.umask(0o007);
+  try {
+    const policy = new PathPolicy([root], { workspaceSharing: "ipc-group" });
+    const manager = new FileManager({ pathPolicy: policy, logger, uploadMaxBytes: 1024 });
+    await manager.upload(Readable.from("shared-content"), "nested/incoming/upload.txt");
+    for (const name of ["nested", "nested/incoming"]) {
+      const stat = await fs.stat(path.join(root, name));
+      assert.equal(stat.mode & 0o7777, 0o2770); assert.equal(stat.gid, process.getgid());
+    }
+    assert.equal((await fs.stat(path.join(root, "nested/incoming/upload.txt"))).mode & 0o777, 0o660);
+    assert.equal((await fs.stat(privateFile)).mode & 0o777, 0o600);
+    assert.equal(await fs.readFile(privateFile, "utf8"), "keep-private");
+    for (const acl of ["u:65534:rwx", "d:u:65534:rwx"]) {
+      await exec("setfacl", ["-m", acl, root]);
+      try {
+        await assert.rejects(manager.upload(Readable.from("rejected"), "acl-rejected.txt"),
+          error => error.code === "workspace_permissions_changed");
+        await assert.rejects(fs.access(path.join(root, "acl-rejected.txt")), { code: "ENOENT" });
+      } finally { await exec("setfacl", ["-b", "-k", root]); }
+    }
+    await fs.chmod(path.join(root, "nested"), 0o770);
+    await assert.rejects(manager.upload(Readable.from("rejected"), "nested/rejected.txt"),
+      error => error.code === "workspace_permissions_changed");
+    await assert.rejects(fs.access(path.join(root, "nested/rejected.txt")), { code: "ENOENT" });
+    await fs.chmod(root, 0o2775);
+    assert.throws(() => new PathPolicy([root], { workspaceSharing: "ipc-group" }), /private setgid root/);
+    await fs.chmod(root, 0o2770);
+    process.umask(0o027);
+    assert.throws(() => new PathPolicy([root], { workspaceSharing: "ipc-group" }), /creation mask/);
+  } finally { process.umask(previousMask); }
+});
+
+test("default uploads keep owner-private file and directory permissions", async t => {
+  const { root, manager } = await createFixture(t);
+  await manager.upload(Readable.from("private"), "incoming/private.txt");
+  assert.equal((await fs.stat(path.join(root, "incoming"))).mode & 0o777, 0o700);
+  assert.equal((await fs.stat(path.join(root, "incoming/private.txt"))).mode & 0o777, 0o600);
 });
 
 test("rejects uploads over the configured size", async (t) => {
