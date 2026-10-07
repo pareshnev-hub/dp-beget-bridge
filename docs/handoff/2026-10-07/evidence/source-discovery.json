@@ -1,0 +1,46 @@
+{
+  "roots": [
+    "/Users/m.pareshnev"
+  ],
+  "excluded_directory_names": [
+    ".Trash",
+    ".build",
+    ".cache",
+    ".git",
+    ".npm",
+    ".venv",
+    "Caches",
+    "DerivedData",
+    "Library",
+    "Movies",
+    "Music",
+    "Pictures",
+    "Pods",
+    "__pycache__",
+    "cache",
+    "dependencies",
+    "node_modules",
+    "sources",
+    "venv"
+  ],
+  "candidates": [
+    {
+      "path": "/Users/m.pareshnev/.codex/.chatgpt-projects/g-p-6a9302d669c481919dba0b3dc13de337/dp-beget-bridge",
+      "git": true,
+      "reason": "product-specific directory name"
+    },
+    {
+      "path": "/Users/m.pareshnev/.codex/forgejo-preservation-v06/materialized/mac/Users/m.pareshnev/.codex/.chatgpt-projects/g-p-6a9302d669c481919dba0b3dc13de337/dp-beget-bridge",
+      "git": true,
+      "reason": "product-specific directory name"
+    }
+  ],
+  "errors": [
+    {
+      "path": "/Users/m.pareshnev/Documents/Codex/2026-10-02/ios-app/work/qimen-ios/client/iOS/QimenIOS.xcodeproj",
+      "errno": 60
+    }
+  ],
+  "directories_examined": 43963,
+  "seconds": 5.28
+}
