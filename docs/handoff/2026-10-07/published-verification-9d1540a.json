@@ -1,0 +1,17 @@
+{
+  "result": "PASS",
+  "independent_clone": "outputs/beget-actualization-20261007/hetzner-published-readback.git",
+  "branch": "recovery/handoff/20261007/beget-remote-con-3-r04-01",
+  "sha": "9d1540a7d36ccfa5004ac8010893774b2439f8f2",
+  "tree": "4c3a1fe5d725fdb9272bec4df144dd60d3428fce",
+  "source_refs_verified": 269,
+  "source_commits_verified": 644,
+  "existing_server_refs_preserved": 271,
+  "remote_refs": 272,
+  "remote_commits": 647,
+  "snapshot_files_verified": 402,
+  "shallow": false,
+  "fsck_exit": 0,
+  "published_forgejo_ref": true,
+  "original_feature_head_unchanged": true
+}
