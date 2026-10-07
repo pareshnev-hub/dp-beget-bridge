@@ -1,0 +1,79 @@
+{
+  "version": "1.7.0",
+  "source": "exact LIVE Drive folder",
+  "read_modules": [
+    {
+      "title": "agent_NHN_instruction_09_Router.md",
+      "url": "https://drive.google.com/file/d/1Bu3QVjWPlUebwLQ5WuoK5XyeUn6zlhXF/view?usp=drivesdk",
+      "revision": "1.7.0",
+      "expected_sha256": "5d40cf1434dc01c79a19969e3f4c39a862100a0a1c21be9154b313296fbc4cbb",
+      "actual_sha256": "5d40cf1434dc01c79a19969e3f4c39a862100a0a1c21be9154b313296fbc4cbb",
+      "match": true
+    },
+    {
+      "title": "agent_NHN_instruction_10_Info.md",
+      "url": "https://drive.google.com/file/d/1OFyLZsVGrqImSVBQafVAY2EB_hx_pVMX/view?usp=drivesdk",
+      "revision": "1.7.0",
+      "expected_sha256": "c38c5c2c45458d7c07cb8dc648475e002aaa55a9876f196f65d1463055a39728",
+      "actual_sha256": "c38c5c2c45458d7c07cb8dc648475e002aaa55a9876f196f65d1463055a39728",
+      "match": true
+    },
+    {
+      "title": "agent_NHN_instruction_00_About.md",
+      "url": "https://drive.google.com/file/d/1vSKLvMB52sFKJNaToNhqcYcwqkuUMzJ5/view",
+      "revision": "1.7.0",
+      "expected_sha256": "17e6a4b15412c10512817bbab3abbb15310bd474e95fc1bc86b5bae27b3518cb",
+      "actual_sha256": "17e6a4b15412c10512817bbab3abbb15310bd474e95fc1bc86b5bae27b3518cb",
+      "match": true
+    },
+    {
+      "title": "agent_NHN_instruction_01_Execution.md",
+      "url": "https://drive.google.com/file/d/13jIQJCV1oKjloAoaLdZCyV-Pwjm5V_3v/view",
+      "revision": "1.7.0",
+      "expected_sha256": "34154bf442e8919ba1e604c8d21b7cb79ec7fe4540278ea74f098524489c2da0",
+      "actual_sha256": "34154bf442e8919ba1e604c8d21b7cb79ec7fe4540278ea74f098524489c2da0",
+      "match": true
+    },
+    {
+      "title": "agent_NHN_instruction_02_Communication.md",
+      "url": "https://drive.google.com/file/d/1rBMwC9nBuZ4_qSsLKXoUT5pVJQm2UwYL/view",
+      "revision": "1.6.1",
+      "expected_sha256": "d6d557adcf234c10355a13fcb6cbe812c61bd861124931414de6a9cee56e8061",
+      "actual_sha256": "d6d557adcf234c10355a13fcb6cbe812c61bd861124931414de6a9cee56e8061",
+      "match": true
+    },
+    {
+      "title": "agent_NHN_instruction_03_Owner_Actions.md",
+      "url": "https://drive.google.com/file/d/1YjAOzjSyheqmUiwjpDvZlkomC9VaSgUL/view",
+      "revision": "1.5.0",
+      "expected_sha256": "ca3a372b50be44c2b29492092cadfc67c995ccb6da73bc3570a8dc849ec99c98",
+      "actual_sha256": "ca3a372b50be44c2b29492092cadfc67c995ccb6da73bc3570a8dc849ec99c98",
+      "match": true
+    },
+    {
+      "title": "agent_NHN_instruction_05_Safety.md",
+      "url": "https://drive.google.com/file/d/1l1dtX-MCb1BxR-vnPAPN-SNKQhJhXcCw/view",
+      "revision": "1.6.0",
+      "expected_sha256": "a7dfd8f3fa18cc4705f53ce872dbec33fc873564f92d15330e0e07d4410155b5",
+      "actual_sha256": "a7dfd8f3fa18cc4705f53ce872dbec33fc873564f92d15330e0e07d4410155b5",
+      "match": true
+    },
+    {
+      "title": "agent_NHN_instruction_04_Testing.md",
+      "url": "https://drive.google.com/file/d/1_PZEHtw2ISJEIr26od4BMNGthV3VsmFt/view",
+      "revision": "1.7.0",
+      "expected_sha256": "c85369addf62c864ecc530b0e5e4913997d2b51a4b6c373e87bf8d379aeb6305",
+      "actual_sha256": "c85369addf62c864ecc530b0e5e4913997d2b51a4b6c373e87bf8d379aeb6305",
+      "match": true
+    },
+    {
+      "title": "agent_NHN_instruction_06_Development.md",
+      "url": "https://drive.google.com/file/d/1vgsGmQ-O850sVE4vvAs2YDFQTFVE_aAb/view",
+      "revision": "1.7.0",
+      "expected_sha256": "d73c806d99e760abb27641a0229a9f643d7b85e950cecf0e1832f6f0ae579fdd",
+      "actual_sha256": "d73c806d99e760abb27641a0229a9f643d7b85e950cecf0e1832f6f0ae579fdd",
+      "match": true
+    }
+  ],
+  "all_loaded_module_hashes_match": true
+}

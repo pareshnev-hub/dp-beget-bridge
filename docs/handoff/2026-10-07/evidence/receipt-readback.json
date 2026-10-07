@@ -1,0 +1,9 @@
+{
+  "server_receipt_write_readback": "PASS",
+  "directory": "/opt/forgejo/local-checkpoints/beget-r04-work-20261007",
+  "files_sha256": {
+    "HANDOFF_2026-10-07.json": "924a84424fdffd1ff6e5c65e86a76674e47a6cf200f58499450bc201d4f64718",
+    "HANDOFF_2026-10-07.md": "cc0935314314ed6bc41ea894eb72d5c944017212fa2a0f85d8339d14cc859761",
+    "final-verification.json": "06ed42bb83c2a35edee12ad7a0e1e8b4c824129ff1154ef16a7d2abc85b7bd43"
+  }
+}

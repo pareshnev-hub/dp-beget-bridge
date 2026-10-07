@@ -1,0 +1,48 @@
+{
+  "result": "PASS",
+  "docs": [
+    {
+      "name": "README.md",
+      "id": "1FX5UsGa8V98GTi7Il9nIbTVLOQkQpLHx",
+      "url": "https://drive.google.com/file/d/1FX5UsGa8V98GTi7Il9nIbTVLOQkQpLHx/view?usp=drivesdk",
+      "parent": "1ereiLIjq_36Xzya613cauluKIr4u7Wcb",
+      "sha256": "9aceff91c499a0dca2dcc50c9e26881326f30d411c6f44f6ca7a5b5b879e0641",
+      "readback": "PASS"
+    },
+    {
+      "name": "BRANCH.md",
+      "id": "1qKN7qXXh9gV9qMXNtAXeyqJulwlv6nX7",
+      "url": "https://drive.google.com/file/d/1qKN7qXXh9gV9qMXNtAXeyqJulwlv6nX7/view?usp=drivesdk",
+      "parent": "1XRDEf1i2N4F6VagGY0pNTJjrsrj05Fgl",
+      "sha256": "f4c9aee409caf3ad16b415e64c9d9669bcc56b6477fbf2c95fdc3796857ee54f",
+      "readback": "PASS"
+    },
+    {
+      "name": "2026-10-07.md",
+      "id": "1ibjO0y9_Cw7xiOr1FS1B4MADjL05qZzF",
+      "url": "https://drive.google.com/file/d/1ibjO0y9_Cw7xiOr1FS1B4MADjL05qZzF/view?usp=drivesdk",
+      "parent": "1rxjdVGwwrMaTgBj4Xmp_UMn_tuAGbmUI",
+      "sha256": "b13241c5826f6c9d014a6ce6a9f3939f1f83d654bfd8a09854e9640fc24a6393",
+      "readback": "PASS"
+    },
+    {
+      "name": "DP_BEGET_BRIDGE.md",
+      "id": "1HxS2_9LB776a1NU17ylU2Ttq_qKleE_z",
+      "url": "https://drive.google.com/file/d/1HxS2_9LB776a1NU17ylU2Ttq_qKleE_z/view?usp=drivesdk",
+      "parent": "19u0E_Dl8FzctWJQQuULANGpIqFEJwz92",
+      "sha256": "297e4dc1e589859bcb43862a3a3ce9d5bdd23e6d75f32ea212a5d6420f49d5cd",
+      "readback": "PASS"
+    },
+    {
+      "name": "2026-10-07_Beget_R04_actualization.md",
+      "id": "1jE8gA3h_zxJgPafZxD_f_kCC83SXT-M9",
+      "url": "https://drive.google.com/file/d/1jE8gA3h_zxJgPafZxD_f_kCC83SXT-M9/view?usp=drivesdk",
+      "parent": "1x9-25SgKx0nanj7cZL8gMC16pqcR1g3i",
+      "sha256": "c9b2881c81b786cb87373f76dbf8a3170ff1231d5f577df9fa79ccefa1833cdb",
+      "readback": "PASS"
+    }
+  ],
+  "project_folder": "https://drive.google.com/drive/folders/1ereiLIjq_36Xzya613cauluKIr4u7Wcb",
+  "work_folder": "https://drive.google.com/drive/folders/1XRDEf1i2N4F6VagGY0pNTJjrsrj05Fgl",
+  "shared_records_overwritten": false
+}

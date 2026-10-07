@@ -1,0 +1,12 @@
+{
+  "origin": "https://pareshnev.com/git/pareshnev-hub/dp-beget-bridge.git",
+  "previous_source": "https://github.com/pareshnev-hub/dp-beget-bridge.git",
+  "branch": "codex/r04-01-signed-retention",
+  "head": "787ae691c6e42a3c2ab8f75ebaff8f97c92f0f95",
+  "upstream": "origin/codex/r04-01-signed-retention",
+  "upstream_sha": "787ae691c6e42a3c2ab8f75ebaff8f97c92f0f95",
+  "push_default": "origin",
+  "status": "?? AGENTS.md\n?? CURRENT_STATE.md",
+  "global_settings_changed": false,
+  "git_write_auth": "BLOCKED: current SSH key rejected by Forgejo; no token read"
+}
